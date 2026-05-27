@@ -1,0 +1,240 @@
+{
+  "https://www.saucedemo.com": {
+    "urlKey": "https://www.saucedemo.com",
+    "url": "https://www.saucedemo.com/",
+    "fields": [
+      {
+        "key": "user_name",
+        "label": "Username",
+        "type": "text",
+        "value": "standard_user",
+        "sensitive": false
+      },
+      {
+        "key": "password",
+        "label": "Password",
+        "type": "password",
+        "value": "secret_sauce",
+        "sensitive": true
+      }
+    ],
+    "updatedAt": 1779714576567
+  },
+  "https://parabank.parasoft.com": {
+    "urlKey": "https://parabank.parasoft.com",
+    "url": "https://parabank.parasoft.com/parabank/login.htm;jsessionid=FE05D0D5034BF664ECB3994098436EC0",
+    "fields": [
+      {
+        "key": "parabank___welcome___online_banking_username",
+        "label": "ParaBank | Welcome | Online Banking — username",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "parabank___welcome___online_banking_password",
+        "label": "ParaBank | Welcome | Online Banking — password",
+        "type": "password",
+        "value": "test1",
+        "sensitive": true
+      },
+      {
+        "key": "contact_username",
+        "label": "Contact — username",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "contact_password",
+        "label": "Contact — password",
+        "type": "password",
+        "value": "test1",
+        "sensitive": true
+      },
+      {
+        "key": "contact_name",
+        "label": "Contact — name",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "contact_email",
+        "label": "Contact — email",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "contact_phone",
+        "label": "Contact — phone",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "contact_message",
+        "label": "Contact — message",
+        "type": "textarea",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "parabank___customer_lookup_username",
+        "label": "ParaBank | Customer Lookup — username",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "parabank___customer_lookup_password",
+        "label": "ParaBank | Customer Lookup — password",
+        "type": "password",
+        "value": "test1",
+        "sensitive": true
+      },
+      {
+        "key": "parabank___customer_lookup_firstname",
+        "label": "ParaBank | Customer Lookup — firstName",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "parabank___customer_lookup_lastname",
+        "label": "ParaBank | Customer Lookup — lastName",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "parabank___customer_lookup_address_street",
+        "label": "ParaBank | Customer Lookup — address.street",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "parabank___customer_lookup_address_city",
+        "label": "ParaBank | Customer Lookup — address.city",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "parabank___customer_lookup_address_state",
+        "label": "ParaBank | Customer Lookup — address.state",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "parabank___customer_lookup_address_zipcode",
+        "label": "ParaBank | Customer Lookup — address.zipCode",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "parabank___customer_lookup_ssn",
+        "label": "ParaBank | Customer Lookup — ssn",
+        "type": "text",
+        "value": "test1",
+        "sensitive": true
+      },
+      {
+        "key": "register_username",
+        "label": "Register — username",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "register_password",
+        "label": "Register — password",
+        "type": "password",
+        "value": "test1",
+        "sensitive": true
+      },
+      {
+        "key": "register_customer_firstname",
+        "label": "Register — customer.firstName",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "register_customer_lastname",
+        "label": "Register — customer.lastName",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "register_customer_address_street",
+        "label": "Register — customer.address.street",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "register_customer_address_city",
+        "label": "Register — customer.address.city",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "register_customer_address_state",
+        "label": "Register — customer.address.state",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "register_customer_address_zipcode",
+        "label": "Register — customer.address.zipCode",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "register_customer_phonenumber",
+        "label": "Register — customer.phoneNumber",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "register_customer_ssn",
+        "label": "Register — customer.ssn",
+        "type": "text",
+        "value": "test1",
+        "sensitive": true
+      },
+      {
+        "key": "register_customer_username",
+        "label": "Register — customer.username",
+        "type": "text",
+        "value": "test1",
+        "sensitive": false
+      },
+      {
+        "key": "register_customer_password",
+        "label": "Register — customer.password",
+        "type": "password",
+        "value": "test1",
+        "sensitive": true
+      },
+      {
+        "key": "register_repeatedpassword",
+        "label": "Register — repeatedPassword",
+        "type": "password",
+        "value": "test1",
+        "sensitive": true
+      }
+    ],
+    "updatedAt": 1779702615264
+  }
+}

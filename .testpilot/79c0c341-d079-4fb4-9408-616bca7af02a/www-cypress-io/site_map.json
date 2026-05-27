@@ -1,0 +1,279 @@
+{
+  "start_url": "https://www.cypress.io/#create",
+  "total_pages": 1,
+  "pages": [
+    {
+      "url": "https://www.cypress.io/#create",
+      "depth": 0,
+      "title": "Testing Frameworks for Javascript | Write, Run, Debug | Cypress",
+      "status_code": 200,
+      "elements": {
+        "buttons": [
+          "",
+          "",
+          "Contact sales",
+          "",
+          "",
+          ""
+        ],
+        "links": [
+          {
+            "text": "Privacy Policy",
+            "href": "https://www.cypress.io/privacy-policy/"
+          },
+          {
+            "text": "Learn more",
+            "href": "https://on.cypress.io/cloud-mcp?utm_source=website_banner&utm_campaign=cloud-mcp"
+          },
+          {
+            "text": "",
+            "href": "/"
+          },
+          {
+            "text": "",
+            "href": "/"
+          },
+          {
+            "text": "Products",
+            "href": "/app"
+          },
+          {
+            "text": "Cypress App Test your modern applications with our open-source app",
+            "href": "/app"
+          },
+          {
+            "text": "Browser Testing",
+            "href": "/app"
+          },
+          {
+            "text": "Visual Debugging",
+            "href": "/app#visual_debugging"
+          },
+          {
+            "text": "Test Generation",
+            "href": "/app#test_generation"
+          },
+          {
+            "text": "Flake Resistance",
+            "href": "/app#flake_resistance"
+          },
+          {
+            "text": "Cypress Cloud Scale your testing with total confidence on every release",
+            "href": "/cloud"
+          },
+          {
+            "text": "Visual Reviews",
+            "href": "/cloud#visual_reviews"
+          },
+          {
+            "text": "Smart Orchestration",
+            "href": "/cloud#smart_orchestration"
+          },
+          {
+            "text": "Analytics & Insights",
+            "href": "/cloud#analytics_insights"
+          },
+          {
+            "text": "Workflow Integrations",
+            "href": "/cloud#workflow_integrations"
+          },
+          {
+            "text": "UI Coverage Identify testing gaps instantly",
+            "href": "/ui-coverage?utm_medium=website&utm_source=cypress.io&utm_content=header"
+          },
+          {
+            "text": "Accessibility Automated checks on every test",
+            "href": "/accessibility?utm_medium=website&utm_source=cypress.io&utm_content=header"
+          },
+          {
+            "text": "Docs",
+            "href": "https://on.cypress.io/"
+          },
+          {
+            "text": "Documentation Learn how to test your code with Cypress",
+            "href": "https://on.cypress.io/"
+          },
+          {
+            "text": "Installing Cypress",
+            "href": "https://on.cypress.io/installing-cypress"
+          },
+          {
+            "text": "Writing your first test",
+            "href": "https://on.cypress.io/writing-your-first-test"
+          },
+          {
+            "text": "Testing your app",
+            "href": "https://on.cypress.io/testing-your-app"
+          },
+          {
+            "text": "API",
+            "href": "https://docs.cypress.io/api/commands/and"
+          },
+          {
+            "text": "Configuration",
+            "href": "https://on.cypress.io/configuration"
+          },
+          {
+            "text": "Best practices",
+            "href": "https://on.cypress.io/best-practices"
+          },
+          {
+            "text": "Changelog",
+            "href": "https://on.cypress.io/changelog"
+          },
+          {
+            "text": "Migration guides",
+            "href": "https://on.cypress.io/migration-guide"
+          },
+          {
+            "text": "FAQ",
+            "href": "https://on.cypress.io/faq"
+          },
+          {
+            "text": "Learn Cypress",
+            "href": "https://learn.cypress.io/"
+          },
+          {
+            "text": "Community",
+            "href": "/blog"
+          },
+          {
+            "text": "Blog Best practices, insights & more",
+            "href": "/blog"
+          },
+          {
+            "text": "Releases",
+            "href": "/blog/category/Releases"
+          },
+          {
+            "text": "Community",
+            "href": "/blog/category/Community"
+          },
+          {
+            "text": "Education",
+            "href": "/blog/category/Education"
+          },
+          {
+            "text": "Customer Stories",
+            "href": "/blog/category/Customer%20Stories"
+          },
+          {
+            "text": "Company",
+            "href": "/blog/category/Company"
+          },
+          {
+            "text": "GitHub",
+            "href": "https://github.com/cypress-io/cypress"
+          },
+          {
+            "text": "Discord",
+            "href": "https://on.cypress.io/chat"
+          },
+          {
+            "text": "YouTube",
+            "href": "https://www.youtube.com/c/Cypressio"
+          },
+          {
+            "text": "Ambassadors",
+            "href": "/ambassadors"
+          },
+          {
+            "text": "Events",
+            "href": "/events"
+          },
+          {
+            "text": "Company",
+            "href": "/about-us"
+          },
+          {
+            "text": "About Cypress Supporting a new generation of testing",
+            "href": "/about-us"
+          },
+          {
+            "text": "Help Center",
+            "href": "/support"
+          },
+          {
+            "text": "Support Assistant",
+            "href": "/ask"
+          },
+          {
+            "text": "Working at Cypress",
+            "href": "/careers"
+          },
+          {
+            "text": "Customer stories",
+            "href": "/customers"
+          },
+          {
+            "text": "Press & media",
+            "href": "/press-kit"
+          },
+          {
+            "text": "Cypress Swag",
+            "href": "https://swag.cypress.io"
+          },
+          {
+            "text": "LinkedIn",
+            "href": "https://www.linkedin.com/company/cypress.io"
+          }
+        ],
+        "inputs": [
+          {
+            "type": "text",
+            "name": "prompt",
+            "id": "",
+            "placeholder": "Ask anything",
+            "aria_label": ""
+          }
+        ],
+        "forms": [
+          {
+            "action": "/hubspot",
+            "method": "POST",
+            "id": ""
+          },
+          {
+            "action": "",
+            "method": "GET",
+            "id": ""
+          }
+        ],
+        "headings": [
+          "Browser testing for modern teams",
+          "Write, run, and debug like a pro",
+          "Test modern apps directly in the browser",
+          "Write and record passing tests in minutes",
+          "Debug failures directly in the browser",
+          "Eliminate flaky tests with ease",
+          "Integrate Cypress with any CI provider",
+          "Increase your productivity and confidence",
+          "Optimize your runs for a faster feedback loop",
+          "Debug failures visually with AI powered insights"
+        ],
+        "landmarks": [
+          "dialog",
+          "header",
+          "nav",
+          "main",
+          "footer"
+        ]
+      },
+      "accessibility_tree": "- dialog \"Cookie Consent Banner\":\n  - button \"Close this dialog\":\n    - img \"Close this dialog\"\n  - text: \"This website utilizes technologies such as cookies to enable essential site functionality, as well as for analytics, personalization, and targeted advertising. To learn more, view the following link:\"\n  - link \"Privacy Policy\":\n    - /url: https://www.cypress.io/privacy-policy/\n- banner:\n  - status \"Promotional banner\":\n    - img\n    - text: Close the context gap. Bring real-time test data to your AI assistant with Cloud MCP —\n    - link \"Learn more\":\n      - /url: https://on.cypress.io/cloud-mcp?utm_source=website_banner&utm_campaign=cloud-mcp\n      - text: Learn more\n      - img\n    - button \"Dismiss banner\":\n      - img\n  - navigation \"main navigation\":\n    - link \"Cypress\":\n      - /url: /\n      - img \"Cypress Logo\"\n    - list:\n      - listitem:\n        - link \"Products\":\n          - /url: /app\n      - listitem:\n        - link \"Docs\":\n          - /url: https://on.cypress.io/\n      - listitem:\n        - link \"Community\":\n          - /url: /blog\n      - listitem:\n        - link \"Company\":\n          - /url: /about-us\n      - listitem:\n        - link \"Pricing\":\n          - /url: /pricing\n    - button \"Contact sales\"\n    - link \"Log in\":\n      - /url: https://cloud.cypress.io/login\n    - link \"Sign up\":\n      - /url: https://cloud.cypress.io/signup\n- main:\n  - img\n  - heading \"Browser testing for modern teams\" [level=1]\n  - paragraph: Create tests, debug failures, and improve quality faster than ever. Get AI-powered guidance at every stage of testing, with full code ownership, on a platform that connects your team.\n  - tablist:\n    - tab \"Create\":\n      - img\n      - text: Create\n    - tab \"Debug\":\n      - img\n      - text: Debug\n    - tab \"Improve\":\n      - img\n      - text: Improve\n    - tab \"Collaborate\":\n      - img\n      - text: Collaborate\n  - list:\n    - listitem: Cypress commands\n    - listitem: •Natural language\n    - listitem: •Interactive test recording\n    - listitem: •Self-healing with AI\n    - listitem:\n      - text: •Included in\n      - link \"Cypress App\":\n        - /url: /app\n  - img\n  - img\n  - img\n  - img\n  - img \"Cypress Studio AI sidebar showing natural language test prompts being converted into executable Cypress commands.\"\n  - img\n  - img\n  - img\n  - img\n  - img \"Debugging a test via Test Replay with network request visibility.\"\n  - img\n  - img\n  - img\n  - img\n  - img \"Analyzing untested elements to improve UI coverage.\"\n  - img\n  - img\n  - img\n  - img\n  - img \"Analyzing test suite performance trends within Enterprise Reporting.\"\n  - list:\n    - listitem:\n      - link \"LaunchDarkly logo\":\n        - /url: https://www.launchdarkly.com/\n        - img \"LaunchDarkly logo\"\n    - listitem:\n      - link \"Khan Academy logo\":\n        - /url: https://www.khanacademy.org/\n        - img \"Khan Academy logo\"\n    - listitem:\n      - link \"Splunk logo\":\n        - /url: https://www.splunk.com/\n        - img \"Splunk logo\"\n    - listitem:\n      - link \"Indeed logo\":\n        - /url: https://www.indeed.com/\n        - img \"Indeed logo\"\n    - listitem:\n      - link \"Hello Fresh logo\":\n        - /url: https://www.hellofresh.com/\n        - img \"Hello Fresh logo\"\n  - paragraph:\n    - img\n    - text: Introducing the\n    - link \"Cypress App\":\n      - /url: /app\n  - heading \"Write, run, and debug like a pro\" [level=2]\n  - img \"Cypress user avatar\"\n  - heading \"Test modern apps directly in the browser\" [level=3]\n  - paragraph: Watch your end-to-end and component tests run in real time as you develop your applications. Cypress’s simple, yet powerful API runs as fast as your browser can render content.\n  - link \"Learn more\":\n    - /url: /app\n  - img\n  - img\n  - img\n  - img\n  - img\n  - img\n  - img\n  - img\n  - img\n  - heading \"Write and record passing tests in minutes\" [level=3]\n  - paragraph: Generate tests faster than ever with Cypress Studio. Record interactions, get smart AI recommendations, or describe flows in natural language. Watch Cypress instantly turn plain English into runnable test code.\n  - link \"Learn more\":\n    - /url: /app#test_generation\n  - code: \"it('user should be able to log in', () => { cy.visit('/login') // fill in the form cy.get('input[type=\\\"email\\\"]').type('test@test.com') cy.get('input[type=\\\"password\\\"]').type('test1234') // submit the form cy.get('button').contains('Sign in').click() cy.contains('button', 'Logout').should('be.visible') }) // @cy-startTyping\"\n  - heading \"Debug failures directly in the browser\" [level=3]\n  - paragraph: Because Cypress runs directly in the browser, you can debug failed tests using the in-browser developer tools you already know and love.\n  - link \"Learn more\":\n    - /url: /app#visual_debugging\n  - img\n  - img\n  - img\n  - img\n  - img\n  - img\n  - img\n  - heading \"Eliminate flaky tests with ease\" [level=3]\n  - paragraph: Cypress deterministically interacts with your application the same way as your users so you can discover intermittent bugs before your users do.\n  - link \"Learn more\":\n    - /url: /app#flake_resistance\n  - img\n  - img\n  - img\n  - text: \"#102 flaky Auth\"\n  - img\n  - text: Login\n  - img\n  - text: Owner Role\n  - img\n  - text: \"#104 flaky Auth\"\n  - img\n  - text: Login\n  - img\n  - text: Owner Role\n  - code: .github/workflows/test.yml\n  - code: \"on: [push] jobs: cypress: runs-on: ubuntu-latest steps: - name: Checkout the latest commit uses: actions/checkout@v4 - name: Cypress run uses: cypress-io/github-action@v6 with: build: npm run build start: npm start\"\n  - img\n  - img \"Circle CI\"\n  - img \"Github Actions\"\n  - img \"Gitlab CI\"\n  - img \"Atlassian Bitbucket\"\n  - img \"Jenkins\"\n  - img \"Travis CI\"\n  - heading \"Integrate Cypress with any CI provider\" [level=2]\n  - paragraph: Easily integrate Cypress with your current CI provider. Run Cypress in CI and you will know as soon as there is a failure. We make it simple to run in CI. Use our Docker images or bring your own.\n  - link \"Learn more\":\n    - /url: /cloud#workflow_integrations\n    - text: Learn more\n    - img\n  - paragraph:\n    - img\n    - text: Introducing\n    - link \"Cypress Cloud\":\n      - /url: /cloud\n  - heading \"Increase your productivity and confidence\" [level=2]\n  - img \"Cypress user avatar\"\n  - heading \"Optimize your runs for a faster feedback loop\" [level=3]\n  - paragraph:\n    - text: Run Cypress in your existing CI pipeline and use\n    - link \"test parallelization\":\n      - /url: https://on.cypress.io/parallelization\n    - text: \", load balancing, spec prioritization, and more to be as efficient as possible with your available CI resources.\"\n  - link \"Learn more\":\n    - /url: /cloud#smart_orchestration\n  - img\n  - text: Machine 1\n  - img\n  - text: Machine 2\n  - img\n  - text: Machine 3\n  - img\n  - text: Machine 4\n  - heading \"Debug failures visually with AI powered insights\" [level=3]\n  - paragraph: Reach new levels of visibility into why your tests failed in CI. Instantly understand test intent and what went wrong with AI powered summaries. Rewind time with Test Replay to directly inspect the DOM, network events, and console logs exactly as they ran in CI.\n  - link \"Learn more\":\n    - /url: /cloud#visual_reviews\n  - img\n  - img\n  - img\n  - img\n  - img \"Test replay demo animation\"\n  - img\n  - img\n  - img\n  - heading \"Gain actionable insights into your test suite\" [level=3]\n  - paragraph: Monitor your test suite’s health with in-depth analytics. Cypress surfaces failing and flaky test result trends and config changes that affect your test suite’s performance.\n  - link \"Learn more\":\n    - /url: /cloud#analytics_insights\n  - img \"A bar graph showing the historical run duration of Cypress E2E testing.\"\n  - heading \"Integrate seamlessly into your workflow\" [level=3]\n  - paragraph:\n    - text: Manage test results as a team thanks to native integrations with Slack, Teams, GitHub, GitLab,\n    - link \"JIRA\":\n      - /url: https://on.cypress.io/jira-integration\n    - text: \", and more. Give your AI coding assistants direct access to your Cypress Cloud test results with Cloud MCP, so they can help you debug, triage, and take action.\"\n  - link \"Learn more\":\n    - /url: /cloud#workflow_integrations\n  - 'img \"Integrated workflows: Slack, MS Teams, Cypress Cloud MCP\"'\n  - paragraph:\n    - img\n    - text: Extend the value of every test\n  - heading \"Improve app quality with instant insights\" [level=2]\n  - img \"Cypress user avatar\"\n  - heading \"Identify & Address testing gaps with UI Coverage\" [level=3]\n  - paragraph: Easily track, monitor, and visualize the test coverage of your UI to ensure testing of critical flows, prevent regressions and highlight gaps. Save CI resources by eliminating redundancy, use Cypress AI to generate missing tests and improve your team's productivity with a visual overview of UI coverage across every page and component.\n  - link \"Learn more\":\n    - /url: /ui-coverage?utm_medium=website&utm_source=cypress.io&utm_content=homepage\n  - img\n  - img\n  - img\n  - img\n  - img \"screenshot of Cypress UI Coverage\"\n  - heading \"Automated accessibility checks on every test\" [level=3]\n  - paragraph: Instantly visualize, triage, and fix accessibility violations without any additional code or configuration. Dive deep into each violation with live, fully-rendered DOM snapshots of your application as it appeared during your tests. Track your team’s progress over time with historical scores to monitor improvements and identify regressions.\n  - link \"Learn more\":\n    - /url: /accessibility?utm_medium=website&utm_source=cypress.io&utm_content=homepage\n  - img\n  - img\n  - img\n  - img\n  - img \"screenshot of Cypress Accessibility\"\n  - img\n  - heading \"Loved by OSS, trusted by Enterprise\" [level=2]\n  - paragraph: Cypress is proud to support developers all around the world by making it easier to build and test modern applications.\n  - text: 6M+ Weekly downloads 49K+ GitHub stars 1.5M+ Dependent repositories\n  - img \"Twitter Avatar of hakimel\"\n  - text: Hakim El Hattab\n  - link \"@hakimel\":\n    - /url: https://twitter.com/hakimel\n  - link \"Go to tweet\":\n    - /url: https://twitter.com/hakimel/status/1583369424845041664\n    - text: Go to tweet\n    - img\n  - text: Cypress makes me feel about 10x as confident in my work. Just look at those tests go 🥰\n  - img \"Twitter Avatar of tobmaster\"\n  - text: Tobias Struckmeier\n  - link \"@tobmaster\":\n    - /url: https://twitter.com/tobmaster\n  - link \"Go to tweet\":\n    - /url: https://twitter.com/tobmaster/status/1426117878877769730\n    - text: Go to tweet\n    - img\n  - text: \"Every day I learn something awesome new about @Cypress_io. Its extensibility just makes it the super tool for new approaches and integrates in most environments. Especially when I compare it with other tools, it always feels easier and more stable to me. #testing\"\n  - img \"Twitter Avatar of __etienne\"\n  - text: Etienne Roudeix\n  - link \"@__etienne\":\n    - /url: https://twitter.com/__etienne\n  - link \"Go to tweet\":\n    - /url: https://twitter.com/__etienne/status/1494680852525158409\n    - text: Go to tweet\n    - img\n  - text: Hey @Cypress_io just wanted to give you a big 👏👏👏 for the quality of your documentation. Thank you for the good work.\n  - img \"Twitter Avatar of BrentA1283\"\n  - text: brent\n  - link \"@BrentA1283\":\n    - /url: https://twitter.com/BrentA1283\n  - link \"Go to tweet\":\n    - /url: https://twitter.com/BrentA1283/status/1426943822232231941\n    - text: Go to tweet\n    - img\n  - text: I've been meaning to express my gratitude to the incredibly talented people who built and maintain the docs @Cypress_io. From start to finish, it's such an incredible platform and so much of that is due to how easy it is to get into it via the top notch documentation! Thank you!\n  - img \"Twitter Avatar of HenrikJoreteg\"\n  - text: Henrik Joreteg\n  - link \"@HenrikJoreteg\":\n    - /url: https://twitter.com/HenrikJoreteg\n  - link \"Go to tweet\":\n    - /url: https://twitter.com/HenrikJoreteg/status/1489469473899769856\n    - text: Go to tweet\n    - img\n  - text: Overall, settings up @Cypress_io's dashboard service and using GitHub actions to run all my Cypress tests in parallel has been a big win. Recommended 👍\n  - img \"Twitter Avatar of Lumigo\"\n  - text: Lumigo\n  - link \"@Lumigo\":\n    - /url: https://twitter.com/Lumigo\n  - link \"Go to tweet\":\n    - /url: https://twitter.com/Lumigo/status/1519399453924511744\n    - text: Go to tweet\n    - img\n  - text: \"Cypress makes it possible to have the best of both worlds: a streamlined and stable testing infrastructure.\"\n  - img \"Twitter Avatar of DiliStefan\"\n  - text: Stefan Dili\n  - link \"@DiliStefan\":\n    - /url: https://twitter.com/DiliStefan\n  - link \"Go to tweet\":\n    - /url: https://twitter.com/DiliStefan/status/1419411976850182145\n    - text: Go to tweet\n    - img\n  - text: \"@Cypress_io is by far the best DX tool I have encountered.\"\n  - img \"Twitter Avatar of francescomugnai\"\n  - text: Francesco Mugnai\n  - link \"@francescomugnai\":\n    - /url: https://twitter.com/francescomugnai\n  - link \"Go to tweet\":\n    - /url: https://twitter.com/francescomugnai/status/1422562127471124481\n    - text: Go to tweet\n    - img\n  - text: \"@Cypress_io is an amazing tool. And the documentation is pure joy. It's like reading a great book...the more you read it, the more you love it. Thank you, @Cypress_io!\"\n  - img \"Twitter Avatar of IrinaTheNerd\"\n  - text: Irina the nerd 🤓\n  - link \"@IrinaTheNerd\":\n    - /url: https://twitter.com/IrinaTheNerd\n  - link \"Go to tweet\":\n    - /url: https://twitter.com/IrinaTheNerd/status/1427529715032657920\n    - text: Go to tweet\n    - img\n  - text: \"I need a relaxing morning. I'll write some @Cypress_io tests. #WomenWhoCode\"\n  - img \"Twitter Avatar of lyrixx\"\n  - text: Gregoire Pineau\n  - link \"@lyrixx\":\n    - /url: https://twitter.com/lyrixx\n  - link \"Go to tweet\":\n    - /url: https://twitter.com/lyrixx/status/1464284400821194761\n    - text: Go to tweet\n    - img\n  - text: \"I spend the last two days working with @Cypress_io: \\\"A complete end-to-end testing experience\\\" I'm **really** impressed by this project. We feel the DX is super important for them... And it just works© 👏👏👏\"\n  - img \"Twitter Avatar of mister_bourbon\"\n  - text: Yash Raj\n  - link \"@mister_bourbon\":\n    - /url: https://twitter.com/mister_bourbon\n  - link \"Go to tweet\":\n    - /url: https://twitter.com/mister_bourbon/status/1422905039182438401\n    - text: Go to tweet\n    - img\n  - text: I'm awestruck with the power of @Cypress_io. It makes the development and automation experience so awesome that you'll fall in love with it. With the updates more frequent than your sprint review, cypress is totally disrupting the market and is here to knock your socks off.\n  - img \"Twitter Avatar of franckgrenier\"\n  - text: Franck Grenier 🇪🇺🇺🇦\n  - link \"@franckgrenier\":\n    - /url: https://twitter.com/franckgrenier\n  - link \"Go to tweet\":\n    - /url: https://twitter.com/franckgrenier/status/1464505973490466824\n    - text: Go to tweet\n    - img\n  - text: Cypress is a real game changer in e2e testing. It runs inside 2 containers on our stack. The setup was almost easy and its adoption by the team was immediate. Now our test coverage is growing fast. Also mention the amazing test runner tool. @Cypress_io beats them all !\n  - img \"Twitter Avatar of adilconstantine\"\n  - text: a-deal\n  - link \"@adilconstantine\":\n    - /url: https://twitter.com/adilconstantine\n  - link \"Go to tweet\":\n    - /url: https://twitter.com/adilconstantine/status/1565162370632019968\n    - text: Go to tweet\n    - img\n  - text: \"Explaining to my 4 year old what I do for work & what automation is. So I showed him an automated @Cypress_io test & how its clicking and typing. Me: I made the computer do the work while my hands are not touching it My son: Oh so you can play with me while computer do work 😅\"\n  - img \"Twitter Avatar of s_chwastek\"\n  - text: Sebastian Chwastek\n  - link \"@s_chwastek\":\n    - /url: https://twitter.com/s_chwastek\n  - link \"Go to tweet\":\n    - /url: https://twitter.com/s_chwastek/status/1519000460421648385\n    - text: Go to tweet\n    - img\n  - text: \"@Cypress_io docs must be one of the best! 🤯 Well done. It has it all: learning course, real world examples, best practices, even FAQ is impressive (it has questions I didn't even know I wanted to ask). All open source too.\"\n  - img \"Twitter Avatar of 2co_p\"\n  - text: Nico\n  - link \"@2co_p\":\n    - /url: https://twitter.com/2co_p\n  - link \"Go to tweet\":\n    - /url: https://twitter.com/2co_p/status/1538306307731726336\n    - text: Go to tweet\n    - img\n  - text: Opened a pretty big PR to our project in Hyperjump but our comprehensive @Cypress_io tests make me confident it won't break anything. So proud of my team 👏\n- contentinfo:\n  - img\n  - navigation \"Site map\":\n    - heading \"Getting started\" [level=2]\n    - link \"Why Cypress\":\n      - /url: https://on.cypress.io/why-cypress\n    - link \"Installing Cypress\":\n      - /url: https://on.cypress.io/installing-cypress\n    - link \"Write your first test\":\n      - /url: https://on.cypress.io/writing-your-first-test\n    - link \"Testing your app\":\n      - /url: https://on.cypress.io/testing-your-app\n    - link \"How Cypress works\":\n      - /url: /how-it-works\n    - heading \"Developers\" [level=2]\n    - link \"Documentation\":\n      - /url: https://on.cypress.io\n    - link \"Changelog\":\n      - /url: https://on.cypress.io/changelog\n    - link \"Status site\":\n      - /url: https://www.cypressstatus.com\n    - link \"Contribute\":\n      - /url: https://on.cypress.io/contributing\n    - link \"Learn Cypress\":\n      - /url: https://learn.cypress.io\n    - heading \"Community\" [level=2]\n    - link \"Blog\":\n      - /url: /blog\n    - link \"Ambassadors\":\n      - /url: /ambassadors\n    - link \"Events\":\n      - /url: /events\n    - heading \"Company\" [level=2]\n    - link \"About\":\n      - /url: /about-us\n    - link \"Support\":\n      - /url: /support\n    - link \"Working at Cypress\":\n      - /url: /careers\n    - link \"Customer stories\":\n      - /url: /customers\n    - link \"Press & media\":\n      - /url: /press-kit\n  - paragraph: Stay in the loop\n  - paragraph: Sign up to our newsletter for monthly updates on product releases, news, and articles direct to your inbox.\n  - link \"Subscribe to our newsletter\":\n    - /url: /subscribe\n    - text: Subscribe to our newsletter\n    - img\n  - navigation \"legal\":\n    - list:\n      - listitem:\n        - paragraph: © Cypress.io\n      - listitem:\n        - link \"Privacy Policy\":\n          - /url: /privacy-policy\n      - listitem:\n        - link \"Terms of Use\":\n          - /url: /terms-of-use\n      - listitem:\n        - link \"Security & Compliance\":\n          - /url: /security\n      - listitem:\n        - link \"Cookie Preferences\":\n          - /url: \"#\"\n  - navigation \"social\":\n    - list:\n      - listitem:\n        - link \"Discord\":\n          - /url: https://on.cypress.io/chat\n          - text: Discord\n          - img\n      - listitem:\n        - link \"YouTube\":\n          - /url: https://www.youtube.com/c/Cypressio\n          - text: YouTube\n          - img\n      - listitem:\n        - link \"GitHub\":\n          - /url: https://github.com/cypress-io/cypress\n          - text: GitHub\n          - img\n      - listitem:\n        - link \"Facebook\":\n          - /url: https://facebook.com/cypressio\n          - text: Facebook\n          - img\n      - listitem:\n        - link \"LinkedIn\":\n          - /url: https://www.linkedin.com/company/cypress.io\n          - text: LinkedIn\n          - img\n      - listitem:\n        - link \"X\":\n          - /url: https://x.com/Cypress_io\n          - text: X\n          - img\n      - listitem:\n        - link \"RSS Feed\":\n          - /url: /feed.xml\n          - text: RSS Feed\n          - img\n- button \"Open Support Assistant\":\n  - img\n  - img\n- iframe",
+      "child_urls": [
+        "https://www.cypress.io/privacy-policy/",
+        "https://www.cypress.io/app",
+        "https://www.cypress.io/cloud",
+        "https://www.cypress.io/ui-coverage?utm_medium=website&utm_source=cypress.io&utm_content=header",
+        "https://www.cypress.io/accessibility?utm_medium=website&utm_source=cypress.io&utm_content=header",
+        "https://www.cypress.io/blog",
+        "https://www.cypress.io/blog/category/Releases",
+        "https://www.cypress.io/blog/category/Community",
+        "https://www.cypress.io/blog/category/Education",
+        "https://www.cypress.io/blog/category/Customer%20Stories"
+      ],
+      "screenshot": "/Users/lalla/Documents/Lalla/TestPilot/.testpilot/79c0c341-d079-4fb4-9408-616bca7af02a/www-cypress-io/snapshots/explore_https_www.cypress.io_#create.png",
+      "error": null
+    }
+  ]
+}

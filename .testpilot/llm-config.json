@@ -1,0 +1,5 @@
+{
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-6",
+  "apiKey": "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"
+}
