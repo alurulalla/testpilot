@@ -1,6 +1,25 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
+/**
+ * Return the root directory used for all per-session workspaces (.testpilot/).
+ *
+ * - Local dev / self-hosted:  <cwd>/.testpilot/
+ * - Vercel (read-only cwd):   /tmp/.testpilot/
+ *
+ * All API routes should call this helper instead of hardcoding `process.cwd()`.
+ */
+export function getTestpilotRoot(): string {
+  return process.env.VERCEL === '1'
+    ? '/tmp/.testpilot'
+    : join(process.cwd(), '.testpilot');
+}
+
+/** Return the workspace directory for a specific session. */
+export function getSessionDir(sessionId: string): string {
+  return join(getTestpilotRoot(), sessionId);
+}
+
 function readEnvLocal(): Record<string, string> {
   const result: Record<string, string> = {};
   try {

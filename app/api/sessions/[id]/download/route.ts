@@ -19,6 +19,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import AdmZip from 'adm-zip';
 import { getSession } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
+import { getSessionDir } from '@/lib/config';
 
 /** Recursively add every file under `dir` into the zip under `zipPrefix`. */
 function addDirToZip(zip: AdmZip, dir: string, zipPrefix: string) {
@@ -80,7 +81,7 @@ export async function GET(
 
   const workspace = new Workspace({
     url: session.url,
-    rootDir: path.join(process.cwd(), '.testpilot', id),
+    rootDir: getSessionDir(id),
   });
 
   if (!existsSync(workspace.dir)) {

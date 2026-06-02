@@ -11,6 +11,7 @@ import { getSession, setScenarioResult, setTestResult, addLog } from '@/lib/sess
 import { Workspace } from '@/lib/pilot';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
 import type { TestResult } from '@/types/session';
+import { getSessionDir } from '@/lib/config';
 
 export async function POST(
   req: NextRequest,
@@ -40,7 +41,7 @@ export async function POST(
 
   const workspace = new Workspace({
     url: session.url,
-    rootDir: path.join(process.cwd(), '.testpilot', id),
+    rootDir: getSessionDir(id),
   });
 
   setScenarioResult(id, { ...activeScenario, status: 'running', videos: [], testResult: null });

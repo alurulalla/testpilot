@@ -9,6 +9,7 @@ import { getSession, addUserFlow } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { writeContextMd } from '@/lib/build-context-md';
 import type { UserFlow } from '@/types/session';
+import { getSessionDir } from '@/lib/config';
 
 export async function GET(
   _req: NextRequest,
@@ -51,7 +52,7 @@ export async function POST(
   addUserFlow(id, flow);
 
   // Rebuild CONTEXT.md so the generator picks up the new flow
-  const ws = new Workspace({ url: session.url, rootDir: path.join(process.cwd(), '.testpilot', id) });
+  const ws = new Workspace({ url: session.url, rootDir: getSessionDir(id) });
   writeContextMd(ws.dir, session.contextDoc, [...session.userFlows, flow]);
 
   return NextResponse.json({ ok: true, flow });

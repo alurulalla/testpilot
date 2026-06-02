@@ -20,6 +20,7 @@ import {
 } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import type { TestResult } from '@/types/session';
+import { getSessionDir } from '@/lib/config';
 
 export async function POST(
   req: NextRequest,
@@ -44,7 +45,7 @@ export async function POST(
 
   const workspace = new Workspace({
     url: session.url,
-    rootDir: path.join(process.cwd(), '.testpilot', id),
+    rootDir: getSessionDir(id),
   });
 
   setStatus(id, 'running');

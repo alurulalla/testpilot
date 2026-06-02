@@ -14,6 +14,7 @@ import { getLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import { fixTestsPerFile } from '@/lib/fix-tests-per-file';
 import type { TestResult } from '@/types/session';
+import { getSessionDir } from '@/lib/config';
 
 export async function POST(
   _req: NextRequest,
@@ -33,7 +34,7 @@ export async function POST(
 
   const workspace = new Workspace({
     url: session.url,
-    rootDir: path.join(process.cwd(), '.testpilot', id),
+    rootDir: getSessionDir(id),
   });
 
   setScenarioResult(id, { ...scenario, status: 'generating', error: null });

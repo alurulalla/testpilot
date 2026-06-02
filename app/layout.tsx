@@ -5,6 +5,14 @@ import LlmConfigPanel from '@/components/llm-config-panel';
 export const metadata: Metadata = {
   title: 'TestPilot — AI-powered E2E Testing',
   description: 'Automatically discover, generate, and run E2E tests for any web app.',
+  icons: {
+    icon: [
+      { url: '/icon.svg',     type: 'image/svg+xml' },   // modern browsers (SVG)
+      { url: '/icon-32.png',  type: 'image/png', sizes: '32x32' },
+      { url: '/icon-16.png',  type: 'image/png', sizes: '16x16' },
+    ],
+    apple: { url: '/icon-180.png', sizes: '180x180' },   // iOS home-screen icon
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

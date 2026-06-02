@@ -4,6 +4,7 @@ import path from 'path';
 import { getSession, setImportedProject, updateSession } from '@/lib/session-store';
 import { importPlaywrightProject } from '@/lib/import-playwright';
 import { Workspace } from '@/lib/pilot';
+import { getSessionDir } from '@/lib/config';
 
 /** Minimal fixtures.ts that makes existing Playwright specs runnable in our workspace. */
 function buildFixturesTs(targetUrl: string): string {
@@ -48,7 +49,7 @@ export async function POST(
   }
 
   // ── Write spec files into the TestPilot workspace ─────────────────────────
-  const rootDir   = path.join(process.cwd(), '.testpilot', id);
+  const rootDir   = getSessionDir(id);
   const workspace = new Workspace({ url: session.url, rootDir });
   workspace.init();
 

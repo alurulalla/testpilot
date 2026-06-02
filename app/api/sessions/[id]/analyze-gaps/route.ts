@@ -6,6 +6,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
+import { getSessionDir } from '@/lib/config';
 import {
   getSession, setStatus, setSiteMap, addLog, setCoverageAnalysis, updateSession,
 } from '@/lib/session-store';
@@ -41,7 +42,7 @@ export async function POST(
       const llmConfig  = getLlmConfig();
       const baseModel  = await createModelFromConfig(llmConfig);
       const chatModel  = withRateLimit(baseModel);
-      const rootDir    = path.join(process.cwd(), '.testpilot', id);
+      const rootDir    = getSessionDir(id);
       const workspace  = new Workspace({ url: session.url, rootDir });
       workspace.init();
       const maxPages   = session.maxPages ?? 10;

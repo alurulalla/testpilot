@@ -13,6 +13,7 @@ import { triageFailures } from '@/lib/triage-failures';
 import { SiteMap } from '@/types/session';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import { getUrlContext, saveUrlContext, contextToEnv, contextToPromptHint } from '@/lib/url-context-store';
+import { getSessionDir } from '@/lib/config';
 import { extractCredentialsFromDoc } from '@/lib/extract-credentials-from-doc';
 import { performPreLogin, patchPlaywrightConfigForAuth } from '@/lib/pre-login';
 import { runAuthenticatedSiteExplorer } from '@/lib/authenticated-site-explorer';
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     try {
       // rootDir is the parent; Workspace appends the URL slug to get workspace.dir
-      const rootDir = path.join(process.cwd(), '.testpilot', id);
+      const rootDir = getSessionDir(id);
       const workspace = new Workspace({ url: session.url, rootDir });
       workspace.init();
 

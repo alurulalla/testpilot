@@ -18,6 +18,7 @@ import { getLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import { findExistingTest, generateScenarioTest } from '@/lib/pilot/generate-scenario';
 import type { ScenarioResult } from '@/types/session';
+import { getSessionDir } from '@/lib/config';
 
 export async function POST(
   req: NextRequest,
@@ -35,7 +36,7 @@ export async function POST(
 
   const workspace = new Workspace({
     url: session.url,
-    rootDir: path.join(process.cwd(), '.testpilot', id),
+    rootDir: getSessionDir(id),
   });
 
   // ── Step 1: check existing tests ─────────────────────────────────────────

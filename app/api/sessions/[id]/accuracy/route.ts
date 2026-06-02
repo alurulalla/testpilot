@@ -17,6 +17,7 @@ import { Workspace } from '@/lib/pilot';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
 import { getLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
+import { getSessionDir } from '@/lib/config';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -187,7 +188,7 @@ export async function POST(
 
   const workspace = new Workspace({
     url: session.url,
-    rootDir: path.join(process.cwd(), '.testpilot', id),
+    rootDir: getSessionDir(id),
   });
 
   // ── 1. Read spec files ─────────────────────────────────────────────────────

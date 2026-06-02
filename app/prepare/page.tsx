@@ -8,6 +8,7 @@ import {
   Lock, ShieldCheck, PackageOpen, AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Logo } from '@/components/logo';
 import type { ContextField } from '@/lib/url-context-store';
 import type { DetectedFormGroup } from '@/lib/detect-form-fields';
 import type { Session, ImportedUseCase } from '@/types/session';
@@ -69,6 +70,30 @@ function timeAgo(ts: number): string {
   if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
   if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
   return `${Math.floor(secs / 86400)}d ago`;
+}
+
+/**
+ * Re-group a flat ContextField array into labelled sections.
+ *
+ * groupsToContextFields() stores labels as "{FormLabel} — {fieldLabel}" for
+ * multi-group forms, and plain "{fieldLabel}" for single-group forms.
+ * We split on " — " to recover the original form section name so the
+ * Context panel can render a header above each group of fields.
+ */
+function groupFieldsByFormLabel(
+  fields: ContextField[],
+): Array<{ groupLabel: string; groupFields: ContextField[] }> {
+  const map = new Map<string, ContextField[]>();
+  for (const f of fields) {
+    const sep = f.label.indexOf(' — ');
+    const key = sep > 0 ? f.label.slice(0, sep).trim() : '';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(f);
+  }
+  return Array.from(map.entries()).map(([groupLabel, groupFields]) => ({
+    groupLabel,
+    groupFields,
+  }));
 }
 
 // ── FieldInput ────────────────────────────────────────────────────────────────
@@ -359,7 +384,7 @@ function PrepareContent() {
           <ArrowLeft className="h-4 w-4" />
         </button>
 
-        <Zap className="h-4 w-4 text-violet-400 shrink-0" />
+        <Logo height={26} className="shrink-0" />
 
         {/* URL display / editor */}
         <div className="flex-1 min-w-0">
@@ -1014,42 +1039,71 @@ function PrepareContent() {
 
                 {/* Saved context summary (when auth fields shown inline above, just show summary here) */}
                 {hasContext && hasAuthForm ? (
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <p className="text-xs text-zinc-500">
                       Credentials for <span className="text-zinc-300 break-all">{url}</span>
                     </p>
-                    {fields.filter(f => f.value).map(f => (
-                      <div key={f.key} className="flex items-center gap-2 text-xs">
-                        <span className="text-zinc-500 w-24 truncate shrink-0">{displayLabel(f.label)}</span>
-                        <span className="text-zinc-400 font-mono">
-                          {f.sensitive ? '••••••••' : f.value.slice(0, 20)}
-                        </span>
-                      </div>
-                    ))}
-                    {!hasFilledFields && (
+                    {hasFilledFields ? (
+                      groupFieldsByFormLabel(fields.filter(f => f.value)).map(({ groupLabel, groupFields }) => (
+                        <div key={groupLabel || '__all__'} className="space-y-1">
+                          {groupLabel && (
+                            <div className="flex items-center gap-2 pt-0.5">
+                              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                                {groupLabel}
+                              </span>
+                              <div className="flex-1 h-px bg-zinc-800" />
+                            </div>
+                          )}
+                          {groupFields.map(f => (
+                            <div key={f.key} className="flex items-center gap-2 text-xs">
+                              <span className="text-zinc-500 w-24 truncate shrink-0">{displayLabel(f.label)}</span>
+                              <span className="text-zinc-400 font-mono">
+                                {f.sensitive ? '••••••••' : f.value.slice(0, 20)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ))
+                    ) : (
                       <p className="text-xs text-zinc-600">No values entered yet.</p>
                     )}
                   </div>
                 ) : hasContext && !hasAuthForm ? (
-                  /* Non-auth stored context — show editable fields */
+                  /* Non-auth stored context — show editable fields grouped by form */
                   <div className="space-y-3">
                     <p className="text-xs text-zinc-500">
                       Context for <span className="text-zinc-300">{url}</span>
                     </p>
-                    <div className="space-y-2">
-                      {fields.map((f, i) => (
-                        <FieldInput
-                          key={f.key}
-                          field={f}
-                          displayLabel={displayLabel(f.label)}
-                          showValue={showValues[f.key] ?? false}
-                          onToggleShow={() => setShowValues(v => ({ ...v, [f.key]: !v[f.key] }))}
-                          onChange={val => {
-                            const updated = [...fields];
-                            updated[i] = { ...f, value: val };
-                            setFields(updated);
-                          }}
-                        />
+                    <div className="space-y-4">
+                      {groupFieldsByFormLabel(fields).map(({ groupLabel, groupFields }) => (
+                        <div key={groupLabel || '__all__'} className="space-y-2">
+                          {/* Section header — only shown when there are multiple form groups */}
+                          {groupLabel && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                                {groupLabel}
+                              </span>
+                              <div className="flex-1 h-px bg-zinc-700/60" />
+                            </div>
+                          )}
+                          {groupFields.map(f => {
+                            const idx = fields.findIndex(x => x.key === f.key);
+                            return (
+                              <FieldInput
+                                key={f.key}
+                                field={f}
+                                displayLabel={displayLabel(f.label)}
+                                showValue={showValues[f.key] ?? false}
+                                onToggleShow={() => setShowValues(v => ({ ...v, [f.key]: !v[f.key] }))}
+                                onChange={val => {
+                                  const updated = [...fields];
+                                  updated[idx] = { ...f, value: val };
+                                  setFields(updated);
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
                       ))}
                     </div>
                     <div className="pt-1 border-t border-zinc-800 flex items-center justify-between">

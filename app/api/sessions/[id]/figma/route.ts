@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, setStatus, setFigmaResult, setError, addLog, clearStopping } from '@/lib/session-store';
 import { runFigmaComparison, isFigmaConfigured } from '@/lib/figma-client';
-import { getFigmaToken } from '@/lib/config';
+import { getFigmaToken, getSessionDir } from '@/lib/config';
 import { Workspace, createModelFromConfig } from '@/lib/pilot';
 import { getLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
@@ -34,7 +34,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     try {
       const workspace = new Workspace({
         url: session.url,
-        rootDir: path.join(process.cwd(), '.testpilot', id),
+        rootDir: getSessionDir(id),
       });
 
       // Build LLM model for DOM comparison

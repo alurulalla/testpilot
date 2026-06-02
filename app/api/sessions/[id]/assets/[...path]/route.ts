@@ -4,6 +4,7 @@ import { createReadStream, existsSync, statSync } from 'fs';
 import path from 'path';
 import { Workspace } from '@/lib/pilot';
 import { Readable } from 'stream';
+import { getSessionDir } from '@/lib/config';
 
 // Serves static files (videos, screenshots, etc.) from the session's workspace directory.
 // Access pattern: /api/sessions/[id]/assets/test-results/foo/video.webm
@@ -18,7 +19,7 @@ export async function GET(
 
   const workspace = new Workspace({
     url: session.url,
-    rootDir: path.join(process.cwd(), '.testpilot', id),
+    rootDir: getSessionDir(id),
   });
 
   // Resolve the requested path inside the workspace — prevent path traversal

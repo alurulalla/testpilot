@@ -35,6 +35,7 @@ export interface DetectedFormGroup {
 
 const SKIP_TYPES = new Set([
   'hidden', 'submit', 'button', 'reset', 'image', 'file', 'color', 'range', 'checkbox', 'radio',
+  'search',   // navigation / site-search inputs — not credential fields
 ]);
 
 const SENSITIVE_PATTERNS = /password|secret|token|key|pin|cvv|ssn/i;
@@ -178,19 +179,88 @@ async function extractFieldsFromPage(page: Page): Promise<DetectedField[]> {
   return fields.filter(f => f.key.length > 0);
 }
 
+// ── Auth-field heuristics ─────────────────────────────────────────────────────
+
+/** Returns true when the field looks like a username / email login field. */
+function isUserField(f: DetectedField): boolean {
+  return (
+    f.type === 'email' ||
+    /^(user(name)?|email|login|account|id)$/i.test(f.key) ||
+    /user(name)?|e.?mail|login|account/i.test(f.key + ' ' + f.label)
+  );
+}
+
+/** Returns true when the field looks like a password field. */
+function isPasswordField(f: DetectedField): boolean {
+  return (
+    f.type === 'password' ||
+    /password|passwd|pwd/i.test(`${f.type} ${f.key} ${f.label}`)
+  );
+}
+
+/**
+ * Returns true when a field is clearly a site-search / navigation input
+ * (e.g. Apple's global "Search apple.com" bar) and NOT a real credential field.
+ *
+ * Explicit exclusions: password, email and other sensitive fields are NEVER
+ * stripped even if their label happens to contain the word "search".
+ */
+function isSearchLikeField(f: DetectedField): boolean {
+  if (f.sensitive || f.type === 'email' || f.type === 'password') return false;
+  return /\bsearch\b/i.test(`${f.key} ${f.label} ${f.placeholder}`);
+}
+
+/**
+ * A form is "search-only" — and should be discarded — when EVERY field is a
+ * search-like input with no authentication intent.
+ */
+function isSearchOnlyForm(fields: DetectedField[]): boolean {
+  if (fields.length === 0) return false;
+  return fields.every(f => isSearchLikeField(f) && !isPasswordField(f) && !isUserField(f));
+}
+
+/**
+ * Returns true when the detected fields look like a guest order-lookup form
+ * rather than a real account-login form.
+ *
+ * Heuristic: form has an "order number" style field + an email (no password).
+ * This avoids mislabelling Apple's /shop/sign_in guest-lookup section as Login.
+ */
+function isOrderLookupForm(fields: DetectedField[]): boolean {
+  const hasOrderField = fields.some(f =>
+    /order.?(number|num|no|id)|order_id|orderno/i.test(`${f.key} ${f.label} ${f.placeholder}`),
+  );
+  const hasPassword = fields.some(isPasswordField);
+  return hasOrderField && !hasPassword;
+}
+
 /**
  * Infer a human-readable label for the form.
  *
- * Tries (in order):
- *  1. URL path keywords (login, register, contact, …)
- *  2. Page title keywords
- *  3. Field-content heuristic: password + user/email field → Login form
- *     even when the URL is something generic like /index.htm
+ * Important: for "Login", the URL/title keyword match is treated as a
+ * *hint*, not a verdict.  We still require at least one password OR
+ * username/email field to confirm it is genuinely an auth form — this
+ * prevents labelling a page as "Login" when it loaded a sign-in URL but
+ * only contains a search bar (e.g. apple.com redirecting to a search page).
  */
 function inferFormLabel(pageTitle: string, pageUrl: string, fields?: DetectedField[]): string {
   const combined = (pageTitle + ' ' + pageUrl).toLowerCase();
+
+  const hasPassword = fields?.some(isPasswordField) ?? false;
+  const hasUserField = fields?.some(isUserField) ?? false;
+  const looksLikeLogin = hasPassword || hasUserField;
+
+  // Register / sign-up — also needs at least one real input beyond a search bar
   if (/register|signup|sign.up|create.account|join/i.test(combined)) return 'Register';
-  if (/login|signin|sign.in|log.in/i.test(combined)) return 'Login';
+
+  // Login — require actual auth-like fields (not just a search bar on /sign-in)
+  if (/login|signin|sign.in|log.in/i.test(combined)) {
+    if (looksLikeLogin) return 'Login';
+    // URL looks like a login page but no auth fields found (e.g. redirected
+    // to a search page, or form is in an iframe on a different origin) → skip
+    return '__DISCARD__';
+  }
+
   if (/contact|feedback|enquir/i.test(combined)) return 'Contact';
   if (/forgot|reset.password/i.test(combined)) return 'Password Reset';
   if (/profile/i.test(combined)) return 'Profile';
@@ -198,18 +268,9 @@ function inferFormLabel(pageTitle: string, pageUrl: string, fields?: DetectedFie
   if (/subscribe/i.test(combined)) return 'Subscribe';
   if (/apply/i.test(combined)) return 'Application';
 
-  // Field-content heuristic: a form with a password field + a username/email field
-  // is almost certainly a login form, regardless of URL or title.
-  if (fields && fields.length > 0) {
-    const hasPassword = fields.some(f =>
-      /password|passwd|pwd/i.test(`${f.type} ${f.key} ${f.label}`),
-    );
-    const hasUserField = fields.some(f =>
-      /user|email|login/i.test(`${f.key} ${f.label}`),
-    );
-    if (hasPassword && hasUserField) return 'Login';
-    if (hasPassword) return 'Login'; // password alone → login
-  }
+  // Field-content heuristic: password + username/email → Login (regardless of URL)
+  if (hasPassword && hasUserField) return 'Login';
+  if (hasPassword) return 'Login';
 
   return pageTitle || 'Form';
 }
@@ -295,16 +356,23 @@ export async function detectAllFormFields(
         // would redirect to /inventory.html if we waited a flat 400 ms after hydration).
         await page.waitForSelector('input, textarea, select', { timeout: 1500 }).catch(() => {});
         const pageTitle = await page.title();
-        const fields = await extractFieldsFromPage(page);
+        // Strip site-search / navigation inputs (e.g. Apple's global "Search apple.com"
+        // bar) before grouping, so they don't pollute credential-form field lists.
+        const rawFields = await extractFieldsFromPage(page);
+        const fields = rawFields.filter(f => !isSearchLikeField(f));
 
         if (fields.length > 0) {
-          groups.push({
-            pageUrl: page.url(),
-            pageTitle,
-            formLabel: inferFormLabel(pageTitle, page.url(), fields),
-            fields,
-          });
-          log(`  Found ${fields.length} field(s) — "${inferFormLabel(pageTitle, page.url(), fields)}"`);
+          const formLabel = inferFormLabel(pageTitle, page.url(), fields);
+
+          // Drop: search-only forms (nav search bars), guest order-lookup forms
+          // (order-number + email, no password), OR pages that look like a login
+          // URL but had no real auth fields (redirected, iframe'd, etc.)
+          if (formLabel === '__DISCARD__' || isSearchOnlyForm(fields) || isOrderLookupForm(fields)) {
+            log(`  Skipping — no real credential fields (search-only, order-lookup, or auth redirect)`);
+          } else {
+            groups.push({ pageUrl: page.url(), pageTitle, formLabel, fields });
+            log(`  Found ${fields.length} field(s) — "${formLabel}"`);
+          }
         }
 
         // Only follow links from the entry page to avoid infinite crawling

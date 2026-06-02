@@ -11,6 +11,7 @@ import {
 import { Workspace, createModelFromConfig } from '@/lib/pilot';
 import { getLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
+import { getSessionDir } from '@/lib/config';
 
 function buildGapTestPrompt(
   baseUrl: string,
@@ -93,7 +94,7 @@ export async function POST(
       const llmConfig  = getLlmConfig();
       const baseModel  = await createModelFromConfig(llmConfig);
       const chatModel  = withRateLimit(baseModel);
-      const rootDir    = path.join(process.cwd(), '.testpilot', id);
+      const rootDir    = getSessionDir(id);
       const workspace  = new Workspace({ url: session.url, rootDir });
 
       // Read the site map pages for locator context

@@ -6,6 +6,7 @@ import path from 'path';
 import { getSession, removeUserFlow } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { writeContextMd } from '@/lib/build-context-md';
+import { getSessionDir } from '@/lib/config';
 
 export async function DELETE(
   _req: NextRequest,
@@ -19,7 +20,7 @@ export async function DELETE(
 
   // Rebuild CONTEXT.md without the removed flow
   const remaining = session.userFlows.filter(f => f.id !== flowId);
-  const ws = new Workspace({ url: session.url, rootDir: path.join(process.cwd(), '.testpilot', id) });
+  const ws = new Workspace({ url: session.url, rootDir: getSessionDir(id) });
   writeContextMd(ws.dir, session.contextDoc, remaining);
 
   return NextResponse.json({ ok: true });

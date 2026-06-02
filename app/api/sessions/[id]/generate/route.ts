@@ -5,6 +5,7 @@ import { createModelFromConfig } from '@/lib/pilot/model-factory';
 import { getLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import path from 'path';
+import { getSessionDir } from '@/lib/config';
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -25,7 +26,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       const chatModel = withRateLimit(baseModel);
       const workspace = new Workspace({
         url: session.url,
-        rootDir: path.join(process.cwd(), '.testpilot', id),
+        rootDir: getSessionDir(id),
       });
       workspace.init();
       await workspace.installDeps();

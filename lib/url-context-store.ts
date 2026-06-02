@@ -7,6 +7,7 @@
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import path from 'path';
+import { getTestpilotRoot } from './config';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,7 +35,7 @@ export interface UrlContext {
 
 // ── Storage ──────────────────────────────────────────────────────────────────
 
-const STORE_PATH = path.join(process.cwd(), '.testpilot', 'contexts.json');
+const STORE_PATH = path.join(getTestpilotRoot(), 'contexts.json');
 
 function readStore(): Record<string, UrlContext> {
   if (!existsSync(STORE_PATH)) return {};

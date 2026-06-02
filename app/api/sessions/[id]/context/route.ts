@@ -13,9 +13,10 @@ import { getSession, setContextDoc, addUserFlow } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { writeContextMd } from '@/lib/build-context-md';
 import type { UserFlow } from '@/types/session';
+import { getSessionDir } from '@/lib/config';
 
 function workspace(session: { url: string }, id: string) {
-  return new Workspace({ url: session.url, rootDir: path.join(process.cwd(), '.testpilot', id) });
+  return new Workspace({ url: session.url, rootDir: getSessionDir(id) });
 }
 
 /**

@@ -11,6 +11,7 @@ import { fixTestsPerFile } from '@/lib/fix-tests-per-file';
 import { triageFailures } from '@/lib/triage-failures';
 import { runTestsAsync } from '@/lib/run-tests-async';
 import path from 'path';
+import { getSessionDir } from '@/lib/config';
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -32,7 +33,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       const chatModel = withRateLimit(baseModel);
       const workspace = new Workspace({
         url: session.url,
-        rootDir: path.join(process.cwd(), '.testpilot', id),
+        rootDir: getSessionDir(id),
       });
 
       // Run triage if not already done for this test result

@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { Zap, Globe, Code2, Play, Wrench, ArrowRight } from "lucide-react";
+import { Globe, Code2, Play, Wrench, ArrowRight } from "lucide-react";
 import { listSessions } from "@/lib/session-store";
 import { HomeInput } from "@/components/home-input";
+import { Logo } from "@/components/logo";
 
 export const dynamic = "force-dynamic";
 
@@ -42,15 +43,14 @@ export default function Home() {
   return (
     <main className="flex-1 flex flex-col">
       {/* Header */}
-      <header className="border-b border-zinc-800 px-6 py-4 flex items-center gap-3">
-        <Zap className="h-5 w-5 text-violet-400" />
-        <span className="font-semibold text-sm">TestPilot</span>
+      <header className="border-b border-zinc-800 px-6 py-3 flex items-center">
+        <Logo height={32} />
       </header>
 
       {/* Hero */}
       <section className="flex-1 flex flex-col items-center justify-center px-6 py-20 text-center">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-300 text-xs mb-6">
-          <Zap className="h-3 w-3" /> AI-powered E2E Testing
+          <Logo height={14} iconOnly /> AI-powered E2E Testing
         </div>
         <h1 className="text-4xl sm:text-5xl font-bold text-zinc-50 mb-4 tracking-tight">
           Give it a URL.

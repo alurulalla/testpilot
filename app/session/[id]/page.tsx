@@ -44,6 +44,7 @@ import { PhaseCard } from "@/components/phase-card";
 import { ExecutionLog } from "@/components/execution-log";
 import { SiteMapViewer } from "@/components/site-map-viewer";
 import { StatsBar } from "@/components/stats-bar";
+import { Logo } from "@/components/logo";
 
 type PhaseState = "pending" | "running" | "done" | "failed";
 
@@ -1409,7 +1410,7 @@ export default function SessionPage() {
         >
           <ArrowLeft className="h-4 w-4" />
         </Link>
-        <Zap className="h-4 w-4 text-violet-400 shrink-0" />
+        <Logo height={26} className="shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-zinc-100 truncate">
             {session.url}

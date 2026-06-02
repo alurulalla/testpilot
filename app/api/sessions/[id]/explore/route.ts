@@ -3,6 +3,7 @@ import { getSession, setStatus, setSiteMap, setError, addLog } from '@/lib/sessi
 import { runSiteExplorer, Workspace } from '@/lib/pilot';
 import { SiteMap } from '@/types/session';
 import path from 'path';
+import { getSessionDir } from '@/lib/config';
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -17,7 +18,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   (async () => {
     try {
-      const workspace = new Workspace({ url: session.url, rootDir: path.join(process.cwd(), '.testpilot', id) });
+      const workspace = new Workspace({ url: session.url, rootDir: getSessionDir(id) });
       workspace.init();
       const siteMap = await runSiteExplorer({
         url: session.url,
