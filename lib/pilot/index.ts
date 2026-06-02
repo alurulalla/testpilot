@@ -6,7 +6,7 @@
 
  */
 
-export type { ChatMessage, ChatModel, TestStats, PageInfo, SiteMap } from './types';
+export type { ChatMessage, ChatModel, InvokeOptions, TestStats, PageInfo, SiteMap } from './types';
 export type { WorkspaceConfig } from './workspace';
 export { Workspace } from './workspace';
 export type { CreateAnthropicModelOptions } from './anthropic-model';

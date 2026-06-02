@@ -1,4 +1,4 @@
-import { Session, LogEntry, SessionStatus, SiteMap, TestResult, FixResult, FigmaResult, ScenarioResult } from '@/types/session';
+import { Session, LogEntry, SessionStatus, SiteMap, TestResult, FixResult, FigmaResult, ScenarioResult, UserFlow, TriageResult, ImportedProject, CoverageAnalysis } from '@/types/session';
 import { randomUUID } from 'crypto';
 import type { ChildProcess } from 'child_process';
 
@@ -50,6 +50,12 @@ export function createSession(url: string, maxPages = 10, headedMode = false, fi
     maxPages,
     headedMode,
     scenarioResult: null,
+    triageResult: null,
+    contextDoc: null,
+    contextDocName: null,
+    userFlows: [],
+    importedProject: null,
+    coverageAnalysis: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -107,8 +113,36 @@ export function setFixResult(id: string, fixResult: FixResult): void {
   updateSession(id, { fixResult });
 }
 
+export function setTriageResult(id: string, triageResult: TriageResult | null): void {
+  updateSession(id, { triageResult });
+}
+
 export function setError(id: string, error: string): void {
   updateSession(id, { error, status: 'failed' });
+}
+
+export function setContextDoc(id: string, content: string | null, name: string | null): void {
+  updateSession(id, { contextDoc: content, contextDocName: name });
+}
+
+export function addUserFlow(id: string, flow: UserFlow): void {
+  const session = sessions.get(id);
+  if (!session) return;
+  updateSession(id, { userFlows: [...session.userFlows, flow] });
+}
+
+export function setImportedProject(id: string, importedProject: ImportedProject | null): void {
+  updateSession(id, { importedProject });
+}
+
+export function setCoverageAnalysis(id: string, coverageAnalysis: CoverageAnalysis | null): void {
+  updateSession(id, { coverageAnalysis });
+}
+
+export function removeUserFlow(id: string, flowId: string): void {
+  const session = sessions.get(id);
+  if (!session) return;
+  updateSession(id, { userFlows: session.userFlows.filter(f => f.id !== flowId) });
 }
 
 export function addLog(id: string, msg: string, level: LogEntry['level'] = 'info'): void {

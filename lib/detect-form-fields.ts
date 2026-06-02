@@ -84,27 +84,79 @@ async function extractFieldsFromPage(page: Page): Promise<DetectedField[]> {
       if (!key || seen.has(key)) continue;
       seen.add(key);
 
-      // Label resolution: for → closest label → aria-label → aria-labelledby → placeholder → name
+      // Label resolution (priority order):
+      // 1. <label for="id"> or <label for="name">
+      // 2. Ancestor <label> element
+      // 3. aria-label / aria-labelledby
+      // 4. Nearby table-cell text (for traditional JSP/table-layout apps)
+      // 5. Placeholder
+      // 6. Prettified name/id attribute (last resort)
       let label = '';
-      if (el.id) {
+
+      // 1a. label[for="id"]
+      if (!label && el.id) {
         const lEl = document.querySelector(`label[for="${el.id}"]`);
         if (lEl) label = lEl.textContent?.trim() ?? '';
       }
+      // 1b. label[for="name"] — some legacy apps use name instead of id in for=
+      if (!label && (el as HTMLInputElement).name) {
+        const lEl = document.querySelector(`label[for="${(el as HTMLInputElement).name}"]`);
+        if (lEl) label = lEl.textContent?.trim() ?? '';
+      }
+      // 2. Ancestor <label>
       if (!label) {
         const closestLabel = el.closest('label');
         if (closestLabel) {
-          // Clone to remove nested input text
           const clone = closestLabel.cloneNode(true) as HTMLElement;
           clone.querySelectorAll('input, select, textarea').forEach(n => n.remove());
           label = clone.textContent?.trim() ?? '';
         }
       }
+      // 3. aria-label / aria-labelledby
       if (!label) label = el.getAttribute('aria-label') ?? '';
       if (!label) {
         const lbId = el.getAttribute('aria-labelledby');
         if (lbId) label = document.getElementById(lbId)?.textContent?.trim() ?? '';
       }
-      if (!label) label = (el instanceof HTMLInputElement ? el.placeholder : '') || rawName;
+      // 4. Nearby text in table-layout forms (th/td sibling, or preceding bold/strong)
+      if (!label) {
+        // Previous table cell in the same row
+        const cell = el.closest('td, th');
+        if (cell) {
+          const prevCell = cell.previousElementSibling;
+          if (prevCell) label = prevCell.textContent?.trim() ?? '';
+        }
+      }
+      if (!label) {
+        // Preceding sibling that looks like a label (b, strong, span, p, div)
+        let sib = el.previousElementSibling;
+        while (sib && !label) {
+          const tag = sib.tagName.toLowerCase();
+          if (['input','select','textarea','button'].includes(tag)) break; // stop at another field
+          const t = sib.textContent?.trim() ?? '';
+          if (t.length > 0 && t.length < 60) label = t;
+          sib = sib.previousElementSibling;
+        }
+      }
+      if (!label) {
+        // Parent's immediately preceding sibling (common in div-based forms)
+        const parentSib = el.parentElement?.previousElementSibling;
+        if (parentSib) {
+          const t = parentSib.textContent?.trim() ?? '';
+          if (t.length > 0 && t.length < 60) label = t;
+        }
+      }
+      // 5. Placeholder
+      if (!label) label = (el instanceof HTMLInputElement ? el.placeholder : '') || '';
+      // 6. Prettify the raw name/id as absolute last resort
+      if (!label) {
+        label = rawName
+          .replace(/([a-z])([A-Z])/g, '$1 $2') // camelCase → words
+          .replace(/[._-]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .replace(/^\w/, (c: string) => c.toUpperCase());
+      }
 
       const sensitive = /password|secret|token|key|pin|cvv|ssn/i.test(
         rawType + ' ' + rawName + ' ' + label,
@@ -126,17 +178,39 @@ async function extractFieldsFromPage(page: Page): Promise<DetectedField[]> {
   return fields.filter(f => f.key.length > 0);
 }
 
-/** Infer a human-readable label for the form based on page title and URL */
-function inferFormLabel(pageTitle: string, pageUrl: string): string {
+/**
+ * Infer a human-readable label for the form.
+ *
+ * Tries (in order):
+ *  1. URL path keywords (login, register, contact, …)
+ *  2. Page title keywords
+ *  3. Field-content heuristic: password + user/email field → Login form
+ *     even when the URL is something generic like /index.htm
+ */
+function inferFormLabel(pageTitle: string, pageUrl: string, fields?: DetectedField[]): string {
   const combined = (pageTitle + ' ' + pageUrl).toLowerCase();
   if (/register|signup|sign.up|create.account|join/i.test(combined)) return 'Register';
   if (/login|signin|sign.in|log.in/i.test(combined)) return 'Login';
   if (/contact|feedback|enquir/i.test(combined)) return 'Contact';
   if (/forgot|reset.password/i.test(combined)) return 'Password Reset';
-  if (/profile|account/i.test(combined)) return 'Profile';
+  if (/profile/i.test(combined)) return 'Profile';
   if (/checkout|order/i.test(combined)) return 'Checkout';
   if (/subscribe/i.test(combined)) return 'Subscribe';
   if (/apply/i.test(combined)) return 'Application';
+
+  // Field-content heuristic: a form with a password field + a username/email field
+  // is almost certainly a login form, regardless of URL or title.
+  if (fields && fields.length > 0) {
+    const hasPassword = fields.some(f =>
+      /password|passwd|pwd/i.test(`${f.type} ${f.key} ${f.label}`),
+    );
+    const hasUserField = fields.some(f =>
+      /user|email|login/i.test(`${f.key} ${f.label}`),
+    );
+    if (hasPassword && hasUserField) return 'Login';
+    if (hasPassword) return 'Login'; // password alone → login
+  }
+
   return pageTitle || 'Form';
 }
 
@@ -227,10 +301,10 @@ export async function detectAllFormFields(
           groups.push({
             pageUrl: page.url(),
             pageTitle,
-            formLabel: inferFormLabel(pageTitle, page.url()),
+            formLabel: inferFormLabel(pageTitle, page.url(), fields),
             fields,
           });
-          log(`  Found ${fields.length} field(s) — "${inferFormLabel(pageTitle, page.url())}"`);
+          log(`  Found ${fields.length} field(s) — "${inferFormLabel(pageTitle, page.url(), fields)}"`);
         }
 
         // Only follow links from the entry page to avoid infinite crawling
@@ -254,7 +328,53 @@ export async function detectAllFormFields(
     await browser.close();
   }
 
-  return groups;
+  return deduplicateGroups(groups);
+}
+
+/**
+ * Deduplicate detected form groups.
+ *
+ * Traditional web apps (e.g. ParaBank, Java EE) include a login sidebar on
+ * every page, so "secondary" pages (Forgot Password, Register, Contact…) end
+ * up contributing duplicate Login fields mixed with their own form fields.
+ *
+ * Strategy:
+ *  • For groups sharing the same formLabel, keep the one with the fewest
+ *    fields — that's the "pure" form (e.g. the login page itself has only
+ *    username + password, while other pages add personal-info fields from the
+ *    sidebar contamination).
+ *  • If field counts are equal, prefer the group whose page URL most closely
+ *    matches the label (e.g. /login.htm beats /contact.htm for "Login").
+ */
+function deduplicateGroups(groups: DetectedFormGroup[]): DetectedFormGroup[] {
+  const best = new Map<string, DetectedFormGroup>();
+
+  for (const g of groups) {
+    const existing = best.get(g.formLabel);
+    if (!existing) {
+      best.set(g.formLabel, g);
+      continue;
+    }
+    // Prefer fewer fields (purer form)
+    if (g.fields.length < existing.fields.length) {
+      best.set(g.formLabel, g);
+    } else if (g.fields.length === existing.fields.length) {
+      // Tie-break: prefer the URL that matches the label keyword
+      const labelKw = g.formLabel.toLowerCase().replace(/\s+/g, '');
+      if (g.pageUrl.toLowerCase().includes(labelKw) && !existing.pageUrl.toLowerCase().includes(labelKw)) {
+        best.set(g.formLabel, g);
+      }
+    }
+  }
+
+  // Return in original discovery order (stable)
+  const seen = new Set<string>();
+  return groups.filter(g => {
+    if (seen.has(g.formLabel)) return false;
+    if (best.get(g.formLabel) !== g) return false;
+    seen.add(g.formLabel);
+    return true;
+  });
 }
 
 // ── Conversion helpers ────────────────────────────────────────────────────────

@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, setStatus, setFixResult, setTestResult, setError, addLog, clearStopping } from '@/lib/session-store';
+import {
+  getSession, setStatus, setFixResult, setTestResult, setTriageResult,
+  setError, addLog, clearStopping,
+} from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
 import { getLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import { fixTestsPerFile } from '@/lib/fix-tests-per-file';
+import { triageFailures } from '@/lib/triage-failures';
 import { runTestsAsync } from '@/lib/run-tests-async';
 import path from 'path';
 
@@ -18,7 +22,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   }
 
   setStatus(id, 'fixing');
-  addLog(id, 'Running self-healing autofix…', 'info');
+  addLog(id, 'Running self-healing…', 'info');
 
   (async () => {
     clearStopping(id);
@@ -31,22 +35,71 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
         rootDir: path.join(process.cwd(), '.testpilot', id),
       });
 
-      const result = await fixTestsPerFile(workspace, chatModel, (line) => addLog(id, line, 'info'), id);
-      setFixResult(id, result);
+      // Run triage if not already done for this test result
+      let triage = session.triageResult;
+      if (!triage && (session.testResult?.stats.failed ?? 0) > 0) {
+        addLog(id, 'Analysing failures before healing…', 'info');
+        triage = await triageFailures(
+          workspace,
+          session.contextDoc,
+          session.url,
+          chatModel,
+          (line) => addLog(id, line, 'info'),
+        ).catch(() => null);
+        if (triage) setTriageResult(id, triage);
+      }
+
+      // Summarise what we're going to do (and what we're skipping)
+      if (triage) {
+        if (triage.appBugCount > 0) {
+          const appBugNames = triage.analyses
+            .filter(a => a.verdict === 'app_bug')
+            .map(a => `  • ${a.testName}: ${a.reasoning}`)
+            .join('\n');
+          addLog(
+            id,
+            `⚠ Skipping ${triage.appBugCount} app bug(s) — these are real application gaps:\n${appBugNames}`,
+            'error',
+          );
+        }
+        if (!triage.selfHealRecommended) {
+          addLog(id, 'All failures are application bugs. Nothing to auto-heal.', 'info');
+          setFixResult(id, { fixed: false, filesChanged: 0 });
+          setStatus(id, 'idle');
+          return;
+        }
+      }
+
+      const result = await fixTestsPerFile(
+        workspace,
+        chatModel,
+        (line) => addLog(id, line, 'info'),
+        id,
+        triage?.analyses,
+      );
+
+      setFixResult(id, { fixed: result.fixed, filesChanged: result.filesChanged });
       addLog(
         id,
-        `Autofix complete: ${result.fixed ? `${result.filesChanged} file(s) fixed` : 'no fixes applied'}.`,
+        result.fixed ? `Fixed ${result.filesChanged} file(s).` : 'No fixes applied.',
         result.fixed ? 'success' : 'info',
       );
 
-      // Always re-run tests after fix so the results reflect the current state
+      // Re-run to verify fixes
       setStatus(id, 'running');
+      setTriageResult(id, null);
       addLog(id, 'Re-running tests to verify fixes…', 'info');
-      const testResult = await runTestsAsync(workspace, (line) => addLog(id, line, 'info'), id, getSession(id)?.headedMode ?? false);
+      const testResult = await runTestsAsync(
+        workspace,
+        (line) => addLog(id, line, 'info'),
+        id,
+        getSession(id)?.headedMode ?? false,
+      );
       setTestResult(id, testResult);
+
       const { passed, failed, total, errors } = testResult.stats;
       if (errors > 0 && total === 0) {
-        addLog(id, `Verification run failed — test files may have syntax errors.`, 'error');
+        addLog(id, 'Verification run failed — test files may have syntax errors.', 'error');
       } else {
         addLog(
           id,
@@ -54,11 +107,32 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
           failed === 0 ? 'success' : 'error',
         );
       }
+
+      // Re-triage remaining failures after the fix run
+      if (failed > 0) {
+        const reTriage = await triageFailures(
+          workspace,
+          getSession(id)?.contextDoc ?? null,
+          getSession(id)?.url ?? session.url,
+          chatModel,
+          (line) => addLog(id, line, 'info'),
+        ).catch(() => null);
+        if (reTriage) setTriageResult(id, reTriage);
+      }
+
       setStatus(id, 'idle');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(id, msg);
-      addLog(id, `Autofix failed: ${msg}`, 'error');
+      const isAuth = msg.includes('401') || msg.includes('authentication_error') ||
+        (msg.toLowerCase().includes('invalid') && msg.toLowerCase().includes('key'));
+      addLog(
+        id,
+        isAuth
+          ? '❌ API key rejected (401) — open ⚙ Settings and enter a valid key, then try again.'
+          : `Autofix failed: ${msg}`,
+        'error',
+      );
     } finally {
       clearStopping(id);
     }

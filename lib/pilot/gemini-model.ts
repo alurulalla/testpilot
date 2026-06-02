@@ -2,7 +2,7 @@
  * Google Gemini model via @google/genai SDK.
  */
 import { GoogleGenAI } from '@google/genai';
-import type { ChatMessage, ChatModel } from './types';
+import type { ChatMessage, ChatModel, InvokeOptions } from './types';
 
 export interface CreateGeminiModelOptions {
   apiKey: string;
@@ -19,7 +19,7 @@ export async function createGeminiModel(
     modelName,
     provider: 'gemini',
 
-    async invoke(messages: ChatMessage[]): Promise<string> {
+    async invoke(messages: ChatMessage[], invokeOptions?: InvokeOptions): Promise<string> {
       const systemMessages    = messages.filter(m => m.role === 'system');
       const nonSystemMessages = messages.filter(m => m.role !== 'system');
 
@@ -36,6 +36,7 @@ export async function createGeminiModel(
             ? { systemInstruction: systemMessages.map(m => m.content).join('\n\n') }
             : {}),
           temperature: 0.2,
+          ...(invokeOptions?.maxTokens ? { maxOutputTokens: invokeOptions.maxTokens } : {}),
         },
       });
 

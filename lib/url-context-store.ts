@@ -98,12 +98,35 @@ export function contextToEnv(ctx: UrlContext): Record<string, string> {
 
 /**
  * Summarise a context for inclusion in a Claude prompt.
- * Sensitive values are redacted so credentials aren't logged.
+ *
+ * Format is designed to prevent two common LLM mistakes:
+ *  1. Using a human-readable label like "User Name" as a getByLabel() argument
+ *     when the actual HTML label might be "UserName" (different casing/spacing).
+ *  2. Leaving `process.env.X ?? ''` which produces an empty string when the
+ *     variable isn't loaded yet.
+ *
+ * We show the env-var name alongside the hint so the LLM can read both the
+ * env var AND fall back to the non-sensitive literal username value.
  */
 export function contextToPromptHint(ctx: UrlContext): string {
-  const lines = ctx.fields
-    .filter(f => f.value)
-    .map(f => `  ${f.label || f.key}: ${f.sensitive ? '[PROVIDED — use process.env.TESTPILOT_' + f.key.toUpperCase() + ']' : f.value}`);
-  if (lines.length === 0) return '';
-  return `The following context values are available for this site:\n${lines.join('\n')}\nFor sensitive values, read them from the environment variable shown above.`;
+  const fields = ctx.fields.filter(f => f.value);
+  if (fields.length === 0) return '';
+
+  const lines = fields.map(f => {
+    const envKey = `TESTPILOT_${f.key.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+    if (f.sensitive) {
+      // Show the env var name — the actual value is in the workspace .env file
+      return `  ${f.label || f.key}: process.env.${envKey}  (set in workspace .env)`;
+    }
+    // Non-sensitive (e.g. username) — show the value directly so LLM never guesses
+    return `  ${f.label || f.key}: "${f.value}"  (env: process.env.${envKey})`;
+  });
+
+  return (
+    `The following credentials are configured for this site:\n${lines.join('\n')}\n` +
+    `IMPORTANT: In generated tests, use process.env.<VAR_NAME> for sensitive fields. ` +
+    `The values are loaded from the workspace .env file at test runtime. ` +
+    `Do NOT use the label text (e.g. "User Name") as a getByLabel() argument — ` +
+    `use the actual HTML label or aria-label visible in the crawl data instead.`
+  );
 }

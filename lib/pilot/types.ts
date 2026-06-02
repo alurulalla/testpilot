@@ -7,11 +7,23 @@ export interface ChatMessage {
   content: string;
 }
 
+/** Options forwarded to the underlying model on a single invoke call. */
+export interface InvokeOptions {
+  /**
+   * Maximum number of output tokens.  Callers should set this to the smallest
+   * value that comfortably fits their expected output so the provider doesn't
+   * reserve (and bill for) unused capacity.
+   *
+   * Defaults: generation 16 384, review/fix 8 192, triage 4 096.
+   */
+  maxTokens?: number;
+}
+
 /** Minimal chat-completion surface — provider-agnostic. */
 export interface ChatModel {
   readonly modelName: string;
   readonly provider: string;
-  invoke(messages: ChatMessage[]): Promise<string>;
+  invoke(messages: ChatMessage[], options?: InvokeOptions): Promise<string>;
 }
 
 export interface TestStats {

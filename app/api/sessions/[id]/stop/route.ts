@@ -8,8 +8,10 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   markStopping(id);
   killProcess(id);     // kills the playwright test runner process if running
-  setStatus(id, 'idle');
-  addLog(id, 'Stopped by user.', 'info');
+  // Do NOT call setStatus here — the loop's stopped() helper sets 'idle' once
+  // the current awaited operation finishes.  Setting it here races with the
+  // loop re-setting it to 'running' / 'fixing' on its next iteration.
+  addLog(id, 'Stop requested — waiting for current operation to finish…', 'info');
 
   return NextResponse.json({ stopped: true });
 }

@@ -18,21 +18,78 @@ import { createAnthropicModel } from './anthropic-model';
 
 /**
  * Extract TypeScript code from an LLM response.
- * Handles three cases:
- *  1. Plain code (no fences) — returned as-is.
- *  2. Code wrapped in a single ```typescript / ```ts / ``` block.
- *  3. Code preceded/followed by explanation text — we grab the first
- *     fenced block that looks like TypeScript, or failing that the raw text.
+ *
+ * LLMs sometimes emit reasoning prose before the code.  We handle four cases
+ * in priority order:
+ *  1. Fenced ```typescript / ```ts / ``` block → extract its content.
+ *  2. Prose preamble before first `import` statement → strip the prose.
+ *  3. Response starts directly with `import` → return as-is.
+ *  4. Fallback → return raw trimmed text (caller validates it).
  */
 function extractTypeScript(raw: string): string {
   const trimmed = raw.trim();
 
-  // Try to extract the first fenced code block
+  // 1. Fenced code block
   const fenceMatch = trimmed.match(/```(?:ts|typescript)?\s*\n([\s\S]*?)```/);
   if (fenceMatch) return fenceMatch[1].trim();
 
-  // No fences — return the raw text (might already be clean code)
+  // 2. Prose before first import — strip it
+  const importIdx = trimmed.indexOf('\nimport ');
+  if (importIdx >= 0) return trimmed.slice(importIdx + 1).trim();
+
+  // 3. Starts directly with import
+  if (trimmed.startsWith('import ')) return trimmed;
+
+  // 4. Fallback — return as-is; caller checks for test() presence
   return trimmed;
+}
+
+/**
+ * Ensure every generated spec file has the correct imports for `test`,
+ * `expect`, and `TARGET_URL`.  The LLM sometimes omits `test` from the
+ * import list or imports it from `@playwright/test` instead of
+ * `./fixtures.js`, which causes a runtime ReferenceError.
+ *
+ * This sanitizer is intentionally dumb and deterministic — no LLM call.
+ */
+function sanitizeImports(content: string): string {
+  const hasTestUsage =
+    /\btest\s*\(/.test(content) || /\btest\.describe\s*\(/.test(content);
+
+  // Already importing test from our fixtures → nothing to do
+  const hasFixturesTestImport =
+    /import\s*\{[^}]*\btest\b[^}]*\}\s*from\s*['"]\.\/fixtures\.js['"]/.test(content);
+
+  if (!hasTestUsage || hasFixturesTestImport) return content;
+
+  // Remove any import of test/expect from @playwright/test (wrong source)
+  let fixed = content
+    .replace(/^import\s*\{[^}]*\btest\b[^}]*\}\s*from\s*['"]@playwright\/test['"]\s*;?[ \t]*\n?/gm, '')
+    .replace(/^import\s*\{[^}]*\bexpect\b[^}]*\}\s*from\s*['"]@playwright\/test['"]\s*;?[ \t]*\n?/gm, '');
+
+  // Prepend the canonical fixtures imports
+  const canonical =
+    `import { test, expect } from './fixtures.js';\n` +
+    `import { TARGET_URL } from './fixtures.js';\n`;
+
+  // Avoid double-importing TARGET_URL if it's already present
+  const hasTargetUrlImport =
+    /import\s*\{[^}]*TARGET_URL[^}]*\}\s*from\s*['"]\.\/fixtures\.js['"]/.test(fixed);
+
+  fixed = (hasTargetUrlImport
+    ? `import { test, expect } from './fixtures.js';\n`
+    : canonical) + fixed;
+
+  return fixed;
+}
+
+/** Convert a documentation feature name to a safe file-name slug. */
+function featureNameToSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 50) || 'feature';
 }
 
 /** Convert a page URL to a safe file-name stem. */
@@ -62,9 +119,50 @@ function readContextMd(workspaceDir: string): string | null {
 
 // ── Prompt builders ───────────────────────────────────────────────────────────
 
-function buildFixturesFile(baseUrl: string): string {
-  return `import { test as base } from '@playwright/test';
+interface LoginInfo {
+  loginUrl: string;
+  usernameSelector: string;
+  submitButtonText: string;
+  usernameValue: string;
+  passwordEnvVar: string;
+}
 
+function buildFixturesFile(baseUrl: string, loginInfo?: LoginInfo): string {
+  const loginHelper = loginInfo
+    ? `
+import { Page } from '@playwright/test';
+
+const LOGIN_URL = ${JSON.stringify(loginInfo.loginUrl)};
+
+/**
+ * Log in using stored credentials.
+ * Uses the exact selectors captured when the login form was detected.
+ */
+export async function login(page: Page): Promise<void> {
+  await page.goto(LOGIN_URL);
+  await page.waitForLoadState('domcontentloaded');
+  // Username — exact selector captured during form detection
+  await page.locator(${JSON.stringify(loginInfo.usernameSelector)}).first().fill(
+    process.env.TESTPILOT_LOGIN_USERNAME ?? ${JSON.stringify(loginInfo.usernameValue)},
+  );
+  // Password
+  await page.locator('input[type="password"]').first().fill(
+    process.env.${loginInfo.passwordEnvVar} ?? '',
+  );
+  // Submit button — exact text captured during form detection
+  await page.locator('button[type="submit"], input[type="submit"]')
+    .or(page.getByRole('button', { name: ${JSON.stringify(loginInfo.submitButtonText)} }))
+    .first()
+    .click();
+  // Wait for redirect away from login page
+  await page.waitForURL(url => !url.includes(new URL(LOGIN_URL).pathname), { timeout: 15_000 })
+    .catch(() => {}); // non-fatal: some SPAs don't change URL on login
+}
+`
+    : '';
+
+  return `import { test as base } from '@playwright/test';
+${loginHelper}
 export const TARGET_URL = ${JSON.stringify(baseUrl)};
 
 export const test = base.extend<{ targetUrl: string }>({
@@ -84,11 +182,126 @@ interface PageData {
   accessibility_tree?: unknown;
 }
 
+interface Interactive { role: string; name: string; id: string; testId: string; href?: string }
+
+// ── Emoji helpers ─────────────────────────────────────────────────────────────
+// Emoji characters in accessible names make `getByRole(role, { name: 'exact' })`
+// brittle — browsers and Playwright may or may not include the emoji in the
+// computed accessible name.  We strip them from the displayed name in the
+// interactives table and tell the LLM to use a regex instead.
+
+const EMOJI_RE =
+  /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20D0}-\u{20FF}]/gu;
+
+function hasEmoji(str: string): boolean {
+  EMOJI_RE.lastIndex = 0;
+  return EMOJI_RE.test(str);
+}
+
+function stripEmoji(str: string): string {
+  return str.replace(EMOJI_RE, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+/**
+ * Format the `interactives` array into a concise locator-reference table.
+ *
+ * Names that contain emoji are shown stripped of their emoji and marked with
+ * `(use /regex/)` so the LLM knows to write `getByRole(role, { name: /text/i })`
+ * instead of an exact string match, which is fragile against emoji variance.
+ */
+function formatInteractives(elements: Record<string, unknown>, maxItems = 80): string {
+  const items = (elements.interactives as Interactive[] | undefined) ?? [];
+  if (items.length === 0) return '';
+
+  const lines = items.slice(0, maxItems).map(el => {
+    const nameHasEmoji = hasEmoji(el.name);
+    const displayName  = nameHasEmoji ? stripEmoji(el.name) : el.name;
+
+    // Links with a meaningful href get a direct locator hint — more reliable
+    // than any text or regex match, completely immune to emoji/wording changes.
+    const isNavLink = el.role === 'link' && el.href &&
+      !el.href.startsWith('javascript:') && !el.href.startsWith('mailto:') &&
+      !el.href.startsWith('tel:') && el.href !== '#';
+
+    let hint = '';
+    if (isNavLink) {
+      hint = `  href="${el.href}"  ← prefer: locator('a[href="${el.href}"]')`;
+    } else if (nameHasEmoji) {
+      hint = '  ← use /regex/';
+    }
+
+    let line = `  ${el.role.padEnd(12)} "${displayName}"${hint}`;
+    if (!isNavLink && el.id)     line += `  id="${el.id}"`;
+    if (!isNavLink && el.testId) line += `  data-testid="${el.testId}"`;
+    return line;
+  });
+
+  return (
+    `\n┌─ INTERACTIVE ELEMENTS ──────────────────────────────────────────────────┐\n` +
+    `│ role         accessible-name        href / hint / id / testid           │\n` +
+    lines.join('\n') + '\n' +
+    `└─────────────────────────────────────────────────────────────────────────┘\n`
+  );
+}
+
+/** True when contextMd was written from an uploaded product documentation file. */
+function detectsProductDoc(contextMd: string | null): boolean {
+  return Boolean(contextMd?.includes('# Product Documentation'));
+}
+
+/** Extract feature sections from the product documentation portion of contextMd. */
+function parseFeaturesFromDoc(contextMd: string): { name: string; items: string[] }[] {
+  const sections: { name: string; items: string[] }[] = [];
+  let cur: { name: string; items: string[] } | null = null;
+  const SKIP = /^(Overview|Homepage Sections?|Sections?|Features?|Summary|Table of Contents|Introduction)/i;
+  const STOP = /^#{1,4}\s+(Typical\s+User\s+Journey|Best Practices?|Summary|User Flows? to Test)/i;
+  for (const raw of contextMd.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.match(STOP)) { if (cur && cur.items.length) sections.push(cur); cur = null; continue; }
+    const hm = line.match(/^#{2,4}\s+(?:\d+[.)]\s+)?(.+)/);
+    if (hm) {
+      const name = hm[1].trim();
+      if (!name.match(SKIP)) {
+        if (cur && cur.items.length) sections.push(cur);
+        cur = { name, items: [] };
+      }
+      continue;
+    }
+    const bm = line.match(/^[-*•]\s+(.+)/);
+    if (bm && cur) cur.items.push(bm[1].trim());
+  }
+  if (cur && cur.items.length) sections.push(cur);
+  return sections;
+}
+
 function buildSystemPrompt(contextMd: string | null): string {
-  let prompt =
-    'You are an expert Playwright Test engineer (TypeScript). ' +
-    'Generate a focused test file for a single page. ' +
-    'Use accessibility-first locators (getByRole, getByLabel, getByText). ' +
+  const hasDoc = detectsProductDoc(contextMd);
+
+  let prompt = 'You are an expert Playwright Test engineer (TypeScript). ';
+
+  if (hasDoc) {
+    prompt +=
+      'Product documentation has been provided below. ' +
+      'Your test coverage MUST be driven entirely by that documentation. ' +
+      'The user message contains an INTERACTIVE ELEMENTS table with the role and accessible name ' +
+      'of every visible element on the page — you MUST use those names verbatim. ' +
+      'For example: table shows  link "Sign In"  → write  getByRole("link", { name: "Sign In" }). ' +
+      'NEVER guess IDs or class names not in the crawled data. ';
+  } else {
+    prompt +=
+      'Generate a focused test file for a single page. ' +
+      'The user message contains an INTERACTIVE ELEMENTS table — use its exact role + name strings ' +
+      'for every locator. Do not guess any selector not present in that table. ';
+  }
+
+  prompt +=
+    'LINK RULE: If a row has  href="..."  ← prefer: locator(...)  hint, use that CSS locator: ' +
+    'page.locator(\'a[href="/path"]\') — this is the most precise locator for navigation links. ' +
+    'EMOJI RULE: If a row has "← use /regex/" hint, write getByRole(role, { name: /Name/i }). ' +
+    'ANTI-HALLUCINATION: NEVER assert text, headings, statistics, or page sections that are ' +
+    'not explicitly present in the INTERACTIVE ELEMENTS table or accessibility tree. ' +
+    'Ignore any training-data knowledge about this site — only use the crawl data. ' +
     'Return ONLY the complete TypeScript file — no markdown fences, no explanation.';
 
   if (contextMd) {
@@ -97,34 +310,261 @@ function buildSystemPrompt(contextMd: string | null): string {
   return prompt;
 }
 
-function buildPageTestPrompt(page: PageData, baseUrl: string): string {
-  // Keep each section small so local models (llama3.2, mistral, etc.) don't
-  // exceed their context window.  Cloud models handle the extra detail fine.
-  const elementsJson = JSON.stringify(page.elements, null, 2).slice(0, 3_000);
-  const accessibilityInfo = page.accessibility_tree
-    ? `\nAccessibility tree (excerpt):\n${
+/** Returns true if the crawled page appears to be in an authenticated state. */
+function pageRequiresAuth(elements: Record<string, unknown>): boolean {
+  const ints = (elements.interactives as { name: string }[] | undefined) ?? [];
+  const LOGOUT_RE    = /\b(logout|log\s*out|sign\s*out)\b/i;
+  const HELLO_RE     = /\b(hello|welcome|hi)\s+\w+/i;
+  const ACCOUNT_RE   = /\b(my\s+account|manage\s+account|profile)\b/i;
+  return ints.some(el =>
+    LOGOUT_RE.test(el.name) || HELLO_RE.test(el.name) || ACCOUNT_RE.test(el.name)
+  );
+}
+
+function buildPageTestPrompt(page: PageData, baseUrl: string, hasProductDoc: boolean): string {
+  // Interactives table: the definitive locator reference (role + exact name)
+  const interactivesTable = formatInteractives(page.elements);
+
+  // Full accessibility tree — this is the most reliable selector source.
+  // Give it generous budget; it is YAML so compresses well.
+  const a11yTree = page.accessibility_tree
+    ? `\n── Accessibility tree (YAML snapshot) ──\n${
         typeof page.accessibility_tree === 'string'
-          ? page.accessibility_tree.slice(0, 3_000)
-          : JSON.stringify(page.accessibility_tree, null, 2).slice(0, 3_000)
-      }`
+          ? page.accessibility_tree.slice(0, 8_000)
+          : JSON.stringify(page.accessibility_tree, null, 2).slice(0, 8_000)
+      }\n`
     : '';
 
+  // Supporting element details (inputs, headings, forms — keep budget modest)
+  const supportJson = JSON.stringify(
+    { inputs: page.elements.inputs, headings: page.elements.headings, forms: page.elements.forms },
+    null, 2,
+  ).slice(0, 2_000);
+
+  // Detect authenticated page — require login() call in every test
+  const needsLogin = pageRequiresAuth(page.elements);
+  const authRule = needsLogin
+    ? `⚠ AUTH REQUIRED: This page was crawled in an AUTHENTICATED state (elements like "Logout" or ` +
+      `"Hello admin!" are visible). Every single test in this file MUST call ` +
+      `\`await login(page)\` (imported from './fixtures.js') BEFORE \`page.goto\`. ` +
+      `Do NOT generate any test that navigates to this page without first calling login().\n`
+    : '';
+
+  const loginImport = needsLogin ? `- import { test, expect, login } from './fixtures.js'\n` : `- import { test, expect } from './fixtures.js'\n`;
+
+  const coverageRules = hasProductDoc
+    ? (
+      `- Write a test for EVERY section and feature listed in the Product Documentation above\n` +
+      `- Use the INTERACTIVE ELEMENTS table for every locator — no guessing\n`
+    )
+    : (
+      `- Include: page loads, title/heading visible, key interactive elements present\n` +
+      `- If the page has forms, verify the form fields exist and are fillable\n` +
+      `- If the page has navigation links, verify at least one same-origin link\n`
+    );
+
   return (
-    `Generate a Playwright test file for this page:\n` +
+    `⛔ CRITICAL — ANTI-HALLUCINATION RULE:\n` +
+    `You MUST ONLY write tests for elements and text that appear in the INTERACTIVE ELEMENTS ` +
+    `table or accessibility tree below. IGNORE any knowledge of this site from your training ` +
+    `data. DO NOT invent headings, link text, page sections, statistics, or any other content. ` +
+    `If the crawl data shows limited content, write fewer tests — never fabricate expected values.\n\n` +
+    (authRule ? authRule + '\n' : '') +
+    `Generate a Playwright test file for this page.\n` +
     `URL: ${page.url}\n` +
     `Title: ${page.title}\n` +
-    `Base URL: ${baseUrl}\n` +
-    `Elements: ${elementsJson}\n` +
-    accessibilityInfo +
-    `\n\nRules:\n` +
+    `Base URL: ${baseUrl}\n\n` +
+    interactivesTable +
+    a11yTree +
+    `── Supporting element details ──\n${supportJson}\n\n` +
+    `LOCATOR RULES (strictly enforced):\n` +
+    `- LINK RULE: if a row shows  href="..."  ← prefer: locator(...)  → use that CSS locator\n` +
+    `  Example:  link "Employees"  href="/Employee"  → page.locator('a[href="/Employee"]')\n` +
+    `  This is more precise than text matching and immune to emoji or wording changes.\n` +
+    `- For links WITHOUT an href hint: use getByRole('link', { name: 'exact name' })\n` +
+    `- EMOJI RULE: if a row shows  ← use /regex/  → write  getByRole(role, { name: /Name/i })\n` +
+    `- NEVER invent IDs, class names, or attributes not shown in the data above\n` +
+    `- For inputs: prefer getByLabel('…') using the aria_label from the inputs list\n` +
+    loginImport +
+    `- import { TARGET_URL } from './fixtures.js'\n` +
+    `- Each test must be independent\n` +
+    coverageRules +
+    `- Return ONLY TypeScript code — no markdown fences, no explanation\n`
+  );
+}
+
+/**
+ * Parse the "# User Flows to Test" section from CONTEXT.md.
+ * Returns an array of flows, each with a title, description and ordered steps.
+ */
+function parseUserFlowsFromContextMd(contextMd: string): { title: string; description: string; steps: string[] }[] {
+  const flows: { title: string; description: string; steps: string[] }[] = [];
+  const lines = contextMd.split('\n');
+
+  // Find the "# User Flows to Test" section
+  const FLOWS_HEADER  = /^#\s+User Flows? to Test/i;
+  const FLOW_TITLE    = /^##\s+(.+)/;             // ## Flow Title
+  const NUMBERED_STEP = /^\d+[.)]\s+(.+)/;
+  const ANY_H1        = /^#\s+/;
+
+  let inFlows = false;
+  let cur: { title: string; description: string; steps: string[] } | null = null;
+
+  const flush = () => {
+    if (cur && (cur.steps.length > 0 || cur.description)) {
+      flows.push({ ...cur });
+    }
+    cur = null;
+  };
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+
+    if (line.match(FLOWS_HEADER)) { inFlows = true; continue; }
+    if (inFlows && line.match(ANY_H1) && !line.match(FLOW_TITLE)) { flush(); inFlows = false; continue; }
+    if (!inFlows) continue;
+
+    const hm = line.match(FLOW_TITLE);
+    if (hm) { flush(); cur = { title: hm[1].trim(), description: '', steps: [] }; continue; }
+
+    if (cur) {
+      const nm = line.match(NUMBERED_STEP);
+      if (nm) { cur.steps.push(nm[1].trim()); continue; }
+      // Non-step line before first step = description
+      if (cur.steps.length === 0 && !line.startsWith('#') && line !== 'Steps:') {
+        cur.description = cur.description ? `${cur.description} ${line}` : line;
+      }
+    }
+  }
+  flush();
+  return flows;
+}
+
+/**
+ * Build the user prompt for generating user-flows.spec.ts.
+ * Tests are named "<Flow Title>: step N - <step text>" so the accuracy
+ * tracker can find them deterministically.
+ */
+function buildUserFlowsPrompt(
+  baseUrl: string,
+  flows: { title: string; description: string; steps: string[] }[],
+): string {
+  const flowList = flows
+    .map(f =>
+      `### ${f.title}\n` +
+      (f.description ? `${f.description}\n` : '') +
+      f.steps.map((s, i) => `${i + 1}. ${s}`).join('\n')
+    )
+    .join('\n\n');
+
+  return (
+    `Generate a Playwright test file that executes EVERY user flow step-by-step.\n` +
+    `Base URL: ${baseUrl}\n\n` +
+    `CRITICAL naming rule: Each test MUST be named "<Flow Title>: step <N> - <step description>"\n` +
+    `Example: test("Typical User Journey: step 1 - Visit homepage", ...)\n` +
+    `This naming convention is required for automated coverage tracking.\n\n` +
+    `USER FLOWS:\n${flowList}\n\n` +
+    `Rules:\n` +
     `- import { test, expect } from './fixtures.js'\n` +
     `- import { TARGET_URL } from './fixtures.js'\n` +
-    `- Use getByRole, getByLabel, getByText — NEVER CSS class selectors\n` +
-    `- Each test must be independent\n` +
-    `- Include: page loads, title/heading visible, key elements present\n` +
-    `- If the page has forms, add a test verifying form fields exist\n` +
-    `- If the page has navigation links, add a test clicking one same-origin link\n` +
-    `- If credentials are available in environment variables, write tests that use them to log in\n` +
+    `- Write one test per step — each test is independent\n` +
+    `- Only write browser-automatable steps (skip CLI/terminal steps)\n` +
+    `- Use getByRole, getByLabel, getByText locators\n` +
+    `- Navigate to the correct page at the start of each test\n` +
+    `- Return ONLY TypeScript code — no markdown fences, no explanation\n`
+  );
+}
+
+/**
+ * Build the user prompt for a SINGLE documented feature, grounded in real
+ * crawled page data.  The LLM must derive all locators from the elements
+ * and accessibility trees supplied here — no guessing.
+ */
+function buildDocFeaturePrompt(
+  baseUrl: string,
+  feature: { name: string; items: string[] },
+  pages: PageData[],
+): string {
+  // Per-page budgets — interactives table + a11y tree are the primary locator sources.
+  // Give a11y generous space; it compresses well (YAML not JSON).
+  const PAGE_A11Y_BUDGET = 6_000;
+
+  const crawlData = pages.slice(0, 5).map(p => {
+    // Interactives table — the definitive locator reference for this page
+    const interactivesTable = formatInteractives(p.elements, 60);
+
+    // Accessibility tree (YAML snapshot)
+    const a11y = p.accessibility_tree
+      ? `\nAccessibility tree:\n${
+          (typeof p.accessibility_tree === 'string'
+            ? p.accessibility_tree
+            : JSON.stringify(p.accessibility_tree, null, 2)
+          ).slice(0, PAGE_A11Y_BUDGET)
+        }\n`
+      : '';
+
+    return `=== ${p.url} (${p.title}) ===${interactivesTable}${a11y}`;
+  }).join('\n\n');
+
+  const itemList = feature.items.length
+    ? feature.items.map(i => `- ${i}`).join('\n')
+    : '(see feature name above)';
+
+  return (
+    `Generate a Playwright test file that verifies the "${feature.name}" feature.\n` +
+    `Base URL: ${baseUrl}\n\n` +
+    `╔═ CRAWLED PAGE DATA — use ONLY the selectors, roles, text, and attributes found here ═╗\n` +
+    `${crawlData}\n` +
+    `╚══════════════════════════════════════════════════════════════════════════════════════╝\n\n` +
+    `FEATURE: ${feature.name}\n` +
+    `${itemList}\n\n` +
+    `LOCATOR RULES (strictly enforced):\n` +
+    `- LINK RULE: if a row shows  href="..."  ← prefer: locator(...)  → use that CSS locator\n` +
+    `  Example:  link "Employees"  href="/Employee"  → page.locator('a[href="/Employee"]')\n` +
+    `  Href-based locators are exact — they survive emoji and wording changes.\n` +
+    `- For links WITHOUT an href hint: use getByRole('link', { name: 'exact name' })\n` +
+    `- EMOJI RULE: if a row shows  ← use /regex/  → write  getByRole(role, { name: /Name/i })\n` +
+    `- NEVER invent IDs, class names, or button text not present in the crawled data\n` +
+    `- For text inputs: use getByLabel('…') with the aria_label value from the inputs list\n` +
+    `- import { test, expect } from './fixtures.js'\n` +
+    `- import { TARGET_URL } from './fixtures.js'\n` +
+    `- Test names MUST be: "${feature.name}: <what is verified>"\n` +
+    `- Each test is independent — call page.goto in each test\n` +
+    `- Write at least one test per bullet item in the feature description\n` +
+    `- If a bullet item has no matching element in the crawl data, add a skipped comment — do NOT fabricate a selector\n` +
+    `⛔ ANTI-HALLUCINATION: ONLY test elements and text that appear in the crawl data above. ` +
+    `DO NOT use knowledge about this site from your training data. ` +
+    `If an element is not in the crawl data, skip the assertion with a // TODO comment.\n` +
+    `- Return ONLY TypeScript code — no markdown fences, no explanation\n`
+  );
+}
+
+/**
+ * @deprecated  Kept for reference — replaced by per-feature generation.
+ * Build the system + user prompt for generating doc-features.spec.ts.
+ */
+function buildDocFeaturesPrompt(
+  baseUrl: string,
+  features: { name: string; items: string[] }[],
+): string {
+  const featureList = features
+    .map(f => `### ${f.name}\n${f.items.map(i => `- ${i}`).join('\n')}`)
+    .join('\n\n');
+
+  return (
+    `Generate a single Playwright test file that verifies EVERY documented feature listed below.\n` +
+    `Base URL: ${baseUrl}\n\n` +
+    `CRITICAL naming rule: Each test MUST be named "<Feature Name>: <what is verified>" — e.g. "Hero Section: Get Started button is visible".\n` +
+    `This naming convention is required for automated coverage tracking.\n\n` +
+    `DOCUMENTED FEATURES:\n${featureList}\n\n` +
+    `Rules:\n` +
+    `- import { test, expect } from './fixtures.js'\n` +
+    `- import { TARGET_URL } from './fixtures.js'\n` +
+    `- Navigate to TARGET_URL (or the correct sub-path) before verifying each feature\n` +
+    `- Use getByRole, getByLabel, getByText locators — NO CSS class selectors\n` +
+    `- Each test is independent (call page.goto in each test)\n` +
+    `- Write at least one test per bullet item in the documentation\n` +
     `- Return ONLY TypeScript code — no markdown fences, no explanation\n`
   );
 }
@@ -139,20 +579,66 @@ export interface GenerateMultiFileOptions {
   maxConcurrent?: number;
 }
 
+/** Read login info from the workspace .env file (written by the loop route after pre-login). */
+function readLoginInfo(workspaceDir: string): LoginInfo | undefined {
+  const envPath = path.join(workspaceDir, '.env');
+  if (!existsSync(envPath)) return undefined;
+  try {
+    const lines = readFileSync(envPath, 'utf8').split('\n');
+    const get = (key: string) => {
+      const line = lines.find(l => l.startsWith(key + '='));
+      return line ? line.slice(key.length + 1).trim() : '';
+    };
+    const loginUrl = get('TESTPILOT_LOGIN_URL');
+    if (!loginUrl) return undefined;
+
+    // Find the username env var name (TESTPILOT_LOGIN_USERNAME or similar)
+    const usernameLine = lines.find(l => /^TESTPILOT_.*USERNAME=/i.test(l));
+    const usernameValue = usernameLine ? usernameLine.split('=').slice(1).join('=').trim() : '';
+    const passwordLine  = lines.find(l => /^TESTPILOT_.*PASSWORD=/i.test(l));
+    const passwordEnvVar = passwordLine ? passwordLine.split('=')[0] : 'TESTPILOT_LOGIN_PASSWORD';
+
+    return {
+      loginUrl,
+      usernameSelector: get('TESTPILOT_LOGIN_USERNAME_SELECTOR') || 'input[type="text"], input[type="email"]',
+      submitButtonText: get('TESTPILOT_LOGIN_SUBMIT_TEXT') || 'Log in',
+      usernameValue,
+      passwordEnvVar,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export async function generateMultiFile(options: GenerateMultiFileOptions): Promise<string[]> {
   const { workspace, pages, baseUrl, model } = options;
   const testsDir = workspace.testsDir;
   mkdirSync(testsDir, { recursive: true });
 
-  // Write shared fixtures file
-  const fixturesPath = path.join(testsDir, 'fixtures.ts');
-  writeFileSync(fixturesPath, buildFixturesFile(baseUrl), 'utf8');
-  console.log(`  Wrote ${fixturesPath}`);
+  // Read login info captured during pre-login (if available)
+  const loginInfo = readLoginInfo(workspace.dir);
 
-  // Read optional CONTEXT.md for credential injection
+  // Write shared fixtures file (with login() helper if we have login info)
+  const fixturesPath = path.join(testsDir, 'fixtures.ts');
+  writeFileSync(fixturesPath, buildFixturesFile(baseUrl, loginInfo), 'utf8');
+  console.log(`  Wrote ${fixturesPath}${loginInfo ? ' (with login() helper)' : ''}`);
+
+  // Read optional CONTEXT.md (product documentation + user flows + credentials)
   const contextMd = readContextMd(workspace.dir);
-  if (contextMd) {
+  const hasProductDoc = detectsProductDoc(contextMd);
+  if (hasProductDoc) {
+    console.log('  Product documentation detected — tests will be generated against the documented features.');
+  } else if (contextMd) {
     console.log('  Context detected — credentials will be included in test prompts.');
+  }
+
+  // Warn when crawl is too shallow for reliable feature test generation
+  if (pages.length <= 1 && hasProductDoc) {
+    console.log(
+      `  ⚠ Only ${pages.length} page(s) crawled — feature tests may have limited accuracy ` +
+      `because the LLM has no data about internal pages (Employee list, PF details, etc.). ` +
+      `Increase MAX_PAGES or enable authenticated deep crawl for better results.`,
+    );
   }
 
   const systemPrompt = buildSystemPrompt(contextMd);
@@ -166,13 +652,13 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
     try {
       const messages: ChatMessage[] = [
         { role: 'system', content: systemPrompt },
-        { role: 'user',   content: buildPageTestPrompt(page, baseUrl) },
+        { role: 'user',   content: buildPageTestPrompt(page, baseUrl, hasProductDoc) },
       ];
       const result  = await model.invoke(messages);
       const cleaned = extractTypeScript(result);
 
       if (cleaned.includes('test(') || cleaned.includes('test.describe(')) {
-        writeFileSync(filePath, cleaned, 'utf8');
+        writeFileSync(filePath, sanitizeImports(cleaned), 'utf8');
         writtenFiles.push(filePath);
         console.log(`  Wrote ${filePath}`);
       } else {
@@ -181,7 +667,126 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
         console.log(`  Skipped ${fileName} — output didn't look like a test file. Model returned: "${preview}"`);
       }
     } catch (e) {
-      console.log(`  Failed to generate ${fileName}: ${e instanceof Error ? e.message : e}`);
+      const msg = e instanceof Error ? e.message : String(e);
+      // Re-throw auth errors immediately — no point trying remaining files with a bad key
+      if (msg.includes('401') || msg.includes('authentication_error') || msg.includes('invalid x-api-key')) {
+        throw e;
+      }
+      console.log(`  Failed to generate ${fileName}: ${msg}`);
+    }
+  }
+
+  // ── Generate one spec file per documented feature/use-case ──────────────
+  // Each "##" section from the product documentation becomes its own
+  // <feature-slug>.spec.ts.  Crucially, the prompt for every feature includes
+  // the ACTUAL crawled page elements so the LLM can only use real selectors.
+  if (hasProductDoc && contextMd) {
+    const docFeatures = parseFeaturesFromDoc(contextMd);
+    if (docFeatures.length > 0) {
+      console.log(`  Generating ${docFeatures.length} per-feature spec file(s) from crawled data…`);
+
+      // System prompt shared by all feature generations
+      const featureSystemPrompt =
+        'You are an expert Playwright test engineer (TypeScript). ' +
+        'Each user message includes an INTERACTIVE ELEMENTS table listing every clickable and fillable ' +
+        'element on the page with its ARIA role, accessible name, and href (for links). ' +
+        'LINK RULE: if a row shows  href="..."  ← prefer: locator(...)  use that CSS locator: ' +
+        'page.locator(\'a[href="/path"]\') — this is the most precise locator. ' +
+        'Example:  link "Employees"  href="/Employee"  →  page.locator(\'a[href="/Employee"]\') ' +
+        'EMOJI RULE: if a row ends with  ← use /regex/  write  getByRole(role, { name: /Name/i })  ' +
+        '(the element has an emoji prefix). ' +
+        'ANTI-HALLUCINATION: NEVER test content not visible in the crawl data — ' +
+        'ignore any training-data knowledge about this site. ' +
+        'Do NOT invent selectors not in the crawl data. ' +
+        'If a required element is missing from the crawl, skip that assertion with a comment. ' +
+        'Test names MUST follow: "<Feature Name>: <what is verified>". ' +
+        'Do NOT use test.describe blocks — flat test() calls only. ' +
+        'Return ONLY the TypeScript file — no markdown fences, no explanation.\n\n' +
+        contextMd;
+
+      const generatedSlugs = new Set<string>();
+
+      for (const feature of docFeatures) {
+        // Ensure unique file names when two headings produce the same slug
+        let slug = featureNameToSlug(feature.name);
+        if (generatedSlugs.has(slug)) slug = `${slug}-${generatedSlugs.size}`;
+        generatedSlugs.add(slug);
+
+        const featureSpecPath = path.join(testsDir, `${slug}.spec.ts`);
+        console.log(`  Generating ${slug}.spec.ts for "${feature.name}" (${feature.items.length} item(s))…`);
+
+        try {
+          const featureUserPrompt = buildDocFeaturePrompt(baseUrl, feature, pages);
+          const featureResult = await model.invoke([
+            { role: 'system', content: featureSystemPrompt },
+            { role: 'user',   content: featureUserPrompt },
+          ]);
+          const featureCleaned = extractTypeScript(featureResult);
+          if (featureCleaned.includes('test(') || featureCleaned.includes('test.describe(')) {
+            writeFileSync(featureSpecPath, sanitizeImports(featureCleaned), 'utf8');
+            writtenFiles.unshift(featureSpecPath);
+            console.log(`  Wrote ${slug}.spec.ts`);
+          } else {
+            console.log(`  ${slug} — no test code returned, skipping.`);
+          }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (msg.includes('401') || msg.includes('authentication_error') || msg.includes('invalid x-api-key')) {
+            throw e;
+          }
+          console.log(`  Failed to generate ${slug}.spec.ts: ${msg}`);
+        }
+      }
+    }
+  }
+
+  // ── Generate user-flows.spec.ts (when user flows are present) ────────────
+  // Generates one test per flow step with naming "Flow Title: step N - ..."
+  // so the accuracy tracker can match them back to flows deterministically.
+  if (contextMd) {
+    const userFlows = parseUserFlowsFromContextMd(contextMd);
+    // Only generate browser-relevant flows (skip flows that are entirely CLI-based)
+    const browserFlows = userFlows.filter(f =>
+      f.steps.some(s =>
+        !/\bnpm\b|\bnpx\b|\brun\b terminal|\bbash\b|\bcli\b|\bcommand\b|\bterminal\b/i.test(s) ||
+        /\bvisit\b|\bnavigate\b|\bclick\b|\bopen\b|\bbrowse\b|\bgo to\b|\bpurchase\b|\badd to cart\b|\bsign in\b|\blog in\b|\bregister\b|\bcheckout\b/i.test(s)
+      )
+    );
+    if (browserFlows.length > 0) {
+      const flowSpecPath = path.join(testsDir, 'user-flows.spec.ts');
+      console.log(`  Generating user-flows.spec.ts for ${browserFlows.length} user flow(s)…`);
+      try {
+        const flowSystemPrompt =
+          'You are an expert Playwright test engineer (TypeScript). ' +
+          'Generate a user-flow test file where EACH test covers one step of a user flow. ' +
+          'CRITICAL: Test names MUST follow the format "<Flow Title>: step <N> - <step description>" — ' +
+          'e.g. test("Typical User Journey: step 2 - Click Get Started", ...). ' +
+          'Do NOT use test.describe blocks — flat test() calls only. ' +
+          'Use getByRole, getByLabel, getByText locators. Skip steps that require a terminal/CLI. ' +
+          'Return ONLY TypeScript code — no markdown fences, no explanation.\n\n' +
+          contextMd;
+
+        const flowUserPrompt = buildUserFlowsPrompt(baseUrl, browserFlows);
+        const flowResult  = await model.invoke([
+          { role: 'system', content: flowSystemPrompt },
+          { role: 'user',   content: flowUserPrompt },
+        ]);
+        const flowCleaned = extractTypeScript(flowResult);
+        if (flowCleaned.includes('test(') || flowCleaned.includes('test.describe(')) {
+          writeFileSync(flowSpecPath, sanitizeImports(flowCleaned), 'utf8');
+          // Put user-flows near the front so it runs before per-feature specs
+          writtenFiles.unshift(flowSpecPath);
+          console.log(`  Wrote user-flows.spec.ts (${browserFlows.length} flow(s), ${browserFlows.reduce((n, f) => n + f.steps.length, 0)} steps)`);
+        } else {
+          console.log(`  user-flows generation returned no test code — skipping.`);
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.includes('401') || msg.includes('authentication_error') || msg.includes('invalid x-api-key')) {
+          throw e;
+        }
+        console.log(`  Failed to generate user-flows.spec.ts: ${msg}`);
+      }
     }
   }
 

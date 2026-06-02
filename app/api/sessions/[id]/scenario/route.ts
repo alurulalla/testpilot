@@ -162,7 +162,11 @@ export async function POST(
       setTestResult(id, testResult);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      addLog(id, `Scenario failed: ${msg}`, 'error');
+      const isAuth = msg.includes('401') || msg.includes('authentication_error') ||
+        (msg.toLowerCase().includes('invalid') && msg.toLowerCase().includes('key'));
+      addLog(id, isAuth
+        ? '❌ API key rejected (401) — open ⚙ Settings and enter a valid key, then try again.'
+        : `Scenario failed: ${msg}`, 'error');
       setScenarioResult(id, { ...initial, status: 'failed', error: msg });
     }
   })();

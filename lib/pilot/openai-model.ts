@@ -4,7 +4,7 @@
  * Completions API.
  */
 import OpenAI from 'openai';
-import type { ChatMessage, ChatModel } from './types';
+import type { ChatMessage, ChatModel, InvokeOptions } from './types';
 
 export interface CreateOpenAICompatModelOptions {
   apiKey: string;
@@ -30,7 +30,7 @@ export async function createOpenAICompatModel(
     modelName,
     provider: options.providerName ?? 'openai',
 
-    async invoke(messages: ChatMessage[]): Promise<string> {
+    async invoke(messages: ChatMessage[], invokeOptions?: InvokeOptions): Promise<string> {
       // Some local models (older Ollama builds) don't handle the 'system' role
       // in the messages array. Merge the system prompt into the first user message.
       let apiMessages: { role: 'system' | 'user' | 'assistant'; content: string }[];
@@ -62,6 +62,7 @@ export async function createOpenAICompatModel(
         model: modelName,
         temperature: 0.2,
         messages: apiMessages,
+        ...(invokeOptions?.maxTokens ? { max_tokens: invokeOptions.maxTokens } : {}),
       });
       const content = response.choices[0]?.message?.content;
       if (!content) throw new Error(`${modelName} returned an empty response`);

@@ -17,11 +17,22 @@ import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'fs';
 import path from 'path';
 import { ContextField } from './url-context-store';
 
+export interface LoginPageInfo {
+  /** URL of the login page (after auto-discovery) */
+  url: string;
+  /** Exact CSS selector that was used to fill the username/email field */
+  usernameSelector: string;
+  /** Submit button text found on the page, if detectable */
+  submitButtonText: string;
+}
+
 export interface PreLoginResult {
   success: boolean;
   postLoginUrl: string;
   authFile: string;
   error?: string;
+  /** Details about the login form — used to generate accurate login() helpers */
+  loginPageInfo?: LoginPageInfo;
 }
 
 // ── Cookie consent dismissal ──────────────────────────────────────────────────
@@ -277,8 +288,9 @@ export async function performPreLogin(
 
     const loginPageUrl = page.url();
 
-    // Fill fields
+    // Fill fields — track which selector matched the username field
     let filledCount = 0;
+    let usernameSelector = '';
     for (const field of fieldsWithValues) {
       const selectors = selectorsFor(field);
       let filled = false;
@@ -290,6 +302,10 @@ export async function performPreLogin(
             await el.fill(field.value);
             filledCount++;
             log(`  ✓ Filled "${field.label || field.key}"`);
+            // Track the username selector (first non-password field that matched)
+            if (!usernameSelector && field.type !== 'password') {
+              usernameSelector = sel;
+            }
             filled = true;
             break;
           }
@@ -310,16 +326,20 @@ export async function performPreLogin(
       };
     }
 
-    // Submit
+    // Submit — also capture the submit button's visible text for the login helper
     const beforeUrl = page.url();
     let submitted = false;
+    let submitButtonText = 'Log in';
     for (const sel of SUBMIT_SELECTORS) {
       try {
         const btn = page.locator(sel).first();
         if (await btn.isVisible({ timeout: 600 }).catch(() => false)) {
+          // Capture accessible text before clicking
+          const btnText = (await btn.innerText().catch(() => '')) || (await btn.getAttribute('value').catch(() => '')) || '';
+          if (btnText.trim()) submitButtonText = btnText.trim();
           await btn.click({ timeout: 2000 });
           submitted = true;
-          log(`  ✓ Clicked submit`);
+          log(`  ✓ Clicked submit ("${submitButtonText}")`);
           break;
         }
       } catch { /* try next */ }
@@ -365,7 +385,16 @@ export async function performPreLogin(
     await ctx.storageState({ path: authFile });
     log(`  ✓ Auth state saved`);
     await ctx.close();
-    return { success: true, postLoginUrl, authFile };
+    return {
+      success: true,
+      postLoginUrl,
+      authFile,
+      loginPageInfo: {
+        url: loginPageUrl,
+        usernameSelector: usernameSelector || 'input[type="text"]',
+        submitButtonText,
+      },
+    };
   } finally {
     await browser.close();
   }

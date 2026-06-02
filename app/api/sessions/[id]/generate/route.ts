@@ -34,8 +34,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       const origLog = console.log;
       console.log = (...args: unknown[]) => {
         origLog(...args);
-        const msg = args.map(a => (typeof a === 'string' ? a : String(a))).join(' ');
-        addLog(id, msg, msg.toLowerCase().includes('fail') || msg.toLowerCase().includes('error') ? 'error' : 'info');
+        const raw = args.map(a => (typeof a === 'string' ? a : String(a))).join(' ');
+        // Rewrite raw 401 JSON dumps into a human-readable hint
+        const isAuth = raw.includes('401') || raw.includes('authentication_error') || raw.includes('invalid x-api-key');
+        const msg = isAuth
+          ? '❌ API key rejected (401) — open ⚙ Settings and enter a valid key, then try again.'
+          : raw;
+        const level = (isAuth || raw.toLowerCase().includes('fail') || raw.toLowerCase().includes('error')) ? 'error' : 'info';
+        addLog(id, msg, level);
       };
       try {
         await runGenerateSuite({
@@ -56,7 +62,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(id, msg);
-      addLog(id, `Generation failed: ${msg}`, 'error');
+      // Give a targeted hint for authentication failures
+      const isAuth = msg.includes('401') || msg.includes('authentication_error') ||
+        (msg.toLowerCase().includes('invalid') && msg.toLowerCase().includes('key'));
+      if (isAuth) {
+        addLog(id, `❌ API key rejected (401) — open the ⚙ Settings panel and enter a valid key, then try again.`, 'error');
+      } else {
+        addLog(id, `Generation failed: ${msg}`, 'error');
+      }
     }
   })();
 

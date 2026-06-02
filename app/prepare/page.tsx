@@ -1,15 +1,16 @@
 'use client';
 
-import { Suspense, useState, useEffect, useCallback } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Zap, ArrowLeft, Globe, Search, Loader2, Check, RefreshCw, ArrowRight,
-  ChevronDown, ChevronRight, Eye, EyeOff, X, Layers, Edit2,
+  ChevronDown, ChevronRight, Eye, EyeOff, X, Layers, Edit2, FileText, Upload,
+  Lock, ShieldCheck, PackageOpen, AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { ContextField } from '@/lib/url-context-store';
 import type { DetectedFormGroup } from '@/lib/detect-form-fields';
-import type { Session } from '@/types/session';
+import type { Session, ImportedUseCase } from '@/types/session';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,10 +23,44 @@ interface StoredContext {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Prettify a raw HTML name/id attribute into a human-readable label.
+ * e.g. "firstName" → "First Name", "address.street" → "Address Street"
+ */
+function prettifyKey(key: string): string {
+  return key
+    .replace(/([a-z])([A-Z])/g, '$1 $2')   // camelCase → words
+    .replace(/[._-]+/g, ' ')                 // dots, underscores, hyphens → spaces
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^\w/, c => c.toUpperCase());
+}
+
+/**
+ * Strip the "FormLabel — " prefix that groupsToContextFields adds to labels,
+ * then prettify whatever's left if it looks like a raw key (all-lowercase / dots).
+ */
+function displayLabel(label: string): string {
+  const stripped = label.replace(/^[^—]*—\s*/, '').trim();
+  // If it still looks like a raw key (lowercase, dots, underscores) → prettify
+  if (/^[a-z][a-z0-9._]*$/.test(stripped)) return prettifyKey(stripped);
+  return stripped;
+}
+
 function normalizeUrl(raw: string): string {
   const u = raw.trim();
   if (!u) return '';
   return u.startsWith('http') ? u : `https://${u}`;
+}
+
+function urlHostMatches(a: string, b: string): boolean {
+  try {
+    const hostA = new URL(a).hostname.replace(/^www\./, '');
+    const hostB = new URL(b).hostname.replace(/^www\./, '');
+    return hostA === hostB;
+  } catch {
+    return false;
+  }
 }
 
 function timeAgo(ts: number): string {
@@ -99,13 +134,32 @@ function PrepareContent() {
   const [detectLoading, setDetectLoading] = useState(false);
   const [detectError, setDetectError] = useState('');
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  // Auto-detection: tracks whether the initial background scan has run
+  const autoDetectRan = useRef(false);
+  // Which form group is active in the inline credential tabs (default: Login)
+  const [activeGroupLabel, setActiveGroupLabel] = useState<string>('');
 
   // Figma
   const [figmaFileUrl, setFigmaFileUrl] = useState('');
   const [showFigma, setShowFigma] = useState(false);
 
+  // Product Documentation
+  const [docContent, setDocContent] = useState('');
+  const [docFileName, setDocFileName] = useState('');
+  const [showDoc, setShowDoc] = useState(false);
+  const [docPasting, setDocPasting] = useState(false);
+  const [docPasteText, setDocPasteText] = useState('');
+
   // Sessions
   const [existingSessions, setExistingSessions] = useState<Session[]>([]);
+
+  // Import existing Playwright project
+  const [importZipFile, setImportZipFile] = useState<File | null>(null);
+  const [importValidation, setImportValidation] = useState<{
+    valid: true; detectedBaseUrl?: string | null; specFilesCount: number; useCases: ImportedUseCase[];
+  } | { valid: false; reason: string } | null>(null);
+  const [importValidating, setImportValidating] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   // Submit
   const [launching, setLaunching] = useState(false);
@@ -117,25 +171,38 @@ function PrepareContent() {
   }, [rawUrl, router]);
 
   // ── Load stored context + sessions on mount ───────────────────────────────
-  const loadData = useCallback(async (targetUrl: string) => {
+  const loadData = useCallback(async (targetUrl: string): Promise<boolean> => {
     const [ctxRes, sessRes] = await Promise.all([
       fetch(`/api/contexts?url=${encodeURIComponent(targetUrl)}`).catch(() => null),
       fetch(`/api/sessions?url=${encodeURIComponent(targetUrl)}`).catch(() => null),
     ]);
+    let hasStoredContext = false;
     if (ctxRes?.ok) {
       const ctx = await ctxRes.json() as StoredContext;
       setStoredContext(ctx);
       setFields(ctx.fields.map(f => ({ ...f })));
       setSavedAt(ctx.updatedAt);
+      hasStoredContext = true;
     }
     if (sessRes?.ok) {
       setExistingSessions((await sessRes.json() as Session[]).slice(0, 3));
     }
+    return hasStoredContext;
   }, []);
 
+  // ── Auto-detect forms on load (only if no stored context) ─────────────────
   useEffect(() => {
-    if (url) loadData(url);
-  }, [url, loadData]);
+    if (!url || autoDetectRan.current) return;
+    autoDetectRan.current = true;
+
+    loadData(url).then(hasStoredContext => {
+      // If no saved credentials for this URL, automatically scan for login forms
+      if (!hasStoredContext) {
+        detectForms();
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url]);
 
   // ── Detect forms ──────────────────────────────────────────────────────────
   async function detectForms() {
@@ -159,12 +226,18 @@ function PrepareContent() {
       } else if (!data.fields?.length) {
         setDetectError('No form fields detected on this page or its linked pages.');
       } else {
-        setGroups(data.groups ?? []);
+        const detectedGroups = data.groups ?? [];
+        setGroups(detectedGroups);
         // Merge detected fields with any already-saved values
         setFields(prev => (data.fields ?? []).map(f => {
           const stored = prev.find(s => s.key === f.key);
           return stored?.value ? { ...f, value: stored.value } : f;
         }));
+        // Auto-select the Login/Sign-in group; fall back to the first group.
+        // Use tabKey (formLabel__index) to match the unique tab keys used in the UI.
+        const loginIdx = detectedGroups.findIndex(g => /login|sign.?in/i.test(g.formLabel));
+        const defaultIdx = loginIdx >= 0 ? loginIdx : 0;
+        setActiveGroupLabel(`${detectedGroups[defaultIdx]?.formLabel ?? ''}__${defaultIdx}`);
       }
     } catch {
       setDetectError('Network error during detection');
@@ -188,7 +261,7 @@ function PrepareContent() {
 
   // ── Launch session ────────────────────────────────────────────────────────
   async function launch() {
-    if (!url) return;
+    if (!url || importUrlMismatch) return;
     setLaunching(true);
     setLaunchError('');
     if (fields.some(f => f.value)) await saveContext();
@@ -202,6 +275,31 @@ function PrepareContent() {
       });
       if (!res.ok) throw new Error('Failed to create session');
       const session = await res.json() as Session;
+
+      // Upload imported Playwright project before navigating so the session
+      // page sees it and skips exploration/generation.
+      if (importZipFile && importValidation?.valid) {
+        const fd = new FormData();
+        fd.append('file', importZipFile);
+        await fetch(`/api/sessions/${session.id}/import-playwright`, {
+          method: 'POST',
+          body: fd,
+        }).catch(() => {});
+      }
+
+      // Upload product documentation before navigating so it's in place when
+      // the test generator runs — the loop route will inject it into CONTEXT.md.
+      if (docContent.trim()) {
+        await fetch(`/api/sessions/${session.id}/context`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: docContent,
+            fileName: docFileName || 'documentation.md',
+          }),
+        });
+      }
+
       router.push(`/session/${session.id}`);
     } catch (err) {
       setLaunchError(err instanceof Error ? err.message : 'Something went wrong');
@@ -209,9 +307,43 @@ function PrepareContent() {
     }
   }
 
+  // ── Validate ZIP on selection ─────────────────────────────────────────────
+  async function handleImportZip(file: File) {
+    setImportZipFile(file);
+    setImportValidation(null);
+    setImportValidating(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/import-playwright/validate', { method: 'POST', body: fd });
+      const data = await res.json() as typeof importValidation;
+      setImportValidation(data);
+    } catch {
+      setImportValidation({ valid: false, reason: 'Validation request failed.' });
+    } finally {
+      setImportValidating(false);
+    }
+  }
+
+  function clearImport() {
+    setImportZipFile(null);
+    setImportValidation(null);
+  }
+
   // ── Derived state ─────────────────────────────────────────────────────────
   const hasContext = fields.length > 0;
   const hasFilledFields = fields.some(f => f.value);
+  // True when a login/signup/auth form was found in the scan
+  const hasAuthForm = groups.some(g =>
+    /login|sign.?in|sign.?up|register|auth/i.test(g.formLabel)
+  );
+  // True when the user has provided auth credentials → deep crawl will be enabled
+  const deepCrawlEnabled = hasFilledFields && hasAuthForm;
+  // True when an import is loaded and its baseURL doesn't match the target URL
+  const importUrlMismatch =
+    importValidation?.valid === true &&
+    !!importValidation.detectedBaseUrl &&
+    !urlHostMatches(importValidation.detectedBaseUrl, url);
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -272,7 +404,7 @@ function PrepareContent() {
         </div>
 
         {/* Launch button in header (desktop shortcut) */}
-        <Button size="sm" onClick={launch} disabled={launching} className="shrink-0">
+        <Button size="sm" onClick={launch} disabled={launching || importUrlMismatch} className="shrink-0" title={importUrlMismatch ? 'Fix the project URL mismatch before running' : undefined}>
           {launching
             ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
             : <Zap className="h-3.5 w-3.5" />}
@@ -287,15 +419,40 @@ function PrepareContent() {
           {/* ── Left: main configuration ─────────────────────────────────── */}
           <div className="lg:col-span-2 space-y-4">
 
-            {/* Form Detection card */}
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 space-y-4">
+            {/* ── Authentication & Deep Crawl card ─────────────────────── */}
+            <div className={`rounded-xl border p-5 space-y-4 transition-colors ${
+              deepCrawlEnabled
+                ? 'border-violet-500/40 bg-violet-500/5'
+                : hasAuthForm
+                  ? 'border-amber-500/40 bg-amber-500/5'
+                  : 'border-zinc-800 bg-zinc-900'
+            }`}>
               <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-sm font-semibold text-zinc-100">Form Detection</h2>
-                  <p className="text-xs text-zinc-500 mt-0.5">
-                    Scan the site for login, registration, and other forms. Fill in values in the
-                    Context panel to enable authenticated testing.
-                  </p>
+                <div className="flex items-start gap-3">
+                  {deepCrawlEnabled
+                    ? <ShieldCheck className="h-4 w-4 text-violet-400 mt-0.5 shrink-0" />
+                    : hasAuthForm
+                      ? <Lock className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+                      : <Search className="h-4 w-4 text-zinc-500 mt-0.5 shrink-0" />
+                  }
+                  <div>
+                    <h2 className="text-sm font-semibold text-zinc-100">
+                      {deepCrawlEnabled
+                        ? 'Deep Crawl Enabled'
+                        : hasAuthForm
+                          ? 'Login Form Detected'
+                          : 'Form Detection'}
+                    </h2>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      {deepCrawlEnabled
+                        ? 'TestPilot will log in and crawl the full authenticated app before generating tests.'
+                        : hasAuthForm
+                          ? 'Enter your credentials below to unlock deep authenticated crawling of every page.'
+                          : detectLoading
+                            ? 'Scanning for login and signup forms…'
+                            : 'Automatically scans the site for login, register, and other forms.'}
+                    </p>
+                  </div>
                 </div>
                 <Button
                   size="sm"
@@ -306,25 +463,128 @@ function PrepareContent() {
                 >
                   {detectLoading
                     ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    : <Search className="h-3.5 w-3.5" />}
-                  {detectLoading ? 'Scanning…' : groups.length > 0 ? 'Re-detect' : 'Detect Forms'}
+                    : <RefreshCw className="h-3.5 w-3.5" />}
+                  {detectLoading ? 'Scanning…' : groups.length > 0 ? 'Re-scan' : 'Scan'}
                 </Button>
               </div>
 
-              {/* Detect error */}
-              {detectError && (
-                <p className="text-xs text-amber-400 flex items-center gap-1.5">
-                  <X className="h-3 w-3 shrink-0" /> {detectError}
+              {/* Scanning indicator */}
+              {detectLoading && (
+                <div className="flex items-center gap-2 text-xs text-zinc-400">
+                  <Loader2 className="h-3 w-3 animate-spin text-violet-400" />
+                  Scanning {url} for login and signup forms…
+                </div>
+              )}
+
+              {/* Detect error (only show when no groups found — not just a notice) */}
+              {detectError && groups.length === 0 && !detectLoading && (
+                <p className="text-xs text-zinc-500 flex items-center gap-1.5">
+                  <X className="h-3 w-3 shrink-0 text-zinc-600" />
+                  {detectError.includes('No form') ? 'No login/signup forms detected — authentication is optional.' : detectError}
                 </p>
               )}
 
-              {/* Detection results */}
-              {groups.length > 0 ? (
-                <div className="space-y-2">
-                  <p className="text-xs text-emerald-400 flex items-center gap-1.5">
-                    <Check className="h-3 w-3" />
-                    {groups.length} form{groups.length !== 1 ? 's' : ''} found across{' '}
-                    {groups.length} page{groups.length !== 1 ? 's' : ''}
+              {/* Auth form detected → tabbed credential entry */}
+              {hasAuthForm && groups.length > 0 && (() => {
+                // Build prefix → fields mapping per group.
+                // Use index-keyed entries to avoid collisions when two groups share
+                // the same formLabel (e.g. two "Login" groups — deduplicated in
+                // the backend, but we guard here too).
+                const groupEntries = groups.map((g, idx) => {
+                  const prefix = g.formLabel.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_';
+                  let groupFields = fields.filter(f => f.key.startsWith(prefix));
+                  // Single-group case: groupsToContextFields skips the prefix, so keys
+                  // are plain ("username", "password") — fall back to all fields.
+                  if (groupFields.length === 0 && groups.length === 1) {
+                    groupFields = fields;
+                  }
+                  return { g, idx, groupFields, tabKey: `${g.formLabel}__${idx}` };
+                });
+                // Active group resolved by tabKey
+                const activeEntry = groupEntries.find(e => e.tabKey === activeGroupLabel)
+                  ?? groupEntries[0];
+                const activeFields = activeEntry?.groupFields ?? [];
+
+                return (
+                  <div className="space-y-3">
+                    {/* Group tabs */}
+                    <div className="flex flex-wrap gap-1">
+                      {groupEntries.map(({ g, tabKey }) => (
+                        <button
+                          key={tabKey}
+                          type="button"
+                          onClick={() => setActiveGroupLabel(tabKey)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                            activeGroupLabel === tabKey || (!activeGroupLabel && tabKey === groupEntries[0]?.tabKey)
+                              ? 'bg-zinc-700 text-zinc-100 border border-zinc-600'
+                              : 'bg-zinc-800/60 text-zinc-400 border border-zinc-700/40 hover:text-zinc-200 hover:border-zinc-600'
+                          }`}
+                          title={g.pageUrl}
+                        >
+                          <Lock className={`h-2.5 w-2.5 ${activeGroupLabel === tabKey ? 'text-amber-400' : 'text-zinc-600'}`} />
+                          {g.formLabel}
+                          <span className={`text-[10px] ${activeGroupLabel === tabKey ? 'text-zinc-400' : 'text-zinc-600'}`}>
+                            {g.fields.length}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Fields for active group */}
+                    <div className="rounded-lg border border-zinc-700/50 bg-zinc-800/60 p-3 space-y-2">
+                      <p className="text-xs text-zinc-400 font-medium mb-2">
+                        {activeEntry?.g.formLabel} credentials for authenticated testing:
+                      </p>
+                      {activeFields.map(f => {
+                        const idx = fields.findIndex(x => x.key === f.key);
+                        return (
+                          <FieldInput
+                            key={f.key}
+                            field={f}
+                            displayLabel={displayLabel(f.label)}
+                            showValue={showValues[f.key] ?? false}
+                            onToggleShow={() => setShowValues(v => ({ ...v, [f.key]: !v[f.key] }))}
+                            onChange={val => {
+                              const updated = [...fields];
+                              updated[idx] = { ...f, value: val };
+                              setFields(updated);
+                            }}
+                          />
+                        );
+                      })}
+                      {hasFilledFields && (
+                        <button
+                          type="button"
+                          onClick={saveContext}
+                          className="flex items-center gap-1.5 text-xs text-violet-400 hover:text-violet-300 transition-colors mt-1"
+                        >
+                          <Check className="h-3 w-3" /> Save credentials
+                        </button>
+                      )}
+                    </div>
+
+                    {deepCrawlEnabled && (
+                      <div className="flex items-center gap-2 text-xs text-violet-300 bg-violet-500/10 border border-violet-500/20 rounded-lg px-3 py-2">
+                        <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                        Deep crawl mode — TestPilot will log in, explore all pages, and compare them against your documentation.
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* No auth form + no error → show non-auth crawl notice */}
+              {!hasAuthForm && groups.length === 0 && !detectLoading && !detectError && (
+                <p className="text-xs text-zinc-600">
+                  No forms detected yet — scanning automatically on page load.
+                </p>
+              )}
+
+              {/* Non-auth forms found */}
+              {!hasAuthForm && groups.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs text-zinc-400">
+                    {groups.length} form{groups.length !== 1 ? 's' : ''} found (no login form detected):
                   </p>
                   {groups.map(g => (
                     <div
@@ -332,23 +592,149 @@ function PrepareContent() {
                       className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700/50"
                     >
                       <span className="text-xs font-medium text-zinc-200">{g.formLabel}</span>
-                      <span className="text-[10px] text-zinc-600 font-mono truncate flex-1">
-                        {g.pageUrl}
-                      </span>
-                      <span className="text-[10px] text-zinc-500 shrink-0">
-                        {g.fields.length} field{g.fields.length !== 1 ? 's' : ''}
-                      </span>
+                      <span className="text-[10px] text-zinc-600 font-mono truncate flex-1">{g.pageUrl}</span>
+                      <span className="text-[10px] text-zinc-500 shrink-0">{g.fields.length} field{g.fields.length !== 1 ? 's' : ''}</span>
                     </div>
                   ))}
-                  <p className="text-xs text-zinc-600 pt-1">
-                    Fill in credentials in the Context panel →
+                </div>
+              )}
+            </div>
+
+            {/* Import Existing Playwright Project card */}
+            <div className={`rounded-xl border overflow-hidden transition-colors ${
+              importUrlMismatch
+                ? 'border-red-500/40 bg-red-500/5'
+                : importValidation?.valid
+                  ? 'border-emerald-500/40 bg-emerald-500/5'
+                  : 'border-zinc-800 bg-zinc-900'
+            }`}>
+              <button
+                type="button"
+                onClick={() => setShowImport(v => !v)}
+                className="w-full flex items-center justify-between px-5 py-4 hover:bg-zinc-800/40 transition-colors text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <PackageOpen className={`h-4 w-4 shrink-0 ${importUrlMismatch ? 'text-red-400' : importValidation?.valid ? 'text-emerald-400' : 'text-zinc-500'}`} />
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-100">Import Existing Tests</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      {importUrlMismatch && importValidation?.valid && importValidation.detectedBaseUrl ? (
+                        <span className="text-red-400">URL mismatch — project targets {importValidation.detectedBaseUrl}</span>
+                      ) : importValidation?.valid ? (
+                        <span className="text-emerald-400">{importValidation.specFilesCount} spec file{importValidation.specFilesCount !== 1 ? 's' : ''} · {importZipFile?.name}</span>
+                      ) : (
+                        'Already have Playwright tests? Upload your project ZIP to skip exploration.'
+                      )}
+                    </p>
+                  </div>
+                </div>
+                {showImport
+                  ? <ChevronDown className="h-4 w-4 text-zinc-600 shrink-0" />
+                  : <ChevronRight className="h-4 w-4 text-zinc-600 shrink-0" />}
+              </button>
+
+              {showImport && (
+                <div className="px-5 pb-5 pt-4 border-t border-zinc-800 space-y-3">
+                  {/* URL mismatch warning */}
+                  {importUrlMismatch && importValidation?.valid && importValidation.detectedBaseUrl && (
+                    <div className="flex items-start gap-2.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5">
+                      <AlertTriangle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-medium text-red-300">Project URL mismatch</p>
+                        <p className="text-xs text-zinc-400">
+                          This project targets <span className="font-mono text-red-300">{importValidation.detectedBaseUrl}</span> but your
+                          target URL is <span className="font-mono text-zinc-200">{url}</span>.
+                          Please upload a project that matches your target, or change the target URL.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {importValidation?.valid ? (
+                    /* ── Loaded state ── */
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-emerald-400 flex items-center gap-1.5">
+                          <Check className="h-3 w-3" />
+                          {importZipFile?.name} · {importValidation.specFilesCount} spec file{importValidation.specFilesCount !== 1 ? 's' : ''}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={clearImport}
+                          className="text-zinc-600 hover:text-red-400 transition-colors flex items-center gap-1"
+                        >
+                          <X className="h-3 w-3" /> Clear
+                        </button>
+                      </div>
+                      {importValidation.useCases.length > 0 && (
+                        <div className="rounded-lg bg-zinc-800/60 border border-zinc-700/40 px-3 py-2.5 space-y-1 max-h-36 overflow-y-auto">
+                          {importValidation.useCases.map((uc, i) => (
+                            <div key={i} className="text-xs text-zinc-400">
+                              <span className="text-zinc-300 font-medium">{uc.suite}</span>
+                              {uc.tests.length > 0 && (
+                                <span className="text-zinc-600"> · {uc.tests.length} test{uc.tests.length !== 1 ? 's' : ''}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : importValidation?.valid === false ? (
+                    /* ── Validation error ── */
+                    <div className="flex items-start gap-2 text-xs text-red-400">
+                      <X className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <span>{importValidation.reason}</span>
+                    </div>
+                  ) : importValidating ? (
+                    /* ── Validating ── */
+                    <div className="flex items-center gap-2 text-xs text-zinc-400">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Validating Playwright project…
+                    </div>
+                  ) : (
+                    /* ── Empty dropzone ── */
+                    <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-zinc-700 rounded-lg p-5 cursor-pointer hover:border-violet-500/50 hover:bg-zinc-800/40 transition-colors">
+                      <Upload className="h-5 w-5 text-zinc-500" />
+                      <span className="text-xs text-zinc-400 text-center">
+                        Upload your Playwright project <code className="text-zinc-300">.zip</code>
+                      </span>
+                      <span className="text-[10px] text-zinc-600 text-center">Must contain playwright.config.ts and spec files</span>
+                      <input
+                        type="file"
+                        accept=".zip"
+                        className="sr-only"
+                        onChange={e => {
+                          const f = e.target.files?.[0];
+                          if (f) handleImportZip(f);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  )}
+
+                  {/* Replace dropzone after clear */}
+                  {importValidation !== null && (
+                    <label className="flex items-center gap-2 text-xs text-zinc-600 hover:text-zinc-400 cursor-pointer transition-colors">
+                      <Upload className="h-3.5 w-3.5" />
+                      Replace ZIP
+                      <input
+                        type="file"
+                        accept=".zip"
+                        className="sr-only"
+                        onChange={e => {
+                          const f = e.target.files?.[0];
+                          if (f) handleImportZip(f);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  )}
+
+                  <p className="text-xs text-zinc-600 pt-1 border-t border-zinc-800">
+                    TestPilot will run your existing tests directly — no site exploration or test generation.
                   </p>
                 </div>
-              ) : !detectLoading && !detectError ? (
-                <p className="text-xs text-zinc-600">
-                  Click "Detect Forms" to discover forms on this site.
-                </p>
-              ) : null}
+              )}
             </div>
 
             {/* Figma Verification card */}
@@ -389,6 +775,141 @@ function PrepareContent() {
                   <p className="text-xs text-zinc-600">
                     Requires <code className="text-zinc-500">FIGMA_TOKEN</code> in{' '}
                     <code className="text-zinc-500">.env.local</code>
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Product Documentation card */}
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowDoc(v => !v)}
+                className="w-full flex items-center justify-between px-5 py-4 hover:bg-zinc-800/40 transition-colors text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <FileText className="h-4 w-4 text-zinc-500 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-100">Product Documentation</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      {docContent.trim()
+                        ? <span className="text-emerald-400">{docFileName} · {docContent.length.toLocaleString()} chars</span>
+                        : 'Optional — generate tests guided by your product spec or docs'}
+                    </p>
+                  </div>
+                </div>
+                {showDoc
+                  ? <ChevronDown className="h-4 w-4 text-zinc-600 shrink-0" />
+                  : <ChevronRight className="h-4 w-4 text-zinc-600 shrink-0" />}
+              </button>
+
+              {showDoc && (
+                <div className="px-5 pb-5 pt-4 border-t border-zinc-800 space-y-3">
+                  {docContent.trim() ? (
+                    /* ── Doc loaded ── */
+                    <div className="space-y-3">
+                      {/* File badge + clear */}
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-emerald-400 flex items-center gap-1.5">
+                          <Check className="h-3 w-3" />
+                          {docFileName} · {docContent.length.toLocaleString()} chars
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => { setDocContent(''); setDocFileName(''); setDocPasting(false); setDocPasteText(''); }}
+                          className="text-zinc-600 hover:text-red-400 transition-colors flex items-center gap-1"
+                        >
+                          <X className="h-3 w-3" /> Clear
+                        </button>
+                      </div>
+                      {/* Open canvas button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          sessionStorage.setItem('canvasPreviewDoc', docContent);
+                          sessionStorage.setItem('canvasPreviewFileName', docFileName || 'documentation.md');
+                          window.open('/canvas/preview', '_blank');
+                        }}
+                        className="flex items-center justify-between w-full rounded-lg border border-zinc-700/60 bg-zinc-800/50 hover:bg-zinc-800 hover:border-zinc-600 transition px-3 py-2.5 group"
+                      >
+                        <span className="text-xs text-zinc-300 group-hover:text-zinc-100 transition">
+                          Open Feature Canvas
+                        </span>
+                        <span className="text-zinc-600 group-hover:text-zinc-400 transition text-xs">↗</span>
+                      </button>
+                    </div>
+                  ) : docPasting ? (
+                    /* ── Paste mode ── */
+                    <div className="space-y-2">
+                      <textarea
+                        autoFocus
+                        rows={7}
+                        value={docPasteText}
+                        onChange={e => setDocPasteText(e.target.value)}
+                        placeholder="Paste your product documentation, feature spec, or user flows here…"
+                        className="w-full px-3 py-2.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500 text-xs resize-none"
+                      />
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => {
+                            if (docPasteText.trim()) {
+                              setDocContent(docPasteText.trim());
+                              setDocFileName('documentation.md');
+                              setShowDoc(true); // expand card to show canvas
+                            }
+                            setDocPasting(false);
+                          }}
+                        >
+                          <Check className="h-3 w-3" /> Use This
+                        </Button>
+                        <button
+                          type="button"
+                          onClick={() => { setDocPasting(false); setDocPasteText(''); }}
+                          className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* ── Empty state ── */
+                    <div className="space-y-3">
+                      <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-zinc-700 rounded-lg p-5 cursor-pointer hover:border-violet-500/50 hover:bg-zinc-800/40 transition-colors">
+                        <Upload className="h-5 w-5 text-zinc-500" />
+                        <span className="text-xs text-zinc-400">Upload <code className="text-zinc-300">.md</code> or <code className="text-zinc-300">.txt</code> file</span>
+                        <input
+                          type="file"
+                          accept=".md,.txt,.markdown"
+                          className="sr-only"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const text = await file.text();
+                            setDocContent(text);
+                            setDocFileName(file.name);
+                            setShowDoc(true); // expand card to show canvas
+                          }}
+                        />
+                      </label>
+                      <div className="flex items-center gap-3 text-xs text-zinc-600">
+                        <div className="flex-1 h-px bg-zinc-800" />
+                        or
+                        <div className="flex-1 h-px bg-zinc-800" />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setDocPasting(true)}
+                        className="w-full py-2 text-xs text-zinc-500 hover:text-zinc-300 transition-colors rounded-lg hover:bg-zinc-800"
+                      >
+                        Paste text instead
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-xs text-zinc-600 pt-1 border-t border-zinc-800">
+                    When provided, tests are generated against your documented features and user flows
+                    rather than relying solely on site crawling.
                   </p>
                 </div>
               )}
@@ -440,14 +961,14 @@ function PrepareContent() {
 
             {/* Launch button — shown below cards on mobile */}
             <div className="lg:hidden pt-1">
-              <Button className="w-full" size="lg" onClick={launch} disabled={launching}>
+              <Button className="w-full" size="lg" onClick={launch} disabled={launching || importUrlMismatch} title={importUrlMismatch ? 'Fix the project URL mismatch before running' : undefined}>
                 {launching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
                 {launching ? 'Launching…' : 'Run TestPilot'}
               </Button>
             </div>
           </div>
 
-          {/* ── Right: Context sidebar ────────────────────────────────────── */}
+          {/* ── Right: Context / Status sidebar ──────────────────────────── */}
           <div className="lg:col-span-1">
             <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden lg:sticky lg:top-6">
 
@@ -455,93 +976,74 @@ function PrepareContent() {
               <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-zinc-100">Context</h2>
                 {savedAt && (
-                  <span className="text-[10px] text-zinc-600">
-                    Saved {timeAgo(savedAt)}
-                  </span>
+                  <span className="text-[10px] text-zinc-600">Saved {timeAgo(savedAt)}</span>
                 )}
               </div>
 
-              {hasContext ? (
-                <div className="p-4 space-y-4">
-                  <p className="text-xs text-zinc-500">
-                    Values injected during test generation and execution for{' '}
-                    <span className="text-zinc-300">{url}</span>.
-                  </p>
+              <div className="p-4 space-y-3">
+                {/* Deep crawl status banner */}
+                {deepCrawlEnabled ? (
+                  <div className="rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-2.5 space-y-1">
+                    <p className="text-xs font-medium text-violet-300 flex items-center gap-1.5">
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      Deep Crawl Active
+                    </p>
+                    <p className="text-xs text-zinc-400">
+                      After login, TestPilot will crawl up to 50 pages of the authenticated app
+                      and compare them against your documentation.
+                    </p>
+                    <p className="text-[10px] text-zinc-600 mt-1">
+                      Override with <code>DEEP_CRAWL_MAX_PAGES</code> in .env.local
+                    </p>
+                  </div>
+                ) : hasAuthForm ? (
+                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2.5">
+                    <p className="text-xs text-amber-300 flex items-center gap-1.5">
+                      <Lock className="h-3.5 w-3.5" />
+                      Fill in credentials to enable deep crawl
+                    </p>
+                  </div>
+                ) : storedContext ? (
+                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
+                    <p className="text-xs text-emerald-300 flex items-center gap-1.5">
+                      <Check className="h-3.5 w-3.5" />
+                      Credentials saved
+                    </p>
+                  </div>
+                ) : null}
 
-                  {/* Grouped view (multiple form pages detected) */}
-                  {groups.length > 1 ? (
-                    <div className="space-y-2">
-                      {groups.map(group => {
-                        const isCollapsed = collapsedGroups[group.formLabel] ?? false;
-                        const prefix = group.formLabel.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_';
-                        const groupFields = fields.filter(f => f.key.startsWith(prefix));
-                        return (
-                          <div
-                            key={group.formLabel}
-                            className="border border-zinc-700/50 rounded-lg overflow-hidden"
-                          >
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setCollapsedGroups(v => ({
-                                  ...v,
-                                  [group.formLabel]: !v[group.formLabel],
-                                }))
-                              }
-                              className="w-full flex items-center justify-between px-3 py-2 bg-zinc-800/60 hover:bg-zinc-800 transition-colors text-left"
-                            >
-                              <span className="text-xs font-medium text-zinc-200">
-                                {group.formLabel}
-                              </span>
-                              <span className="flex items-center gap-2 shrink-0">
-                                <span className="text-[10px] text-zinc-500">
-                                  {group.fields.length} field{group.fields.length !== 1 ? 's' : ''}
-                                </span>
-                                {isCollapsed
-                                  ? <ChevronRight className="h-3 w-3 text-zinc-600" />
-                                  : <ChevronDown className="h-3 w-3 text-zinc-600" />}
-                              </span>
-                            </button>
-                            {!isCollapsed && (
-                              <div className="p-2.5 space-y-2">
-                                {groupFields.map(f => {
-                                  const idx = fields.findIndex(x => x.key === f.key);
-                                  const label = f.label.replace(/^[^—]*—\s*/, '');
-                                  return (
-                                    <FieldInput
-                                      key={f.key}
-                                      field={f}
-                                      displayLabel={label}
-                                      showValue={showValues[f.key] ?? false}
-                                      onToggleShow={() =>
-                                        setShowValues(v => ({ ...v, [f.key]: !v[f.key] }))
-                                      }
-                                      onChange={val => {
-                                        const updated = [...fields];
-                                        updated[idx] = { ...f, value: val };
-                                        setFields(updated);
-                                      }}
-                                    />
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    /* Flat view for single form or stored context */
+                {/* Saved context summary (when auth fields shown inline above, just show summary here) */}
+                {hasContext && hasAuthForm ? (
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-zinc-500">
+                      Credentials for <span className="text-zinc-300 break-all">{url}</span>
+                    </p>
+                    {fields.filter(f => f.value).map(f => (
+                      <div key={f.key} className="flex items-center gap-2 text-xs">
+                        <span className="text-zinc-500 w-24 truncate shrink-0">{displayLabel(f.label)}</span>
+                        <span className="text-zinc-400 font-mono">
+                          {f.sensitive ? '••••••••' : f.value.slice(0, 20)}
+                        </span>
+                      </div>
+                    ))}
+                    {!hasFilledFields && (
+                      <p className="text-xs text-zinc-600">No values entered yet.</p>
+                    )}
+                  </div>
+                ) : hasContext && !hasAuthForm ? (
+                  /* Non-auth stored context — show editable fields */
+                  <div className="space-y-3">
+                    <p className="text-xs text-zinc-500">
+                      Context for <span className="text-zinc-300">{url}</span>
+                    </p>
                     <div className="space-y-2">
                       {fields.map((f, i) => (
                         <FieldInput
                           key={f.key}
                           field={f}
-                          displayLabel={f.label}
+                          displayLabel={displayLabel(f.label)}
                           showValue={showValues[f.key] ?? false}
-                          onToggleShow={() =>
-                            setShowValues(v => ({ ...v, [f.key]: !v[f.key] }))
-                          }
+                          onToggleShow={() => setShowValues(v => ({ ...v, [f.key]: !v[f.key] }))}
                           onChange={val => {
                             const updated = [...fields];
                             updated[i] = { ...f, value: val };
@@ -550,46 +1052,34 @@ function PrepareContent() {
                         />
                       ))}
                     </div>
-                  )}
-
-                  <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
-                    <button
-                      type="button"
-                      onClick={saveContext}
-                      disabled={!hasFilledFields}
-                      className="text-xs text-violet-400 hover:text-violet-300 disabled:opacity-40 transition-colors flex items-center gap-1"
-                    >
-                      <Check className="h-3 w-3" />
-                      Save context
-                    </button>
-                    {storedContext && (
-                      <span className="text-[10px] text-zinc-600">
-                        Last saved {timeAgo(storedContext.updatedAt)}
-                      </span>
-                    )}
+                    <div className="pt-1 border-t border-zinc-800 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={saveContext}
+                        disabled={!hasFilledFields}
+                        className="text-xs text-violet-400 hover:text-violet-300 disabled:opacity-40 transition-colors flex items-center gap-1"
+                      >
+                        <Check className="h-3 w-3" /> Save context
+                      </button>
+                      {storedContext && (
+                        <span className="text-[10px] text-zinc-600">Last saved {timeAgo(storedContext.updatedAt)}</span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div className="p-4 space-y-3">
-                  <p className="text-xs text-zinc-500">No context saved for this URL.</p>
-                  <p className="text-xs text-zinc-600">
-                    Click "Detect Forms" in the main panel to discover login, register, and other
-                    forms on this site, then fill in your credentials to enable authenticated
-                    testing.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={detectForms}
-                    disabled={detectLoading}
-                    className="flex items-center gap-1.5 text-xs text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-40"
-                  >
-                    {detectLoading
-                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      : <Search className="h-3.5 w-3.5" />}
-                    {detectLoading ? 'Scanning…' : 'Detect Forms'}
-                  </button>
-                </div>
-              )}
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-zinc-500">
+                      {detectLoading
+                        ? 'Scanning for forms…'
+                        : 'No credentials saved for this URL.'}
+                    </p>
+                    <p className="text-xs text-zinc-600">
+                      If a login form is detected, credentials entered here will be
+                      used to authenticate before crawling.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

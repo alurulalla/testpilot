@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, setStatus, setTestResult, setError, addLog } from '@/lib/session-store';
+import { getSession, setStatus, setTestResult, setTriageResult, setError, addLog } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { runTestsAsync } from '@/lib/run-tests-async';
+import { triageFailures } from '@/lib/triage-failures';
+import { createModelFromConfig } from '@/lib/pilot/model-factory';
+import { getLlmConfig } from '@/lib/llm-config-store';
+import { withRateLimit } from '@/lib/rate-limited-model';
 import path from 'path';
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -14,6 +18,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   }
 
   setStatus(id, 'running');
+  setTriageResult(id, null); // clear previous triage on each new run
   addLog(id, 'Running test suite…', 'info');
 
   (async () => {
@@ -29,9 +34,48 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
       const { passed, failed, total, errors } = result.stats;
       if (errors > 0 && total === 0) {
-        addLog(id, `Test run failed — check log above for errors (syntax error or no tests found).`, 'error');
-      } else {
-        addLog(id, `Tests complete: ${passed}/${total} passed.`, failed === 0 ? 'success' : 'error');
+        addLog(id, 'Test run failed — check log above for errors (syntax error or no tests found).', 'error');
+        return;
+      }
+
+      addLog(id, `Tests complete: ${passed}/${total} passed.`, failed === 0 ? 'success' : 'error');
+
+      // Triage failures so the UI can show app-bug vs test-bug badges
+      if (failed > 0) {
+        try {
+          addLog(id, 'Analysing failures…', 'info');
+          const llmConfig = getLlmConfig();
+          const baseModel = await createModelFromConfig(llmConfig);
+          const chatModel = withRateLimit(baseModel);
+          const fresh = getSession(id);
+          const triage = await triageFailures(
+            workspace,
+            fresh?.contextDoc ?? null,
+            fresh?.url ?? session.url,
+            chatModel,
+            (line) => addLog(id, line, 'info'),
+          );
+          setTriageResult(id, triage);
+
+          if (triage.appBugCount > 0) {
+            addLog(
+              id,
+              `⚠ ${triage.appBugCount} failure(s) look like application gaps — the app may not match its documentation.`,
+              'error',
+            );
+          }
+          if (triage.testBugCount + triage.ambiguousCount > 0) {
+            const autoHeal = process.env.AUTO_SELF_HEAL === 'true';
+            addLog(
+              id,
+              `🔧 ${triage.testBugCount + triage.ambiguousCount} failure(s) are test-code issues.` +
+              (autoHeal ? ' Auto-healing is ON — use the loop to fix automatically.' : ' Click Self-Heal to fix.'),
+              'info',
+            );
+          }
+        } catch {
+          addLog(id, 'Failure analysis skipped (LLM unavailable).', 'info');
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

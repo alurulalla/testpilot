@@ -29,6 +29,17 @@ export function getMaxPages(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 10;
 }
 
+/**
+ * Maximum pages to crawl when the user has authenticated credentials.
+ * Authenticated crawls go deeper because they can reach protected pages.
+ * Set DEEP_CRAWL_MAX_PAGES in .env.local to override (default: 50).
+ */
+export function getDeepCrawlMaxPages(): number {
+  const raw = process.env.DEEP_CRAWL_MAX_PAGES || readEnvLocal().DEEP_CRAWL_MAX_PAGES;
+  const parsed = raw ? parseInt(raw, 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 50;
+}
+
 export function getFigmaToken(): string | undefined {
   return process.env.FIGMA_TOKEN || readEnvLocal().FIGMA_TOKEN || undefined;
 }

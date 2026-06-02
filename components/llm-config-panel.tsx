@@ -61,6 +61,8 @@ export default function LlmConfigPanel() {
   const [showKey, setShowKey]   = useState(false);
   const [saving, setSaving]     = useState(false);
   const [saveMsg, setSaveMsg]   = useState('');
+  const [testing, setTesting]   = useState(false);
+  const [testMsg, setTestMsg]   = useState<{ ok: boolean; text: string; hint?: string } | null>(null);
 
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -125,6 +127,28 @@ export default function LlmConfigPanel() {
       setSaveMsg(`Error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleTest() {
+    setTesting(true);
+    setTestMsg(null);
+    try {
+      const res = await fetch('/api/llm-config/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, model, apiKey, baseUrl }),
+      });
+      const data = await res.json() as { ok: boolean; error?: string; hint?: string; model?: string };
+      if (data.ok) {
+        setTestMsg({ ok: true, text: `✓ Connected — model "${data.model}" is responding` });
+      } else {
+        setTestMsg({ ok: false, text: data.error ?? 'Connection failed', hint: data.hint });
+      }
+    } catch (e) {
+      setTestMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -274,20 +298,43 @@ export default function LlmConfigPanel() {
               </div>
             )}
 
-            {/* Save button */}
-            <div className="flex items-center justify-between pt-1">
+            {/* Test result message */}
+            {testMsg && (
+              <div className={`rounded-lg px-3 py-2 text-xs ${
+                testMsg.ok
+                  ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                  : 'bg-red-500/10 border border-red-500/30 text-red-400'
+              }`}>
+                <p>{testMsg.text}</p>
+                {testMsg.hint && (
+                  <p className="mt-0.5 text-zinc-400">{testMsg.hint}</p>
+                )}
+              </div>
+            )}
+
+            {/* Save / Test buttons */}
+            <div className="flex items-center justify-between gap-2 pt-1">
               {saveMsg ? (
                 <span className={`text-xs ${saveMsg.startsWith('Error') ? 'text-red-400' : 'text-emerald-400'}`}>
                   {saveMsg}
                 </span>
               ) : <span />}
-              <button
-                onClick={handleSave}
-                disabled={saving || !provider || !model}
-                className="rounded-lg bg-violet-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {saving ? 'Saving…' : 'Save'}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleTest}
+                  disabled={testing || saving || !provider || !model}
+                  className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {testing ? 'Testing…' : 'Test Connection'}
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving || !provider || !model}
+                  className="rounded-lg bg-violet-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

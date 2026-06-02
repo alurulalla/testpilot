@@ -1,0 +1,26 @@
+/**
+ * DELETE /api/sessions/[id]/flows/[flowId]  — remove a specific user flow
+ */
+import { NextRequest, NextResponse } from 'next/server';
+import path from 'path';
+import { getSession, removeUserFlow } from '@/lib/session-store';
+import { Workspace } from '@/lib/pilot';
+import { writeContextMd } from '@/lib/build-context-md';
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string; flowId: string }> },
+) {
+  const { id, flowId } = await params;
+  const session = getSession(id);
+  if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  removeUserFlow(id, flowId);
+
+  // Rebuild CONTEXT.md without the removed flow
+  const remaining = session.userFlows.filter(f => f.id !== flowId);
+  const ws = new Workspace({ url: session.url, rootDir: path.join(process.cwd(), '.testpilot', id) });
+  writeContextMd(ws.dir, session.contextDoc, remaining);
+
+  return NextResponse.json({ ok: true });
+}

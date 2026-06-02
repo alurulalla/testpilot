@@ -1,4 +1,4 @@
-import type { ChatModel } from '@/lib/pilot';
+import type { ChatModel, InvokeOptions } from '@/lib/pilot';
 
 /** Local providers (Ollama, LM Studio) don't need rate-limit delays. */
 const LOCAL_PROVIDERS = new Set(['ollama', 'lmstudio']);
@@ -32,14 +32,14 @@ export function withRateLimit(model: ChatModel, delayMs = 3000): ChatModel {
 
   return {
     ...model,
-    async invoke(messages) {
+    async invoke(messages, options?: InvokeOptions) {
       if (effectiveDelay > 0) {
         await new Promise(r => setTimeout(r, effectiveDelay));
       }
 
       for (let attempt = 0; attempt < 6; attempt++) {
         try {
-          return await model.invoke(messages);
+          return await model.invoke(messages, options);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           if (attempt === 5) throw err;

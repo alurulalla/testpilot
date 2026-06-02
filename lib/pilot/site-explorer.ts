@@ -47,48 +47,110 @@ function dedupeKey(url: string): string {
 async function collectPageElements(page: Page): Promise<Record<string, unknown>> {
   const elements: Record<string, unknown> = {};
 
-  // Buttons
+  // ── Interactives (primary locator table) ──────────────────────────────────
+  // Every visible interactive element with its exact ARIA role + accessible name.
+  // This is the definitive reference: role + name → getByRole(role, { name })
+  // Priority for accessible name: aria-label > visible text > placeholder > title
+  const interactiveSelector =
+    "a[href], button:not([disabled]), [role='button'], " +
+    "input:not([type='hidden']):not([disabled]), select, textarea, " +
+    "[role='link'], [role='menuitem'], [role='tab']";
+  const interactiveEls = await page.locator(interactiveSelector).all();
+  const interactives: { role: string; name: string; id: string; testId: string; href: string }[] = [];
+  for (const el of interactiveEls.slice(0, 100)) {
+    if (!await el.isVisible().catch(() => false)) continue;
+    const tag         = await el.evaluate((e: Element) => e.tagName.toLowerCase()).catch(() => '');
+    const explicitRole = (await el.getAttribute('role').catch(() => '')) || '';
+    const inputType   = (await el.getAttribute('type').catch(() => '')) || 'text';
+
+    // Determine the ARIA role
+    let role = explicitRole;
+    if (!role) {
+      if (tag === 'a')        role = 'link';
+      else if (tag === 'button' || inputType === 'submit' || inputType === 'button') role = 'button';
+      else if (tag === 'select') role = 'combobox';
+      else if (tag === 'textarea') role = 'textbox';
+      else if (inputType === 'search') role = 'searchbox';
+      else if (inputType === 'checkbox') role = 'checkbox';
+      else if (inputType === 'radio') role = 'radio';
+      else role = 'textbox'; // generic input
+    }
+
+    // Accessible name (priority order matching ARIA spec)
+    const id      = (await el.getAttribute('id').catch(() => '')) || '';
+    const ariaLabel  = (await el.getAttribute('aria-label').catch(() => '')) || '';
+    const innerText  = ((await el.innerText().catch(() => '')) || '').trim();
+    const placeholder = (await el.getAttribute('placeholder').catch(() => '')) || '';
+    const titleAttr  = (await el.getAttribute('title').catch(() => '')) || '';
+    // Also check <label for="id"> — many traditional apps (JSP, JSF, Rails) label
+    // form inputs this way without using aria-label or placeholder.
+    let labelText = '';
+    if (id) {
+      labelText = (
+        await page.locator(`label[for="${id}"]`).first().innerText().catch(() => '')
+      || '');
+      labelText = labelText.replace(/[*:\s]+$/, '').trim(); // strip trailing asterisks/colons
+    }
+    const name = (ariaLabel || labelText || innerText || placeholder || titleAttr).replace(/\n+/g, ' ').slice(0, 100);
+    if (!name) continue; // skip elements with no discernible name
+    const testId = (await el.getAttribute('data-testid').catch(() => ''))
+                || (await el.getAttribute('data-test-id').catch(() => ''))
+                || (await el.getAttribute('data-cy').catch(() => ''))
+                || '';
+    // Capture href for <a> links — enables precise href-based locators in tests
+    const href = (role === 'link' || tag === 'a')
+      ? ((await el.getAttribute('href').catch(() => '')) || '')
+      : '';
+
+    interactives.push({ role, name, id, testId, href });
+  }
+  elements.interactives = interactives;
+
+  // ── Buttons (kept for backward compat, now enriched with aria-label) ──────
   const buttonEls = await page.locator(
     "button, [role='button'], input[type='submit'], input[type='button'], input[type='reset']",
   ).all();
-  const buttons: string[] = [];
+  const buttons: { text: string; ariaLabel: string; id: string }[] = [];
   for (const b of buttonEls) {
-    if (await b.isVisible()) {
-      buttons.push(((await b.innerText().catch(() => '')) || '').slice(0, 100).trim());
-    }
+    if (!await b.isVisible().catch(() => false)) continue;
+    const text      = ((await b.innerText().catch(() => '')) || '').slice(0, 100).trim();
+    const ariaLabel = (await b.getAttribute('aria-label').catch(() => '')) || '';
+    const id        = (await b.getAttribute('id').catch(() => '')) || '';
+    buttons.push({ text, ariaLabel, id });
   }
   elements.buttons = buttons;
 
-  // Links
+  // ── Links (enriched with aria-label) ─────────────────────────────────────
   const linkEls = await page.locator('a[href]').all();
-  const links: { text: string; href: string }[] = [];
-  for (const a of linkEls.slice(0, 50)) {
+  const links: { text: string; href: string; ariaLabel: string }[] = [];
+  for (const a of linkEls.slice(0, 60)) {
     const href = (await a.getAttribute('href').catch(() => '')) || '';
     if (href.startsWith('javascript:') || href.startsWith('#') ||
-        href.startsWith('mailto:') || href.startsWith('tel:')) continue;
+        href.startsWith('mailto:')     || href.startsWith('tel:')) continue;
     links.push({
-      text: ((await a.innerText().catch(() => '')) || '').slice(0, 80).trim(),
+      text:      ((await a.innerText().catch(() => '')) || '').slice(0, 80).trim(),
       href,
+      ariaLabel: (await a.getAttribute('aria-label').catch(() => '')) || '',
     });
   }
   elements.links = links;
 
-  // Inputs
+  // ── Inputs ────────────────────────────────────────────────────────────────
   const inputEls = await page.locator("input:not([type='hidden']), textarea, select").all();
   const inputs: Record<string, string>[] = [];
   for (const i of inputEls) {
     if (!await i.isVisible().catch(() => false)) continue;
     inputs.push({
-      type:        (await i.getAttribute('type').catch(() => '')) || 'text',
-      name:        (await i.getAttribute('name').catch(() => '')) || '',
-      id:          (await i.getAttribute('id').catch(() => '')) || '',
+      type:        (await i.getAttribute('type').catch(() => ''))        || 'text',
+      name:        (await i.getAttribute('name').catch(() => ''))        || '',
+      id:          (await i.getAttribute('id').catch(() => ''))          || '',
       placeholder: (await i.getAttribute('placeholder').catch(() => '')) || '',
-      aria_label:  (await i.getAttribute('aria-label').catch(() => '')) || '',
+      aria_label:  (await i.getAttribute('aria-label').catch(() => ''))  || '',
     });
   }
   elements.inputs = inputs;
 
-  // Forms
+  // ── Forms ─────────────────────────────────────────────────────────────────
   const formEls = await page.locator('form').all();
   const forms: Record<string, string>[] = [];
   for (const f of formEls) {
@@ -100,7 +162,7 @@ async function collectPageElements(page: Page): Promise<Record<string, unknown>>
   }
   elements.forms = forms;
 
-  // Headings
+  // ── Headings ──────────────────────────────────────────────────────────────
   const headingEls = await page.locator('h1, h2, h3').all();
   const headings: string[] = [];
   for (const h of headingEls) {
@@ -111,7 +173,7 @@ async function collectPageElements(page: Page): Promise<Record<string, unknown>>
   }
   elements.headings = headings;
 
-  // Landmarks
+  // ── Landmarks ─────────────────────────────────────────────────────────────
   const landmarkEls = await page.locator(
     "[role='navigation'], [role='main'], [role='banner'], [role='dialog'], nav, main, header, footer",
   ).all();
@@ -119,8 +181,9 @@ async function collectPageElements(page: Page): Promise<Record<string, unknown>>
   for (const el of landmarkEls) {
     if (!await el.isVisible().catch(() => false)) continue;
     const role = await el.getAttribute('role').catch(() => null);
-    const tag  = await el.evaluate((e: Element) => (e as HTMLElement).tagName.toLowerCase()).catch(() => '');
-    landmarkSet.add(role || tag);
+    const tag  = await el.evaluate((e: Element) => e.tagName.toLowerCase()).catch(() => '');
+    const name = (await el.getAttribute('aria-label').catch(() => '')) || '';
+    landmarkSet.add(name ? `${role || tag}[${name}]` : (role || tag));
   }
   elements.landmarks = [...landmarkSet];
 
