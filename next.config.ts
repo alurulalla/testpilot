@@ -28,6 +28,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: [
     'playwright',
     'playwright-core',
+    '@playwright/test',   // test runner — must stay external (spawned as CLI, not bundled)
     '@sparticuz/chromium', // ES module + compressed Chromium binary (.br files)
   ],
 
@@ -43,6 +44,13 @@ const nextConfig: NextConfig = {
       './node_modules/playwright-core/lib/**',
       './node_modules/@sparticuz/chromium/bin/**',
       './node_modules/@sparticuz/chromium/build/**',
+      // playwright/cli.js requires('./lib/program') — lib/ is not statically
+      // imported by app code so nft misses it without this explicit include.
+      './node_modules/playwright/cli.js',
+      './node_modules/playwright/lib/**',
+      // @playwright/test contains the actual test runner (reporters, fixtures, etc.)
+      './node_modules/@playwright/test/cli.js',
+      './node_modules/@playwright/test/lib/**',
     ],
   },
 };
