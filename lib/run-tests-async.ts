@@ -115,10 +115,11 @@ export async function runTestsAsync(
     // the CLI file exists at a known absolute path.  We run it with the
     // current Node.js executable (process.execPath) rather than via a shell.
     const playwrightCliCandidates = [
-      // 1. Through the workspace's node_modules symlink (Vercel / local both)
-      path.join(workspace.dir, 'node_modules', '@playwright', 'test', 'cli.js'),
+      // 1. playwright/cli.js uses relative require('./lib/program') — bypasses exports
+      //    map resolution that fails on Vercel with @playwright/test/cli.js
+      path.join(workspace.dir, 'node_modules', 'playwright', 'cli.js'),
       // 2. App-level node_modules fallback
-      path.join(process.cwd(), 'node_modules', '@playwright', 'test', 'cli.js'),
+      path.join(process.cwd(), 'node_modules', 'playwright', 'cli.js'),
     ];
     const playwrightCli = playwrightCliCandidates.find(existsSync)
       ?? playwrightCliCandidates[0]; // use first and let it fail with a clear error
