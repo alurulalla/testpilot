@@ -22,8 +22,14 @@ try {
 }
 
 const nextConfig: NextConfig = {
-  // playwright must remain external — it uses native binaries that can't be bundled
-  serverExternalPackages: ['playwright'],
+  // These packages must NOT be bundled by webpack — they either contain native
+  // binaries, binary asset files (.br), or are ES-module-only packages that
+  // webpack can't inline.  They are required at runtime from node_modules.
+  serverExternalPackages: [
+    'playwright',
+    'playwright-core',
+    '@sparticuz/chromium', // ES module + compressed Chromium binary (.br files)
+  ],
 };
 
 export default nextConfig;
