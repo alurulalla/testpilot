@@ -1129,17 +1129,45 @@ export default function SessionPage() {
 
   function applySession(data: unknown) {
     if (!isValidSession(data)) return;
+    const incoming = data as Session;
+
+    // Guard against cold-Lambda skeleton responses overwriting real state.
+    //
+    // When a Vercel Lambda container is cold-started for a session that was
+    // created by a different container, getSessionOrRestore() reconstructs a
+    // minimal skeleton from the cookie (status='idle', no logs, no testFiles,
+    // no siteMap). If the client already has meaningful state from a prior SSE
+    // stream, receiving that skeleton via polling would blank the UI entirely.
+    //
+    // Detection: incoming state looks like a skeleton iff it has no logs, no
+    // testFiles, no siteMap, and no testResult. We only reject it when our
+    // current local state has data (otherwise a genuinely empty session is fine).
+    const current = sessionRef.current;
+    if (current) {
+      const incomingIsEmpty =
+        (incoming.logs?.length ?? 0) === 0 &&
+        (incoming.testFiles?.length ?? 0) === 0 &&
+        !incoming.siteMap &&
+        !incoming.testResult;
+      const currentHasData =
+        (current.logs?.length ?? 0) > 0 ||
+        (current.testFiles?.length ?? 0) > 0 ||
+        !!current.siteMap ||
+        !!current.testResult;
+      if (incomingIsEmpty && currentHasData) return; // skeleton from cold Lambda — ignore
+    }
+
     // Ensure arrays are always defined to prevent runtime crashes
     const safe: Session = {
-      ...data,
-      logs: data.logs ?? [],
-      testFiles: data.testFiles ?? [],
-      scenarioResult: (data as Session).scenarioResult ?? null,
-      userFlows: (data as Session).userFlows ?? [],
-      contextDoc: (data as Session).contextDoc ?? null,
-      contextDocName: (data as Session).contextDocName ?? null,
-      importedProject: (data as Session).importedProject ?? null,
-      coverageAnalysis: (data as Session).coverageAnalysis ?? null,
+      ...incoming,
+      logs: incoming.logs ?? [],
+      testFiles: incoming.testFiles ?? [],
+      scenarioResult: incoming.scenarioResult ?? null,
+      userFlows: incoming.userFlows ?? [],
+      contextDoc: incoming.contextDoc ?? null,
+      contextDocName: incoming.contextDocName ?? null,
+      importedProject: incoming.importedProject ?? null,
+      coverageAnalysis: incoming.coverageAnalysis ?? null,
     };
     sessionRef.current = safe;
     setSession(safe);

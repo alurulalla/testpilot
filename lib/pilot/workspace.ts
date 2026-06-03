@@ -143,24 +143,47 @@ export class Workspace {
   }
 
   writePlaywrightConfig(): void {
+    const baseUrl = JSON.stringify(this.url);
     const config = `import { defineConfig } from '@playwright/test';
+
+// On Vercel/serverless, Playwright's bundled Chromium isn't available.
+// runTestsAsync resolves @sparticuz/chromium and passes the path via env var.
+const _exePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+
+// Serverless-safe Chrome flags: required when running inside a Lambda container.
+const _serverlessArgs = _exePath
+  ? ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
+     '--single-process', '--no-zygote', '--disable-gpu']
+  : [];
 
 export default defineConfig({
   testDir: './tests',
   outputDir: './test-results',
   timeout: 30_000,
   expect: { timeout: 5_000 },
-  fullyParallel: true,
+  // workers: 1 prevents multiple Chromium instances running simultaneously,
+  // which would exhaust Lambda memory (each instance uses ~150-200 MB).
+  fullyParallel: false,
+  workers: 1,
   retries: 0,
   reporter: [['json', { outputFile: './reports/report.json' }]],
   use: {
-    baseURL: ${JSON.stringify(this.url)},
+    baseURL: ${baseUrl},
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     viewport: { width: 1280, height: 720 },
   },
   projects: [
-    { name: 'chromium', use: { browserName: 'chromium' } },
+    {
+      name: 'chromium',
+      use: {
+        browserName: 'chromium',
+        launchOptions: {
+          executablePath: _exePath,
+          args: _serverlessArgs,
+        },
+      },
+    },
   ],
 });
 `;

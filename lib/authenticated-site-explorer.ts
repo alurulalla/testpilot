@@ -14,6 +14,14 @@ import path from 'path';
 import type { SiteMap } from '@/lib/pilot';
 import { launchBrowser } from '@/lib/browser';
 
+// ── Vercel-aware tuning ───────────────────────────────────────────────────────
+const IS_VERCEL = process.env.VERCEL === '1';
+const NAV_TIMEOUT      = IS_VERCEL ?  10_000 : 20_000;
+const IDLE_TIMEOUT     = IS_VERCEL ?   1_000 :  3_000;
+const FULL_PAGE_SHOT   = !IS_VERCEL;
+const MAX_INTERACTIVES = IS_VERCEL ?      40 :    100;
+const MAX_LINKS        = IS_VERCEL ?      30 :     60;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function sameOrigin(a: string, b: string): boolean {
@@ -46,148 +54,111 @@ function dedupeKey(url: string): string {
   }
 }
 
+/**
+ * Collect interactive elements, links, inputs, forms, headings and landmarks
+ * in a SINGLE page.evaluate() call — eliminates 1000+ Node↔browser round-trips
+ * that previously took 30+ seconds on complex pages.
+ */
 async function collectPageElements(page: Page): Promise<Record<string, unknown>> {
-  const elements: Record<string, unknown> = {};
+  return page.evaluate(
+    ({ maxInteractives, maxLinks }: { maxInteractives: number; maxLinks: number }) => {
+      function txt(el: Element): string {
+        return ((el as HTMLElement).innerText ?? el.textContent ?? '').trim().replace(/\n+/g, ' ').slice(0, 100);
+      }
+      function attr(el: Element, name: string): string {
+        return el.getAttribute(name) ?? '';
+      }
+      function isVisible(el: Element): boolean {
+        const s = window.getComputedStyle(el);
+        return s.display !== 'none' && s.visibility !== 'hidden' && (el as HTMLElement).offsetParent !== null;
+      }
 
-  // ── Interactives (primary locator table) ──────────────────────────────────
-  // Every visible interactive element with its exact ARIA role + accessible name.
-  // This is the definitive reference: role + name → getByRole(role, { name })
-  // Priority for accessible name: aria-label > visible text > placeholder > title
-  const interactiveSelector =
-    "a[href], button:not([disabled]), [role='button'], " +
-    "input:not([type='hidden']):not([disabled]), select, textarea, " +
-    "[role='link'], [role='menuitem'], [role='tab']";
-  const interactiveEls = await page.locator(interactiveSelector).all();
-  const interactives: { role: string; name: string; id: string; testId: string; href: string }[] = [];
-  for (const el of interactiveEls.slice(0, 100)) {
-    if (!await el.isVisible().catch(() => false)) continue;
-    const tag          = await el.evaluate((e: Element) => e.tagName.toLowerCase()).catch(() => '');
-    const explicitRole = (await el.getAttribute('role').catch(() => '')) || '';
-    const inputType    = (await el.getAttribute('type').catch(() => '')) || 'text';
+      // ── Interactives ──────────────────────────────────────────────────────
+      const intSel = "a[href], button:not([disabled]), [role='button'], " +
+        "input:not([type='hidden']):not([disabled]), select, textarea, " +
+        "[role='link'], [role='menuitem'], [role='tab']";
+      const intEls = [...document.querySelectorAll(intSel)].slice(0, maxInteractives);
+      const interactives = intEls.flatMap(el => {
+        if (!isVisible(el)) return [];
+        const tag  = el.tagName.toLowerCase();
+        const type = attr(el, 'type') || 'text';
+        const explicitRole = attr(el, 'role');
+        const role = explicitRole || (
+          tag === 'a' ? 'link' :
+          tag === 'button' || type === 'submit' || type === 'button' ? 'button' :
+          tag === 'select' ? 'combobox' : tag === 'textarea' ? 'textbox' :
+          type === 'search' ? 'searchbox' : type === 'checkbox' ? 'checkbox' :
+          type === 'radio' ? 'radio' : 'textbox'
+        );
+        const id         = attr(el, 'id');
+        const ariaLabel  = attr(el, 'aria-label');
+        const innerText  = txt(el);
+        const placeholder = attr(el, 'placeholder');
+        const titleAttr  = attr(el, 'title');
+        const labelEl    = id ? document.querySelector(`label[for="${id}"]`) : null;
+        const labelText  = labelEl ? txt(labelEl).replace(/[*:\s]+$/, '') : '';
+        const name       = (ariaLabel || labelText || innerText || placeholder || titleAttr).slice(0, 100);
+        if (!name) return [];
+        const testId = attr(el, 'data-testid') || attr(el, 'data-cy') || '';
+        const href   = (role === 'link' || tag === 'a') ? attr(el, 'href') : '';
+        return [{ role, name, id, testId, href }];
+      });
 
-    let role = explicitRole;
-    if (!role) {
-      if (tag === 'a')        role = 'link';
-      else if (tag === 'button' || inputType === 'submit' || inputType === 'button') role = 'button';
-      else if (tag === 'select') role = 'combobox';
-      else if (tag === 'textarea') role = 'textbox';
-      else if (inputType === 'search') role = 'searchbox';
-      else if (inputType === 'checkbox') role = 'checkbox';
-      else if (inputType === 'radio') role = 'radio';
-      else role = 'textbox';
-    }
+      // ── Buttons ───────────────────────────────────────────────────────────
+      const btnSel = "button, [role='button'], input[type='submit'], input[type='button'], input[type='reset']";
+      const buttons = [...document.querySelectorAll(btnSel)]
+        .filter(isVisible)
+        .slice(0, 50)
+        .map(b => ({ text: txt(b).slice(0, 100), ariaLabel: attr(b, 'aria-label'), id: attr(b, 'id') }));
 
-    const id      = (await el.getAttribute('id').catch(() => '')) || '';
-    const ariaLabel   = (await el.getAttribute('aria-label').catch(() => '')) || '';
-    const innerText   = ((await el.innerText().catch(() => '')) || '').trim();
-    const placeholder = (await el.getAttribute('placeholder').catch(() => '')) || '';
-    const titleAttr   = (await el.getAttribute('title').catch(() => '')) || '';
-    // Also check <label for="id"> — many traditional apps (JSP, JSF, Rails) label
-    // form inputs this way without using aria-label or placeholder.
-    let labelText = '';
-    if (id) {
-      labelText = (
-        await page.locator(`label[for="${id}"]`).first().innerText().catch(() => '')
-      || '');
-      labelText = labelText.replace(/[*:\s]+$/, '').trim();
-    }
-    const name = (ariaLabel || labelText || innerText || placeholder || titleAttr).replace(/\n+/g, ' ').slice(0, 100);
-    if (!name) continue;
-    const testId = (await el.getAttribute('data-testid').catch(() => ''))
-                || (await el.getAttribute('data-test-id').catch(() => ''))
-                || (await el.getAttribute('data-cy').catch(() => ''))
-                || '';
-    // Capture href for link elements — enables precise href-based locators
-    const href = (role === 'link' || tag === 'a')
-      ? ((await el.getAttribute('href').catch(() => '')) || '')
-      : '';
+      // ── Links ─────────────────────────────────────────────────────────────
+      const links = [...document.querySelectorAll('a[href]')]
+        .slice(0, maxLinks)
+        .map(a => ({ text: txt(a).slice(0, 80), href: attr(a, 'href'), ariaLabel: attr(a, 'aria-label') }))
+        .filter(l => !l.href.startsWith('javascript:') && !l.href.startsWith('#') &&
+                     !l.href.startsWith('mailto:')     && !l.href.startsWith('tel:'));
 
-    interactives.push({ role, name, id, testId, href });
-  }
-  elements.interactives = interactives;
+      // ── Inputs ────────────────────────────────────────────────────────────
+      const inputs = [...document.querySelectorAll("input:not([type='hidden']), textarea, select")]
+        .filter(isVisible)
+        .map(i => ({
+          type:        attr(i, 'type') || 'text',
+          name:        attr(i, 'name'),
+          id:          attr(i, 'id'),
+          placeholder: attr(i, 'placeholder'),
+          aria_label:  attr(i, 'aria-label'),
+        }));
 
-  // ── Buttons (enriched with aria-label) ───────────────────────────────────
-  const buttonEls = await page.locator(
-    "button, [role='button'], input[type='submit'], input[type='button'], input[type='reset']",
-  ).all();
-  const buttons: { text: string; ariaLabel: string; id: string }[] = [];
-  for (const b of buttonEls) {
-    if (!await b.isVisible().catch(() => false)) continue;
-    const text      = ((await b.innerText().catch(() => '')) || '').slice(0, 100).trim();
-    const ariaLabel = (await b.getAttribute('aria-label').catch(() => '')) || '';
-    const id        = (await b.getAttribute('id').catch(() => '')) || '';
-    buttons.push({ text, ariaLabel, id });
-  }
-  elements.buttons = buttons;
+      // ── Forms ─────────────────────────────────────────────────────────────
+      const forms = [...document.querySelectorAll('form')].map(f => ({
+        action: attr(f, 'action'),
+        method: (attr(f, 'method') || 'get').toUpperCase(),
+        id:     attr(f, 'id'),
+      }));
 
-  // ── Links (enriched with aria-label) ─────────────────────────────────────
-  const linkEls = await page.locator('a[href]').all();
-  const links: { text: string; href: string; ariaLabel: string }[] = [];
-  for (const a of linkEls.slice(0, 60)) {
-    const href = (await a.getAttribute('href').catch(() => '')) || '';
-    if (href.startsWith('javascript:') || href.startsWith('#') ||
-        href.startsWith('mailto:')     || href.startsWith('tel:')) continue;
-    links.push({
-      text:      ((await a.innerText().catch(() => '')) || '').slice(0, 80).trim(),
-      href,
-      ariaLabel: (await a.getAttribute('aria-label').catch(() => '')) || '',
-    });
-  }
-  elements.links = links;
+      // ── Headings ──────────────────────────────────────────────────────────
+      const headings = [...document.querySelectorAll('h1, h2, h3')]
+        .filter(isVisible)
+        .slice(0, 10)
+        .map(h => txt(h))
+        .filter(Boolean);
 
-  // ── Inputs ────────────────────────────────────────────────────────────────
-  const inputEls = await page.locator("input:not([type='hidden']), textarea, select").all();
-  const inputs: Record<string, string>[] = [];
-  for (const i of inputEls) {
-    if (!await i.isVisible().catch(() => false)) continue;
-    inputs.push({
-      type:        (await i.getAttribute('type').catch(() => ''))        || 'text',
-      name:        (await i.getAttribute('name').catch(() => ''))        || '',
-      id:          (await i.getAttribute('id').catch(() => ''))          || '',
-      placeholder: (await i.getAttribute('placeholder').catch(() => '')) || '',
-      aria_label:  (await i.getAttribute('aria-label').catch(() => ''))  || '',
-    });
-  }
-  elements.inputs = inputs;
+      // ── Landmarks ─────────────────────────────────────────────────────────
+      const landmarkSel = "[role='navigation'],[role='main'],[role='banner'],[role='dialog'],nav,main,header,footer";
+      const landmarks = [...new Set(
+        [...document.querySelectorAll(landmarkSel)]
+          .filter(isVisible)
+          .map(el => {
+            const r = attr(el, 'role') || el.tagName.toLowerCase();
+            const n = attr(el, 'aria-label');
+            return n ? `${r}[${n}]` : r;
+          }),
+      )];
 
-  // ── Forms ─────────────────────────────────────────────────────────────────
-  const formEls = await page.locator('form').all();
-  const forms: Record<string, string>[] = [];
-  for (const f of formEls) {
-    forms.push({
-      action: (await f.getAttribute('action').catch(() => '')) || '',
-      method: ((await f.getAttribute('method').catch(() => '')) || 'get').toUpperCase(),
-      id:     (await f.getAttribute('id').catch(() => '')) || '',
-    });
-  }
-  elements.forms = forms;
-
-  // ── Headings ──────────────────────────────────────────────────────────────
-  const headingEls = await page.locator('h1, h2, h3').all();
-  const headings: string[] = [];
-  for (const h of headingEls) {
-    if (headings.length >= 10) break;
-    if (await h.isVisible().catch(() => false)) {
-      headings.push(((await h.innerText().catch(() => '')) || '').slice(0, 100).trim());
-    }
-  }
-  elements.headings = headings;
-
-  // ── Landmarks (with accessible name) ─────────────────────────────────────
-  const landmarkEls = await page.locator(
-    "[role='navigation'], [role='main'], [role='banner'], [role='dialog'], nav, main, header, footer",
-  ).all();
-  const landmarkSet = new Set<string>();
-  for (const el of landmarkEls) {
-    if (!await el.isVisible().catch(() => false)) continue;
-    const role = await el.getAttribute('role').catch(() => null);
-    const tag  = await el.evaluate((e: Element) => e.tagName.toLowerCase()).catch(() => '');
-    const name = (await el.getAttribute('aria-label').catch(() => '')) || '';
-    landmarkSet.add(name ? `${role || tag}[${name}]` : (role || tag));
-  }
-  elements.landmarks = [...landmarkSet];
-
-  return elements;
+      return { interactives, buttons, links, inputs, forms, headings, landmarks };
+    },
+    { maxInteractives: MAX_INTERACTIVES, maxLinks: MAX_LINKS },
+  ).catch(() => ({}));
 }
 
 async function collectAccessibilityTree(page: Page): Promise<unknown> {
@@ -246,7 +217,7 @@ export async function runAuthenticatedSiteExplorer(
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
         '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     });
-    ctx.setDefaultNavigationTimeout(20_000);
+    ctx.setDefaultNavigationTimeout(NAV_TIMEOUT);
 
     while (queue.length > 0 && visited.size < maxPages) {
       const next = queue.shift()!;
@@ -272,13 +243,12 @@ export async function runAuthenticatedSiteExplorer(
       try {
         // 'load' waits for scripts to execute — critical for React/Vue/Angular SPAs
         // where 'domcontentloaded' fires before the framework renders navigation links.
-        const resp = await page.goto(pageUrl, { waitUntil: 'load', timeout: 20_000 });
+        const resp = await page.goto(pageUrl, { waitUntil: 'load', timeout: NAV_TIMEOUT });
         if (resp) pageInfo.status_code = resp.status();
 
         // Best-effort networkidle: waits for React/Vue/Angular to finish its first
-        // render + any initial API calls. Capped at 3 s so we never hang on
-        // long-polling / SSE connections (parabank, etc.).
-        await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+        // render + any initial API calls. Capped to avoid hanging on long-polling/SSE.
+        await page.waitForLoadState('networkidle', { timeout: IDLE_TIMEOUT }).catch(() => {});
 
         pageInfo.title = await page.title();
 
@@ -295,7 +265,7 @@ export async function runAuthenticatedSiteExplorer(
 
         const slug = urlToSlug(actualUrl);
         const screenshotPath = path.join(snapshotsDir, `explore_${slug}.png`);
-        await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+        await page.screenshot({ path: screenshotPath, fullPage: FULL_PAGE_SHOT }).catch(() => {});
         pageInfo.screenshot = screenshotPath;
 
         pageInfo.elements          = await collectPageElements(page);
