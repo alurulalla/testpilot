@@ -110,8 +110,13 @@ async function setupFfmpegEnv(workspaceDir: string): Promise<Record<string, stri
     mkdirSync(ffmpegDir, { recursive: true });
 
     const ffmpegTarget = path.join(ffmpegDir, 'ffmpeg');
-    if (!existsSync(ffmpegTarget)) {
+    // Use try/catch rather than existsSync — a broken symlink would make
+    // existsSync return false but symlinkSync throw EEXIST.
+    try {
       symlinkSync(ffmpegStaticBin, ffmpegTarget);
+    } catch (e) {
+      // EEXIST = symlink already created by a prior run in this Lambda instance — OK
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
     }
 
     return { PLAYWRIGHT_BROWSERS_PATH: browsersPath };
@@ -138,8 +143,6 @@ export async function runTestsAsync(
   const reportPath = path.join(reportsDir, 'report.json');
   try { unlinkSync(reportPath); } catch { /* no prior report */ }
 
-  // Ensure playwright.config.ts records video so we can replay in the UI
-  patchPlaywrightConfigForVideo(workspace.dir);
   // Inject auth.json storageState if pre-login was performed for this session
   patchPlaywrightConfigForAuth(workspace.dir);
 
@@ -159,9 +162,18 @@ export async function runTestsAsync(
     }
   }
 
-  // On Vercel, symlink ffmpeg-static into the path playwright-core expects
-  // so that video recording works without needing `playwright install ffmpeg`.
+  // On Vercel, symlink ffmpeg-static into the directory playwright-core expects.
+  // Must run BEFORE patchPlaywrightConfigForVideo so we only enable video
+  // when we can confirm ffmpeg will be available.
   const ffmpegEnv = await setupFfmpegEnv(workspace.dir);
+
+  // Enable video recording only when ffmpeg is confirmed available.
+  // On Vercel: ffmpegEnv is non-empty only if the symlink was set up successfully.
+  // Locally:   always enable (ffmpegEnv is {} but VERCEL flag is not set).
+  const ffmpegReady = process.env.VERCEL !== '1' || 'PLAYWRIGHT_BROWSERS_PATH' in ffmpegEnv;
+  if (ffmpegReady) {
+    patchPlaywrightConfigForVideo(workspace.dir);
+  }
 
   return new Promise((resolve) => {
     // Resolve the Playwright CLI entry point directly from node_modules so
