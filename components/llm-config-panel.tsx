@@ -505,21 +505,14 @@ export default function LlmConfigPanel() {
               {/* Auto self-heal toggle */}
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-zinc-600 mb-2">Self-Healing</p>
-                <label className="flex items-center justify-between cursor-pointer group">
-                  <div>
-                    <span className="text-xs font-medium text-zinc-300">Auto Self-Heal</span>
-                    <p className="text-[10px] text-zinc-600 mt-0.5">
-                      {autoSelfHeal
-                        ? 'ON — self-healing runs automatically after every failing run.'
-                        : 'OFF — click Self-Heal manually to fix failures.'}
-                    </p>
-                  </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-medium text-zinc-300">Auto Self-Heal</span>
                   <button
                     type="button"
                     role="switch"
                     aria-checked={autoSelfHeal}
                     onClick={() => setAutoSelfHeal(v => !v)}
-                    className={`relative ml-4 flex-shrink-0 h-5 w-9 rounded-full border transition-colors ${
+                    className={`relative flex-shrink-0 h-5 w-9 rounded-full border transition-colors ${
                       autoSelfHeal
                         ? 'bg-violet-600 border-violet-500'
                         : 'bg-zinc-700 border-zinc-600'
@@ -531,7 +524,12 @@ export default function LlmConfigPanel() {
                       }`}
                     />
                   </button>
-                </label>
+                </div>
+                <p className="text-[10px] text-zinc-600 mt-1">
+                  {autoSelfHeal
+                    ? 'ON — self-healing runs automatically after every failing run.'
+                    : 'OFF — click Self-Heal manually to fix failures.'}
+                </p>
               </div>
 
               {/* Save button */}
