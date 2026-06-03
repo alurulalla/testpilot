@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import './globals.css';
 import LlmConfigPanel from '@/components/llm-config-panel';
 import { ThemeProvider } from '@/components/theme-provider';
@@ -20,9 +21,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="h-full antialiased">
-      <head>
-        {/* Anti-flash: apply stored theme class before first paint */}
-        <script dangerouslySetInnerHTML={{ __html: `
+      <body className="min-h-full bg-zinc-950 text-zinc-100 flex flex-col overflow-x-hidden">
+        {/* Anti-flash: apply stored theme class before first paint — must run before hydration */}
+        <Script id="theme-init" strategy="beforeInteractive">{`
           (function(){
             try {
               var s = localStorage.getItem('testpilot-theme');
@@ -30,9 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               if (s === 'light') document.documentElement.classList.add('light');
             } catch(e){}
           })();
-        `}} />
-      </head>
-      <body className="min-h-full bg-zinc-950 text-zinc-100 flex flex-col overflow-x-hidden">
+        `}</Script>
         <ThemeProvider>
           {children}
           <LlmConfigPanel />
