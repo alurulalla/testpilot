@@ -30,6 +30,18 @@ const nextConfig: NextConfig = {
     'playwright-core',
     '@sparticuz/chromium', // ES module + compressed Chromium binary (.br files)
   ],
+
+  // Vercel's static file tracer (@vercel/nft) cannot follow dynamic require()
+  // calls like `require(path.join(packageRoot, "browsers.json"))`.  Force-include
+  // the files that playwright-core and @sparticuz/chromium need at runtime.
+  outputFileTracingIncludes: {
+    '/api/contexts/detect': [
+      './node_modules/playwright-core/browsers.json',
+      './node_modules/playwright-core/lib/**',
+      './node_modules/@sparticuz/chromium/bin/**',
+      './node_modules/@sparticuz/chromium/build/**',
+    ],
+  },
 };
 
 export default nextConfig;
