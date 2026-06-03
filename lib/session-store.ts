@@ -1,6 +1,54 @@
 import { Session, LogEntry, SessionStatus, SiteMap, TestResult, FixResult, FigmaResult, ScenarioResult, UserFlow, TriageResult, ImportedProject, CoverageAnalysis } from '@/types/session';
 import { randomUUID } from 'crypto';
 import type { ChildProcess } from 'child_process';
+import { mkdirSync, writeFileSync, readFileSync } from 'fs';
+import { tmpdir } from 'os';
+import path from 'path';
+
+// ── File-based session persistence ─────────────────────────────────────────────
+//
+// On Vercel, each serverless function invocation can run in a different
+// Lambda container with its own empty memory. To survive SSE reconnections
+// (which may land on a fresh container), we persist each session to a temp
+// file after every write. On read, if the session is not in memory we fall
+// back to the file. This keeps things working without any external database.
+//
+// On local dev the same code path is used — tmpdir() is /tmp on macOS/Linux
+// so the files are also written there, which is harmless.
+
+const SESSION_DIR = path.join(tmpdir(), 'testpilot-sessions');
+
+// Debounce timers — avoid hammering the filesystem on rapid log bursts.
+// The session is written to disk at most once per 500 ms per session ID.
+const persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function sessionFilePath(id: string): string {
+  return path.join(SESSION_DIR, `${id}.json`);
+}
+
+function persistSession(id: string, session: Session): void {
+  // Cancel any pending write for this session and schedule a fresh one.
+  const existing = persistTimers.get(id);
+  if (existing) clearTimeout(existing);
+  persistTimers.set(id, setTimeout(() => {
+    persistTimers.delete(id);
+    try {
+      mkdirSync(SESSION_DIR, { recursive: true });
+      writeFileSync(sessionFilePath(id), JSON.stringify(session), 'utf8');
+    } catch {
+      // Non-fatal — in-memory store is still the source of truth
+    }
+  }, 500));
+}
+
+function loadPersistedSession(id: string): Session | undefined {
+  try {
+    const raw = readFileSync(sessionFilePath(id), 'utf8');
+    return JSON.parse(raw) as Session;
+  } catch {
+    return undefined;
+  }
+}
 
 // Turbopack and Next.js dev mode can create multiple module instances.
 // Pinning state to globalThis ensures all instances share the same Map.
@@ -60,6 +108,7 @@ export function createSession(url: string, maxPages = 10, headedMode = false, fi
     updatedAt: Date.now(),
   };
   sessions.set(id, session);
+  persistSession(id, session);
   return session;
 }
 
@@ -72,7 +121,16 @@ export function setScenarioResult(id: string, scenarioResult: ScenarioResult): v
 }
 
 export function getSession(id: string): Session | undefined {
-  return sessions.get(id);
+  const inMemory = sessions.get(id);
+  if (inMemory) return inMemory;
+  // Cold-start fallback: restore session from file if this Lambda container
+  // doesn't have it in memory (e.g. after SSE reconnect to a fresh container).
+  const persisted = loadPersistedSession(id);
+  if (persisted) {
+    sessions.set(id, persisted);
+    return persisted;
+  }
+  return undefined;
 }
 
 export function listSessions(): Session[] {
@@ -94,6 +152,7 @@ export function updateSession(id: string, patch: Partial<Session>): Session | un
   Object.assign(session, patch, { updatedAt: Date.now() });
   sessions.set(id, session);
   notifySubscribers(id, { type: 'update', session });
+  persistSession(id, session);
   return session;
 }
 
@@ -153,6 +212,7 @@ export function addLog(id: string, msg: string, level: LogEntry['level'] = 'info
   session.updatedAt = Date.now();
   sessions.set(id, session);
   notifySubscribers(id, { type: 'log', entry });
+  persistSession(id, session);
 }
 
 export function subscribe(id: string, controller: ReadableStreamDefaultController): void {
