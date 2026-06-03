@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import LlmConfigPanel from '@/components/llm-config-panel';
+import { ThemeProvider } from '@/components/theme-provider';
 
 export const metadata: Metadata = {
   title: 'TestPilot — AI-powered E2E Testing',
@@ -19,9 +20,23 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="h-full antialiased">
+      <head>
+        {/* Anti-flash: apply stored theme class before first paint */}
+        <script dangerouslySetInnerHTML={{ __html: `
+          (function(){
+            try {
+              var s = localStorage.getItem('testpilot-theme');
+              if (!s) s = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+              if (s === 'light') document.documentElement.classList.add('light');
+            } catch(e){}
+          })();
+        `}} />
+      </head>
       <body className="min-h-full bg-zinc-950 text-zinc-100 flex flex-col overflow-x-hidden">
-        {children}
-        <LlmConfigPanel />
+        <ThemeProvider>
+          {children}
+          <LlmConfigPanel />
+        </ThemeProvider>
       </body>
     </html>
   );

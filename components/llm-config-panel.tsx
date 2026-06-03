@@ -12,6 +12,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { PROVIDERS } from '@/lib/pilot/providers';
 import type { ProviderDef } from '@/lib/pilot/providers';
+import { useTheme } from '@/components/theme-provider';
 
 // ── tiny icon components ───────────────────────────────────────────────────────
 
@@ -38,6 +39,25 @@ function EyeIcon({ show }: { show: boolean }) {
       fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
       <circle cx="12" cy="12" r="3"/>
+    </svg>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="4"/>
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
     </svg>
   );
 }
@@ -71,6 +91,7 @@ export default function LlmConfigPanel() {
   const [open, setOpen]     = useState(false);
   const [tab, setTab]       = useState<'model' | 'settings'>('model');
   const panelRef            = useRef<HTMLDivElement>(null);
+  const { theme, toggle: toggleTheme } = useTheme();
 
   // ── AI Model tab state ─────────────────────────────────────────────────────
   const [stored, setStored]       = useState<StoredLlmConfig | null>(null);
@@ -230,7 +251,16 @@ export default function LlmConfigPanel() {
 
   return (
     <div ref={panelRef} className="fixed bottom-4 right-2 sm:right-4 z-50 flex flex-col-reverse items-end gap-2">
-      {/* Trigger button */}
+      {/* Theme toggle button */}
+      <button
+        onClick={toggleTheme}
+        title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        className="flex items-center justify-center rounded-full border border-zinc-700 bg-zinc-900/95 p-2 text-zinc-400 shadow-xl backdrop-blur transition-all hover:border-zinc-500 hover:text-zinc-100"
+      >
+        {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+      </button>
+
+      {/* Gear / settings trigger */}
       <button
         onClick={() => setOpen(o => !o)}
         title={activeLabel}
