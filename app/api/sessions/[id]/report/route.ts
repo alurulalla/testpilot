@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/session-store';
+import { launchBrowser } from '@/lib/browser';
 import {
   buildReportData,
   generateHtmlReport,
@@ -37,17 +38,8 @@ export async function GET(
 
     case 'pdf': {
       // Render HTML via Playwright and return the PDF bytes
-      let chromium: typeof import('playwright').chromium;
-      try {
-        ({ chromium } = await import('playwright'));
-      } catch {
-        return NextResponse.json(
-          { error: 'Playwright not available for PDF rendering' },
-          { status: 500 },
-        );
-      }
       const html = generateHtmlReport(data);
-      const browser = await chromium.launch({ headless: true });
+      const browser = await launchBrowser();
       try {
         const page = await browser.newPage();
         await page.setContent(html, { waitUntil: 'networkidle' });

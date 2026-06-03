@@ -7,39 +7,9 @@
  *
  * Returns results grouped by page so the UI can display them clearly.
  */
-import { chromium, Page, BrowserContext } from 'playwright';
+import { Page, BrowserContext } from 'playwright';
 import { ContextField } from './url-context-store';
-
-// ── Browser launcher ──────────────────────────────────────────────────────────
-//
-// Vercel's serverless runtime lacks the system shared-libs (libX11, libXcomposite,
-// etc.) that Playwright's bundled Chromium requires.  @sparticuz/chromium ships a
-// statically-linked Chromium that works inside Lambda / Vercel — it extracts itself
-// to /tmp on first use and returns the path.
-//
-// Locally we skip that entirely and use Playwright's own bundled browser.
-
-async function launchBrowser() {
-  if (process.env.VERCEL === '1') {
-    // Dynamic import keeps @sparticuz/chromium out of the local code path and
-    // avoids issues with its ES-module-only package format in Jest / ts-node.
-    const { default: Chromium } = await import('@sparticuz/chromium');
-    const executablePath = await Chromium.executablePath();
-    return chromium.launch({
-      headless: true,
-      executablePath,                                    // serverless binary in /tmp
-      args: [
-        ...Chromium.args,                                // serverless-required flags
-        '--disable-blink-features=AutomationControlled', // stealth
-      ],
-    });
-  }
-  // Local development — use Playwright's bundled Chromium as normal.
-  return chromium.launch({
-    headless: true,
-    args: ['--disable-blink-features=AutomationControlled'],
-  });
-}
+import { launchBrowser } from '@/lib/browser';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

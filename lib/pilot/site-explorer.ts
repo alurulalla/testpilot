@@ -10,9 +10,10 @@
  *    the base for relative-link resolution.
  *  - Verbose progress logging so every queued URL is visible in the UI.
  */
-import { chromium, Page } from 'playwright';
+import { Page } from 'playwright';
 import { mkdirSync, writeFileSync } from 'fs';
 import path from 'path';
+import { launchBrowser } from '@/lib/browser';
 import type { SiteMap, PageInfo } from './types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -232,7 +233,7 @@ export async function runSiteExplorer(options: RunSiteExplorerOptions): Promise<
   // seen uses dedup keys so jsessionid-rotation doesn't cause duplicate crawls
   const seen = new Set<string>([dedupeKey(url)]);
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchBrowser();
   try {
     const ctx = await browser.newContext({
       viewport: { width: 1280, height: 720 },

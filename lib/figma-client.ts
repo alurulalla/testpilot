@@ -1,7 +1,8 @@
 import { writeFileSync, mkdirSync } from 'fs';
 import path from 'path';
-import { chromium, type Browser, type Page } from 'playwright';
+import { type Browser, type Page } from 'playwright';
 import sharp from 'sharp';
+import { launchBrowser } from '@/lib/browser';
 import { FigmaComparison, FigmaDiscrepancy, FigmaResult } from '@/types/session';
 import type { ChatModel } from '@/lib/pilot';
 
@@ -466,7 +467,7 @@ export async function runFigmaComparison(
 
   // Launch browser — used for both screenshots and DOM extraction
   log('Launching browser for live page analysis…');
-  const browser: Browser = await chromium.launch({ headless: true });
+  const browser: Browser = await launchBrowser();
   const comparisons: FigmaComparison[] = [];
 
   try {

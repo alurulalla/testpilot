@@ -8,10 +8,11 @@
  * Produces a SiteMap in the same format as runSiteExplorer (lib/pilot)
  * so it is compatible with runGenerateSuite.
  */
-import { chromium, Page } from 'playwright';
+import { Page } from 'playwright';
 import { writeFileSync, mkdirSync } from 'fs';
 import path from 'path';
 import type { SiteMap } from '@/lib/pilot';
+import { launchBrowser } from '@/lib/browser';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -233,7 +234,7 @@ export async function runAuthenticatedSiteExplorer(
   // the same logical page to be crawled multiple times with different IDs
   const seen = new Set<string>([dedupeKey(url)]);
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchBrowser();
   try {
     // ← This is the key difference: load storageState so we're already logged in
     const ctx = await browser.newContext({

@@ -12,10 +12,11 @@
  * Returns the post-login URL so the site explorer can start from the
  * authenticated landing page.
  */
-import { chromium, Page } from 'playwright';
+import { Page } from 'playwright';
 import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'fs';
 import path from 'path';
 import { ContextField } from './url-context-store';
+import { launchBrowser } from '@/lib/browser';
 
 export interface LoginPageInfo {
   /** URL of the login page (after auto-discovery) */
@@ -264,7 +265,7 @@ export async function performPreLogin(
     return { success: false, postLoginUrl: url, authFile, error: 'No context values provided' };
   }
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchBrowser();
   try {
     const ctx = await browser.newContext({
       viewport: { width: 1280, height: 800 },
