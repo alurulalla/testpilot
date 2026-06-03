@@ -161,20 +161,23 @@ export default function LlmConfigPanel() {
     : 'LLM Settings';
 
   return (
-    <div ref={panelRef} className="fixed bottom-4 right-4 z-50 flex flex-col-reverse items-end gap-2">
-      {/* Trigger button */}
+    <div ref={panelRef} className="fixed bottom-4 right-2 sm:right-4 z-50 flex flex-col-reverse items-end gap-2">
+      {/* Trigger button — icon only by default, label slides in on hover */}
       <button
         onClick={() => setOpen(o => !o)}
-        title="LLM Settings"
-        className="flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900/95 px-3 py-2 text-xs text-zinc-300 shadow-xl backdrop-blur transition hover:border-zinc-500 hover:text-white"
+        title={activeLabel}
+        className="group flex items-center rounded-full border border-zinc-700 bg-zinc-900/95 px-2.5 py-2 text-zinc-300 shadow-xl backdrop-blur transition-all hover:border-zinc-500 hover:text-white"
       >
         <GearIcon />
-        <span className="max-w-[160px] truncate">{activeLabel}</span>
+        {/* Label: hidden (max-w-0) by default, slides in on hover */}
+        <span className="max-w-0 overflow-hidden whitespace-nowrap text-xs transition-all duration-300 ease-in-out group-hover:max-w-[180px] group-hover:ml-2">
+          {activeLabel}
+        </span>
       </button>
 
-      {/* Panel — opens upward above the button */}
+      {/* Panel — opens upward above the button, full-width on mobile */}
       {open && (
-        <div className="w-[360px] rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden mb-1">
+        <div className="w-[calc(100vw-1rem)] max-w-[360px] rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden mb-1">
           {/* Header */}
           <div className="border-b border-zinc-800 px-4 py-3">
             <h2 className="text-sm font-semibold text-zinc-100">AI Provider Settings</h2>

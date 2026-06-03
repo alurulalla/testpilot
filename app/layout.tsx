@@ -5,6 +5,7 @@ import LlmConfigPanel from '@/components/llm-config-panel';
 export const metadata: Metadata = {
   title: 'TestPilot — AI-powered E2E Testing',
   description: 'Automatically discover, generate, and run E2E tests for any web app.',
+  viewport: 'width=device-width, initial-scale=1',
   icons: {
     icon: [
       { url: '/icon.svg',     type: 'image/svg+xml' },   // modern browsers (SVG)
@@ -18,7 +19,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="h-full antialiased">
-      <body className="min-h-full bg-zinc-950 text-zinc-100 flex flex-col">
+      <body className="min-h-full bg-zinc-950 text-zinc-100 flex flex-col overflow-x-hidden">
         {children}
         <LlmConfigPanel />
       </body>
