@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { detectAllFormFields, groupsToContextFields } from '@/lib/detect-form-fields';
 
+// Allow up to 60 s for multi-page form scanning (Vercel Pro / hobby max).
+// The scan visits up to ~10 pages; each takes 1-3 s on fast sites.
+export const maxDuration = 60;
+
 /** POST /api/contexts/detect  { url }
  *  Scans the URL and all form-related linked pages.
  *  Returns: { groups: DetectedFormGroup[], fields: ContextField[] }

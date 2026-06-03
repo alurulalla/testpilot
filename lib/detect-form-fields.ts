@@ -10,6 +10,37 @@
 import { chromium, Page, BrowserContext } from 'playwright';
 import { ContextField } from './url-context-store';
 
+// ── Browser launcher ──────────────────────────────────────────────────────────
+//
+// Vercel's serverless runtime lacks the system shared-libs (libX11, libXcomposite,
+// etc.) that Playwright's bundled Chromium requires.  @sparticuz/chromium ships a
+// statically-linked Chromium that works inside Lambda / Vercel — it extracts itself
+// to /tmp on first use and returns the path.
+//
+// Locally we skip that entirely and use Playwright's own bundled browser.
+
+async function launchBrowser() {
+  if (process.env.VERCEL === '1') {
+    // Dynamic import keeps @sparticuz/chromium out of the local code path and
+    // avoids issues with its ES-module-only package format in Jest / ts-node.
+    const { default: Chromium } = await import('@sparticuz/chromium');
+    const executablePath = await Chromium.executablePath();
+    return chromium.launch({
+      headless: true,
+      executablePath,                                    // serverless binary in /tmp
+      args: [
+        ...Chromium.args,                                // serverless-required flags
+        '--disable-blink-features=AutomationControlled', // stealth
+      ],
+    });
+  }
+  // Local development — use Playwright's bundled Chromium as normal.
+  return chromium.launch({
+    headless: true,
+    args: ['--disable-blink-features=AutomationControlled'],
+  });
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface DetectedField {
@@ -47,6 +78,17 @@ const FORM_PATH_PATTERNS = [
   /contact/i, /enquir/i, /feedback/i, /support/i,
   /profile/i, /account/i, /user/i, /forgot/i, /reset/i,
   /checkout/i, /order/i, /booking/i, /apply/i, /subscribe/i,
+];
+
+/**
+ * Common auth paths to probe directly when anchor-based link discovery yields
+ * nothing (e.g. the home page is behind bot-protection, or uses JS-only nav).
+ * These are tried in order; already-visited URLs are skipped automatically.
+ */
+const FALLBACK_AUTH_PATHS = [
+  '/login', '/signin', '/sign-in', '/sign_in',
+  '/signup', '/register', '/sign-up', '/sign_up', '/create-account',
+  '/account/login', '/user/login', '/auth/login', '/users/sign_in',
 ];
 
 /** Anchor text patterns that suggest a link leads to a form */
@@ -334,9 +376,30 @@ export async function detectAllFormFields(
   let origin: string;
   try { origin = new URL(url).origin; } catch { origin = url; }
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchBrowser();
   try {
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const ctx = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      // Real-looking Chrome 131 / macOS user-agent
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+        '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      locale: 'en-US',
+      timezoneId: 'America/New_York',
+      extraHTTPHeaders: {
+        'Accept-Language': 'en-US,en;q=0.9',
+        'sec-ch-ua': '"Google Chrome";v="131","Chromium";v="131","Not_A Brand";v="24"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+      },
+    });
+    // Remove navigator.webdriver — the most common automation-detection signal.
+    // Also expose window.chrome so Chrome-fingerprinting checks pass.
+    await ctx.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      // @ts-ignore
+      window.chrome = { runtime: {} };
+    });
 
     async function scanPage(pageUrl: string): Promise<void> {
       // Use jsessionid-stripped key so the same logical page isn't scanned twice
@@ -379,7 +442,22 @@ export async function detectAllFormFields(
         if (key === dedupeKey(url)) {
           const formLinks = await discoverFormLinks(page, origin);
           log(`  Found ${formLinks.length} form-related link(s) to follow`);
-          for (const link of formLinks) {
+
+          // Fallback: if anchor discovery found nothing (e.g. home page served a
+          // bot-protection challenge, or navigation is JS-only with no <a> tags),
+          // probe the most common auth paths directly. Already-visited URLs are
+          // skipped by the visitedUrls guard inside scanPage.
+          const toScan =
+            formLinks.length > 0
+              ? formLinks
+              : (() => {
+                  log('  No anchor-based form links found — probing common auth paths…');
+                  return FALLBACK_AUTH_PATHS
+                    .map(p => `${origin}${p}`)
+                    .filter(u => !visitedUrls.has(dedupeKey(u)));
+                })();
+
+          for (const link of toScan) {
             await scanPage(link);
           }
         }
