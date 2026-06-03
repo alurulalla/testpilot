@@ -512,15 +512,15 @@ export default function LlmConfigPanel() {
                     role="switch"
                     aria-checked={autoSelfHeal}
                     onClick={() => setAutoSelfHeal(v => !v)}
-                    className={`relative flex-shrink-0 h-5 w-9 rounded-full border transition-colors ${
+                    className={`relative flex-shrink-0 h-5 w-9 rounded-full transition-colors ${
                       autoSelfHeal
-                        ? 'bg-violet-600 border-violet-500'
-                        : 'bg-zinc-700 border-zinc-600'
+                        ? 'bg-violet-600'
+                        : 'bg-zinc-600'
                     }`}
                   >
                     <span
-                      className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                        autoSelfHeal ? 'translate-x-4' : 'translate-x-0.5'
+                      className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                        autoSelfHeal ? 'translate-x-4' : 'translate-x-0'
                       }`}
                     />
                   </button>
