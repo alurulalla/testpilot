@@ -7,7 +7,7 @@ import { createModelFromConfig } from '@/lib/pilot/model-factory';
 import { getLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import path from 'path';
-import { getSessionDir } from '@/lib/config';
+import { getSessionDir, getAutoSelfHeal } from '@/lib/config';
 import { getSessionOrRestore } from '@/lib/get-session-or-restore';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             );
           }
           if (triage.testBugCount + triage.ambiguousCount > 0) {
-            const autoHeal = process.env.AUTO_SELF_HEAL === 'true';
+            const autoHeal = getAutoSelfHeal();
             addLog(
               id,
               `🔧 ${triage.testBugCount + triage.ambiguousCount} failure(s) are test-code issues.` +

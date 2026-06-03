@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { getAppSettings } from './app-settings-store';
 
 /**
  * Return the root directory used for all per-session workspaces (.testpilot/).
@@ -43,6 +44,8 @@ export function getAnthropicKey(): string | undefined {
 }
 
 export function getMaxPages(): number {
+  const stored = getAppSettings().maxPages;
+  if (stored != null && stored > 0) return stored;
   const raw = process.env.MAX_PAGES || readEnvLocal().MAX_PAGES;
   const parsed = raw ? parseInt(raw, 10) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 10;
@@ -54,11 +57,24 @@ export function getMaxPages(): number {
  * Set DEEP_CRAWL_MAX_PAGES in .env.local to override (default: 50).
  */
 export function getDeepCrawlMaxPages(): number {
+  const stored = getAppSettings().deepCrawlMaxPages;
+  if (stored != null && stored > 0) return stored;
   const raw = process.env.DEEP_CRAWL_MAX_PAGES || readEnvLocal().DEEP_CRAWL_MAX_PAGES;
   const parsed = raw ? parseInt(raw, 10) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 50;
 }
 
 export function getFigmaToken(): string | undefined {
-  return process.env.FIGMA_TOKEN || readEnvLocal().FIGMA_TOKEN || undefined;
+  return getAppSettings().figmaToken || process.env.FIGMA_TOKEN || readEnvLocal().FIGMA_TOKEN || undefined;
+}
+
+/**
+ * Auto self-heal mode — checked at loop start so changes take effect immediately.
+ *   false (default) → user must manually trigger self-healing
+ *   true            → self-heal runs automatically after every failing run
+ */
+export function getAutoSelfHeal(): boolean {
+  const stored = getAppSettings().autoSelfHeal;
+  if (stored != null) return stored;
+  return process.env.AUTO_SELF_HEAL === 'true';
 }

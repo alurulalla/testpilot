@@ -15,13 +15,12 @@ import { triageFailures } from '@/lib/triage-failures';
 import { SiteMap } from '@/types/session';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import { getUrlContext, saveUrlContext, contextToEnv, contextToPromptHint } from '@/lib/url-context-store';
-import { getSessionDir } from '@/lib/config';
+import { getSessionDir, getDeepCrawlMaxPages, getAutoSelfHeal } from '@/lib/config';
 import { extractCredentialsFromDoc } from '@/lib/extract-credentials-from-doc';
 import { performPreLogin, patchPlaywrightConfigForAuth } from '@/lib/pre-login';
 import { runAuthenticatedSiteExplorer } from '@/lib/authenticated-site-explorer';
 import { writeContextMd } from '@/lib/build-context-md';
 import { compareCrawlToDocs } from '@/lib/compare-crawl-to-docs';
-import { getDeepCrawlMaxPages } from '@/lib/config';
 import { writeFileSync, existsSync, readFileSync } from 'fs';
 import path from 'path';
 
@@ -364,10 +363,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       } // end !isImportMode (explore + generate phases)
 
-      // Read AUTO_SELF_HEAL at loop start so it can be changed via env without restart
-      const autoSelfHeal = process.env.AUTO_SELF_HEAL === 'true';
+      // Read AUTO_SELF_HEAL at loop start so changes take effect without restart
+      const autoSelfHeal = getAutoSelfHeal();
       if (!autoSelfHeal) {
-        addLog(id, 'ℹ Auto-heal is OFF (AUTO_SELF_HEAL is not set). Self-healing must be triggered manually.', 'info');
+        addLog(id, 'ℹ Auto-heal is OFF. Self-healing must be triggered manually.', 'info');
       }
 
       // Phase 3-N: Run → Triage → (optionally) Fix loop

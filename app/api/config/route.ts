@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getAutoSelfHeal } from '@/lib/config';
 
 /**
  * GET /api/config
@@ -10,6 +11,6 @@ import { NextResponse } from 'next/server';
  */
 export async function GET() {
   return NextResponse.json({
-    autoSelfHeal: process.env.AUTO_SELF_HEAL === 'true',
+    autoSelfHeal: getAutoSelfHeal(),
   });
 }
