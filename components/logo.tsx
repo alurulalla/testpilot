@@ -38,7 +38,10 @@ export function Logo({
   iconOnly  = false,
   className = '',
 }: LogoProps) {
-  const testColor = variant === 'light' ? '#1C1B2E' : '#FFFFFF';
+  // Use currentColor so the wordmark inherits the parent's text color.
+  // In dark mode that's near-white; in light mode (via CSS variable inversion)
+  // it becomes near-black — no per-call variant wiring needed.
+  const testColor = variant === 'light' ? '#1C1B2E' : 'currentColor';
 
   // Icon aspect ratio: 1103 / 976 ≈ 1.1301
   const iconW = Math.round(height * (1103 / 976));
