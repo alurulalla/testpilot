@@ -48,6 +48,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const enc = new TextEncoder();
   let streamCtrl!: ReadableStreamDefaultController;
 
+  // Keep-alive heartbeat — LLM calls can take 20-60 s with no bytes sent.
+  // Vercel's edge network and browsers both drop idle streaming connections
+  // after ~30 s.  An SSE comment (": ping") keeps the TCP connection alive
+  // without triggering any client-side processing.
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+
   const responseStream = new ReadableStream({
     start(ctrl) {
       streamCtrl = ctrl;
@@ -55,8 +61,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // Send current session state so the client is up-to-date on connect.
       const s = getSession(id);
       if (s) ctrl.enqueue(enc.encode(`data: ${JSON.stringify({ type: 'init', session: s })}\n\n`));
+
+      // Ping every 15 s — under Vercel edge's ~30 s idle-connection limit.
+      heartbeat = setInterval(() => {
+        try { ctrl.enqueue(enc.encode(': ping\n\n')); } catch { /* stream closed */ }
+      }, 15_000);
     },
     cancel() {
+      if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
       try { unsubscribe(id, streamCtrl); } catch { /* already closed */ }
     },
   });
@@ -467,7 +479,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       addLog(id, `Loop failed: ${msg}`, 'error');
     } finally {
       clearStopping(id);
-      // Close the SSE stream once the loop is done so the client knows to stop reading.
+      // Stop the keep-alive heartbeat first, then close the stream.
+      if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
+      // Close the SSE stream so the client knows to stop reading.
       try { unsubscribe(id, streamCtrl); streamCtrl.close(); } catch { /* already closed */ }
     }
   })();
