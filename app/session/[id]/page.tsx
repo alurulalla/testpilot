@@ -339,7 +339,7 @@ function ReportDownloadMenu({ sessionId }: { sessionId: string }) {
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/60 px-4 py-2.5 text-sm font-semibold text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800 hover:text-white transition"
+        className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/60 px-4 py-2.5 text-sm font-semibold text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800 hover:text-zinc-50 transition"
       >
         <Download className="h-4 w-4" />
         Download Report
@@ -361,7 +361,7 @@ function ReportDownloadMenu({ sessionId }: { sessionId: string }) {
             >
               <Icon className="h-4 w-4 text-violet-400 shrink-0 mt-0.5" />
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span className="text-sm font-medium text-zinc-200 group-hover:text-white transition">{label}</span>
+                <span className="text-sm font-medium text-zinc-200 group-hover:text-zinc-50 transition">{label}</span>
                 <span className="text-[10px] text-zinc-600 font-mono">{ext}</span>
               </div>
             </a>
@@ -530,7 +530,7 @@ function ScenarioRunner({
                 <button
                   type="button"
                   onClick={() => void onRun()}
-                  className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:border-zinc-500 hover:text-white transition"
+                  className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:border-zinc-500 hover:text-zinc-50 transition"
                 >
                   <RefreshCw className="h-3.5 w-3.5" /> Re-run
                 </button>
@@ -1792,7 +1792,7 @@ export default function SessionPage() {
                       href={`/accuracy/${session.id}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="flex items-center justify-center gap-2 flex-1 min-w-[160px] rounded-lg border border-violet-500/30 bg-violet-500/5 px-4 py-2.5 text-sm font-semibold text-violet-300 hover:border-violet-500/60 hover:bg-violet-500/15 hover:text-white transition"
+                      className="flex items-center justify-center gap-2 flex-1 min-w-[160px] rounded-lg border border-violet-500/30 bg-violet-500/5 px-4 py-2.5 text-sm font-semibold text-violet-300 hover:border-violet-500/60 hover:bg-violet-500/15 hover:text-zinc-50 transition"
                     >
                       <ListChecks className="h-4 w-4" />
                       View Accuracy Report
@@ -1801,7 +1801,7 @@ export default function SessionPage() {
                     <a
                       href={`/api/sessions/${session.id}/download`}
                       download
-                      className="flex items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/60 px-4 py-2.5 text-sm font-semibold text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800 hover:text-white transition"
+                      className="flex items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/60 px-4 py-2.5 text-sm font-semibold text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800 hover:text-zinc-50 transition"
                     >
                       <Download className="h-4 w-4" />
                       Tests ZIP
@@ -2133,7 +2133,7 @@ export default function SessionPage() {
                   <a
                     href={`/api/sessions/${session.id}/download`}
                     download
-                    className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:border-zinc-500 hover:text-white transition shrink-0"
+                    className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:border-zinc-500 hover:text-zinc-50 transition shrink-0"
                   >
                     <Download className="h-3.5 w-3.5" />
                     Download ZIP

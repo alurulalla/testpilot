@@ -264,7 +264,7 @@ export default function LlmConfigPanel() {
       <button
         onClick={() => setOpen(o => !o)}
         title={activeLabel}
-        className="group flex items-center rounded-full border border-zinc-700 bg-zinc-900/95 px-2.5 py-2 text-zinc-300 shadow-xl backdrop-blur transition-all hover:border-zinc-500 hover:text-white"
+        className="group flex items-center rounded-full border border-zinc-700 bg-zinc-900/95 px-2.5 py-2 text-zinc-300 shadow-xl backdrop-blur transition-all hover:border-zinc-500 hover:text-zinc-50"
       >
         <GearIcon />
         <span className="max-w-0 overflow-hidden whitespace-nowrap text-xs transition-all duration-300 ease-in-out group-hover:max-w-[180px] group-hover:ml-2">
@@ -439,7 +439,7 @@ export default function LlmConfigPanel() {
                   <button
                     onClick={handleTest}
                     disabled={testing || saving || !provider || !model}
-                    className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {testing ? 'Testing…' : 'Test Connection'}
                   </button>
