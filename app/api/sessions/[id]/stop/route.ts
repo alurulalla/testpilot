@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, setStatus, addLog, markStopping, killProcess } from '@/lib/session-store';
+import { getSessionOrRestore } from '@/lib/get-session-or-restore';
 
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = getSessionOrRestore(id, req);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   markStopping(id);

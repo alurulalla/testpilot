@@ -21,13 +21,14 @@ import { performPreLogin } from '@/lib/pre-login';
 import { getDeepCrawlMaxPages } from '@/lib/config';
 import { existsSync } from 'fs';
 import type { SiteMap } from '@/types/session';
+import { getSessionOrRestore } from '@/lib/get-session-or-restore';
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = getSessionOrRestore(id, req);
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   if (!session.importedProject) {
     return NextResponse.json({ error: 'No imported project — upload a Playwright ZIP first.' }, { status: 400 });
@@ -125,7 +126,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = getSessionOrRestore(id, req);
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   if (!session.coverageAnalysis) {
     return NextResponse.json({ error: 'No analysis yet' }, { status: 400 });

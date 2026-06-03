@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/session-store';
 import { launchBrowser } from '@/lib/browser';
 import {
   buildReportData,
@@ -8,13 +7,14 @@ import {
   generateJsonReport,
   generateCsvReport,
 } from '@/lib/generate-report';
+import { getSessionOrRestore } from '@/lib/get-session-or-restore';
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = getSessionOrRestore(id, req);
   if (!session) {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   }

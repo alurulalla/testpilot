@@ -19,13 +19,14 @@ import { withRateLimit } from '@/lib/rate-limited-model';
 import { findExistingTest, generateScenarioTest } from '@/lib/pilot/generate-scenario';
 import type { ScenarioResult } from '@/types/session';
 import { getSessionDir } from '@/lib/config';
+import { getSessionOrRestore } from '@/lib/get-session-or-restore';
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = getSessionOrRestore(id, req);
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
   const body = await req.json().catch(() => ({})) as { description?: string };
@@ -287,11 +288,11 @@ async function runScenarioFile(
 
 /** GET /api/sessions/[id]/scenario — return current scenario state. */
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = getSessionOrRestore(id, req);
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   return NextResponse.json(session.scenarioResult ?? null);
 }

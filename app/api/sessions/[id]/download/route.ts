@@ -20,6 +20,7 @@ import AdmZip from 'adm-zip';
 import { getSession } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { getSessionDir } from '@/lib/config';
+import { getSessionOrRestore } from '@/lib/get-session-or-restore';
 
 /** Recursively add every file under `dir` into the zip under `zipPrefix`. */
 function addDirToZip(zip: AdmZip, dir: string, zipPrefix: string) {
@@ -70,11 +71,11 @@ npx playwright show-report
 }
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = getSessionOrRestore(id, req);
   if (!session) {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   }

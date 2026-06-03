@@ -9,13 +9,14 @@ import { getSession } from '@/lib/session-store';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
 import { getLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
+import { getSessionOrRestore } from '@/lib/get-session-or-restore';
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = getSessionOrRestore(id, req);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (!session.contextDoc) {
     return NextResponse.json({ error: 'No documentation uploaded yet' }, { status: 400 });

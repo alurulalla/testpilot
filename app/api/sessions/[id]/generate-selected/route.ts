@@ -12,6 +12,7 @@ import { Workspace, createModelFromConfig } from '@/lib/pilot';
 import { getLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import { getSessionDir } from '@/lib/config';
+import { getSessionOrRestore } from '@/lib/get-session-or-restore';
 
 function buildGapTestPrompt(
   baseUrl: string,
@@ -68,11 +69,11 @@ function extractTypeScript(raw: string): string {
 }
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = getSessionOrRestore(id, req);
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   if (!session.coverageAnalysis) {
     return NextResponse.json({ error: 'Run coverage analysis first.' }, { status: 400 });

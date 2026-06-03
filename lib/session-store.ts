@@ -80,6 +80,19 @@ export function killProcess(id: string): void {
   runningProcesses.delete(id);
 }
 
+/** Cookie key for a given session — must stay < 32 chars total for header budget. */
+export function sessionCookieName(id: string): string {
+  return `tp-s-${id}`;
+}
+
+/** Minimal session fields we persist in the cookie (just config, no logs/results). */
+export interface SessionCookieData {
+  url: string;
+  maxPages: number;
+  headedMode: boolean;
+  figmaFileUrl: string | null;
+}
+
 export function createSession(url: string, maxPages = 10, headedMode = false, figmaFileUrl: string | null = null): Session {
   const id = randomUUID();
   const session: Session = {
@@ -109,6 +122,46 @@ export function createSession(url: string, maxPages = 10, headedMode = false, fi
   };
   sessions.set(id, session);
   persistSession(id, session);
+  return session;
+}
+
+/**
+ * Restore a session from cookie data when it's not in memory or on disk.
+ * Used when a Vercel Lambda container receives a request for a session that
+ * was created by a different container. The cookie travels with every browser
+ * request so it's always available regardless of which Lambda handles it.
+ *
+ * Returns the existing in-memory session if one is found (idempotent).
+ */
+export function restoreSession(id: string, data: SessionCookieData): Session {
+  const existing = sessions.get(id);
+  if (existing) return existing;
+  const session: Session = {
+    id,
+    url: data.url,
+    status: 'idle',
+    logs: [],
+    siteMap: null,
+    testFiles: [],
+    testResult: null,
+    fixResult: null,
+    figmaResult: null,
+    figmaFileUrl: data.figmaFileUrl,
+    iteration: 0,
+    error: null,
+    maxPages: data.maxPages,
+    headedMode: data.headedMode,
+    scenarioResult: null,
+    triageResult: null,
+    contextDoc: null,
+    contextDocName: null,
+    userFlows: [],
+    importedProject: null,
+    coverageAnalysis: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  sessions.set(id, session);
   return session;
 }
 

@@ -21,13 +21,14 @@ import {
 import { Workspace } from '@/lib/pilot';
 import type { TestResult } from '@/types/session';
 import { getSessionDir } from '@/lib/config';
+import { getSessionOrRestore } from '@/lib/get-session-or-restore';
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = getSessionOrRestore(id, req);
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
   if (['exploring', 'generating', 'running', 'fixing'].includes(session.status)) {

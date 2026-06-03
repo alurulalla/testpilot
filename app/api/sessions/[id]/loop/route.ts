@@ -3,6 +3,7 @@ import {
   getSession, setStatus, setSiteMap, setTestResult, setFixResult,
   setTriageResult, setError, addLog, updateSession, isStopping, clearStopping,
 } from '@/lib/session-store';
+import { getSessionOrRestore } from '@/lib/get-session-or-restore';
 import { runSiteExplorer, runGenerateSuite, Workspace } from '@/lib/pilot';
 import { reviewGeneratedTests } from '@/lib/review-tests';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
@@ -25,7 +26,7 @@ import path from 'path';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = getSessionOrRestore(id, req);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (['exploring','generating','running','fixing'].includes(session.status)) {
     return NextResponse.json({ error: 'Session already running' }, { status: 409 });

@@ -5,16 +5,17 @@ import path from 'path';
 import { Workspace } from '@/lib/pilot';
 import { Readable } from 'stream';
 import { getSessionDir } from '@/lib/config';
+import { getSessionOrRestore } from '@/lib/get-session-or-restore';
 
 // Serves static files (videos, screenshots, etc.) from the session's workspace directory.
 // Access pattern: /api/sessions/[id]/assets/test-results/foo/video.webm
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string; path: string[] }> },
 ) {
   const { id, path: segments } = await params;
 
-  const session = getSession(id);
+  const session = getSessionOrRestore(id, req);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const workspace = new Workspace({

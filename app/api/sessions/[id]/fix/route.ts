@@ -12,10 +12,11 @@ import { triageFailures } from '@/lib/triage-failures';
 import { runTestsAsync } from '@/lib/run-tests-async';
 import path from 'path';
 import { getSessionDir } from '@/lib/config';
+import { getSessionOrRestore } from '@/lib/get-session-or-restore';
 
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = getSessionOrRestore(id, req);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (!session.testResult) return NextResponse.json({ error: 'Run tests first' }, { status: 400 });
   if (['exploring','generating','running','fixing'].includes(session.status)) {
