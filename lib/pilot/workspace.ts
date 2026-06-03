@@ -8,7 +8,7 @@
  *   ├── snapshots/
  *   └── playwright.config.ts
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'fs';
 import { execSync } from 'child_process';
 import path from 'path';
 
@@ -116,7 +116,26 @@ export class Workspace {
   }
 
   async installDeps(): Promise<void> {
-    if (existsSync(path.join(this.dir, 'node_modules'))) return;
+    const nodeModulesDir = path.join(this.dir, 'node_modules');
+    if (existsSync(nodeModulesDir)) return;
+
+    if (process.env.VERCEL === '1') {
+      // On Vercel the filesystem is read-only (except /tmp), there is no npm
+      // home directory, and Playwright's bundled Chromium isn't available.
+      // Instead, symlink the workspace node_modules to the app-level
+      // node_modules at /var/task/node_modules so `npx playwright test` can
+      // resolve @playwright/test and the playwright CLI without a fresh install.
+      // The Chromium binary is supplied by @sparticuz/chromium at runtime.
+      const appNodeModules = path.join(process.cwd(), 'node_modules');
+      try {
+        symlinkSync(appNodeModules, nodeModulesDir);
+      } catch (e) {
+        // Symlink may fail if another concurrent request already created it
+        if (!existsSync(nodeModulesDir)) throw e;
+      }
+      return;
+    }
+
     console.log('Installing dependencies in workspace...');
     execSync('npm install', { cwd: this.dir, stdio: 'inherit' });
     console.log('Installing Playwright chromium browser...');

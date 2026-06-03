@@ -94,6 +94,20 @@ export async function runTestsAsync(
 
   const start = Date.now();
 
+  // On Vercel, Playwright's bundled Chromium is not available. Use the
+  // @sparticuz/chromium binary (which self-extracts to /tmp on first call)
+  // and tell Playwright where to find it via the env var.
+  let chromiumEnv: Record<string, string> = {};
+  if (process.env.VERCEL === '1') {
+    try {
+      const { default: Chromium } = await import('@sparticuz/chromium') as { default: { executablePath: () => Promise<string>; args: string[] } };
+      const executablePath = await Chromium.executablePath();
+      chromiumEnv = { PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: executablePath };
+    } catch {
+      // Non-fatal — Playwright will try its default browser lookup
+    }
+  }
+
   return new Promise((resolve) => {
     const args = ['playwright', 'test', '--config', 'playwright.config.ts'];
     if (headed) args.push('--headed');
@@ -101,7 +115,12 @@ export async function runTestsAsync(
     const proc = spawn(
       process.platform === 'win32' ? 'npx.cmd' : 'npx',
       args,
-      { cwd: workspace.dir, stdio: 'pipe', shell: process.platform === 'win32' },
+      {
+        cwd: workspace.dir,
+        stdio: 'pipe',
+        shell: process.platform === 'win32',
+        env: { ...process.env, ...chromiumEnv },
+      },
     );
 
     if (sessionId) registerProcess(sessionId, proc);
