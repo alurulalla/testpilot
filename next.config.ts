@@ -30,6 +30,7 @@ const nextConfig: NextConfig = {
     'playwright-core',
     '@playwright/test',   // test runner — must stay external (spawned as CLI, not bundled)
     '@sparticuz/chromium', // ES module + compressed Chromium binary (.br files)
+    'ffmpeg-static',       // static ffmpeg binary — resolved at runtime, not bundled
   ],
 
   // Vercel's static file tracer (@vercel/nft) cannot follow dynamic require()
@@ -49,6 +50,10 @@ const nextConfig: NextConfig = {
       // in full (root files like index.js / package.json + all of lib/).
       './node_modules/playwright/**',
       './node_modules/@playwright/test/**',
+      // ffmpeg-static: the Linux x64 binary (downloaded at npm install time on
+      // Vercel's build machine) is symlinked into /tmp at runtime so playwright
+      // can find it for video recording.
+      './node_modules/ffmpeg-static/**',
     ],
   },
 };

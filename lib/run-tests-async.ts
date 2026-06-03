@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync, readdirSync, symlinkSync } from 'fs';
 import path from 'path';
 import { Workspace } from '@/lib/pilot';
 import { TestResult, TestStats } from '@/types/session';
@@ -70,6 +70,57 @@ function collectVideos(workspaceDir: string): string[] {
   return videos;
 }
 
+/**
+ * On Vercel, playwright's own ffmpeg binary is not installed (it requires
+ * `npx playwright install ffmpeg` which can't run in a serverless deploy).
+ * Instead we ship `ffmpeg-static` (a static Linux binary bundled in node_modules)
+ * and symlink it into the directory structure playwright-core expects:
+ *   /tmp/ms-playwright/ffmpeg-{revision}/ffmpeg
+ * We then set PLAYWRIGHT_BROWSERS_PATH=/tmp/ms-playwright so playwright finds it.
+ * PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH still takes precedence for Chromium,
+ * so the @sparticuz/chromium binary continues to be used for the browser.
+ */
+async function setupFfmpegEnv(workspaceDir: string): Promise<Record<string, string>> {
+  if (process.env.VERCEL !== '1') return {};
+  try {
+    // Read the ffmpeg revision playwright-core expects from its browsers.json
+    const browsersJsonPath = path.join(workspaceDir, 'node_modules', 'playwright-core', 'browsers.json');
+    const browsersJsonFallback = path.join(process.cwd(), 'node_modules', 'playwright-core', 'browsers.json');
+    const browsersJsonFile = existsSync(browsersJsonPath) ? browsersJsonPath : browsersJsonFallback;
+    if (!existsSync(browsersJsonFile)) return {};
+
+    const browsersData = JSON.parse(readFileSync(browsersJsonFile, 'utf8')) as {
+      browsers: Array<{ name: string; revision: string }>;
+    };
+    const ffmpegEntry = browsersData.browsers.find(b => b.name === 'ffmpeg');
+    if (!ffmpegEntry?.revision) return {};
+    const revision = ffmpegEntry.revision;
+
+    // Locate the ffmpeg-static binary (deployed in node_modules)
+    const ffmpegStaticCandidates = [
+      path.join(workspaceDir, 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+      path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+    ];
+    const ffmpegStaticBin = ffmpegStaticCandidates.find(existsSync);
+    if (!ffmpegStaticBin) return {};
+
+    // Create the directory structure playwright expects and symlink our binary
+    const browsersPath = '/tmp/ms-playwright';
+    const ffmpegDir = path.join(browsersPath, `ffmpeg-${revision}`);
+    mkdirSync(ffmpegDir, { recursive: true });
+
+    const ffmpegTarget = path.join(ffmpegDir, 'ffmpeg');
+    if (!existsSync(ffmpegTarget)) {
+      symlinkSync(ffmpegStaticBin, ffmpegTarget);
+    }
+
+    return { PLAYWRIGHT_BROWSERS_PATH: browsersPath };
+  } catch {
+    // Non-fatal — tests will run but may fail if video recording is enabled
+    return {};
+  }
+}
+
 // Non-blocking test runner — uses spawn() so the Node.js event loop stays free for SSE.
 // Uses spawn() so the Node.js event loop stays free for SSE and other requests.
 // Pass sessionId to register the child process for killable stop support.
@@ -108,6 +159,10 @@ export async function runTestsAsync(
     }
   }
 
+  // On Vercel, symlink ffmpeg-static into the path playwright-core expects
+  // so that video recording works without needing `playwright install ffmpeg`.
+  const ffmpegEnv = await setupFfmpegEnv(workspace.dir);
+
   return new Promise((resolve) => {
     // Resolve the Playwright CLI entry point directly from node_modules so
     // we never rely on `npx` finding the `playwright` binary.  On Vercel the
@@ -133,7 +188,7 @@ export async function runTestsAsync(
       {
         cwd: workspace.dir,
         stdio: 'pipe',
-        env: { ...process.env, ...chromiumEnv },
+        env: { ...process.env, ...chromiumEnv, ...ffmpegEnv },
       },
     );
 
