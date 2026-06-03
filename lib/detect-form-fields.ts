@@ -62,6 +62,21 @@ export interface DetectedFormGroup {
   fields: DetectedField[];
 }
 
+// ── Env-aware tuning ──────────────────────────────────────────────────────────
+//
+// On Vercel serverless the function timeout is 60 s (including ~10-15 s for
+// @sparticuz/chromium cold-start).  We use tighter per-page budgets and scan
+// fewer pages in parallel to comfortably finish within that window.
+
+const IS_VERCEL = process.env.VERCEL === '1';
+
+/** Max ms to wait for a page to load (goto). */
+const GOTO_TIMEOUT    = IS_VERCEL ?  8_000 : 15_000;
+/** Max ms to wait for the first input/textarea/select to appear. */
+const SELECTOR_TIMEOUT = IS_VERCEL ?  1_200 :  2_000;
+/** Max form-link pages to scan after the entry page. */
+const MAX_LINKS       = IS_VERCEL ?      4 :     10;
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const SKIP_TYPES = new Set([
@@ -83,13 +98,15 @@ const FORM_PATH_PATTERNS = [
 /**
  * Common auth paths to probe directly when anchor-based link discovery yields
  * nothing (e.g. the home page is behind bot-protection, or uses JS-only nav).
- * These are tried in order; already-visited URLs are skipped automatically.
+ * On Vercel we keep only the highest-hit paths to stay within the 60 s budget.
  */
-const FALLBACK_AUTH_PATHS = [
-  '/login', '/signin', '/sign-in', '/sign_in',
-  '/signup', '/register', '/sign-up', '/sign_up', '/create-account',
-  '/account/login', '/user/login', '/auth/login', '/users/sign_in',
-];
+const FALLBACK_AUTH_PATHS = IS_VERCEL
+  ? ['/login', '/signin', '/signup', '/register']
+  : [
+      '/login', '/signin', '/sign-in', '/sign_in',
+      '/signup', '/register', '/sign-up', '/sign_up', '/create-account',
+      '/account/login', '/user/login', '/auth/login', '/users/sign_in',
+    ];
 
 /** Anchor text patterns that suggest a link leads to a form */
 const FORM_LINK_TEXT_PATTERNS = [
@@ -350,7 +367,7 @@ async function discoverFormLinks(page: Page, origin: string): Promise<string[]> 
     },
   );
 
-  return links.slice(0, 10); // cap at 10 form pages to avoid runaway scanning
+  return links.slice(0, MAX_LINKS); // cap (4 on Vercel, 10 locally)
 }
 
 // ── Main scan ─────────────────────────────────────────────────────────────────
@@ -411,13 +428,13 @@ export async function detectAllFormFields(
       const page = await ctx.newPage();
       try {
         // domcontentloaded is far more reliable than networkidle for sites
-        // with background polling or persistent connections (e.g. Java apps)
-        await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
-        // Wait until at least one input appears, or 1.5 s — whichever comes first.
-        // Using waitForSelector means we capture fields as soon as they exist in the DOM,
-        // without giving SPA routers time to redirect to a post-auth page (e.g. saucedemo
-        // would redirect to /inventory.html if we waited a flat 400 ms after hydration).
-        await page.waitForSelector('input, textarea, select', { timeout: 1500 }).catch(() => {});
+        // with background polling or persistent connections (e.g. Java apps).
+        // GOTO_TIMEOUT is shorter on Vercel to stay within the 60 s function budget.
+        await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: GOTO_TIMEOUT });
+        // Wait until at least one input appears — SELECTOR_TIMEOUT is intentionally
+        // short: we capture fields as soon as they appear without letting SPA routers
+        // redirect to a post-auth page (e.g. saucedemo → /inventory.html).
+        await page.waitForSelector('input, textarea, select', { timeout: SELECTOR_TIMEOUT }).catch(() => {});
         const pageTitle = await page.title();
         // Strip site-search / navigation inputs (e.g. Apple's global "Search apple.com"
         // bar) before grouping, so they don't pollute credential-form field lists.
@@ -440,7 +457,9 @@ export async function detectAllFormFields(
 
         // Only follow links from the entry page to avoid infinite crawling
         if (key === dedupeKey(url)) {
-          const formLinks = await discoverFormLinks(page, origin);
+          const discovered = await discoverFormLinks(page, origin);
+          // Respect MAX_LINKS budget (tighter on Vercel)
+          const formLinks = discovered.slice(0, MAX_LINKS);
           log(`  Found ${formLinks.length} form-related link(s) to follow`);
 
           // Fallback: if anchor discovery found nothing (e.g. home page served a
@@ -457,9 +476,12 @@ export async function detectAllFormFields(
                     .filter(u => !visitedUrls.has(dedupeKey(u)));
                 })();
 
-          for (const link of toScan) {
-            await scanPage(link);
-          }
+          // Scan all discovered form pages IN PARALLEL — this is the key
+          // performance win on Vercel: instead of N × page_time we pay only
+          // max(page_time) for the slowest page.
+          // visitedUrls deduplication is still safe because each scanPage()
+          // call marks its key synchronously before its first await.
+          await Promise.all(toScan.map(link => scanPage(link)));
         }
       } catch (err) {
         log(`  ⚠ Could not scan ${pageUrl}: ${err instanceof Error ? err.message : String(err)}`);

@@ -34,8 +34,11 @@ const nextConfig: NextConfig = {
   // Vercel's static file tracer (@vercel/nft) cannot follow dynamic require()
   // calls like `require(path.join(packageRoot, "browsers.json"))`.  Force-include
   // the files that playwright-core and @sparticuz/chromium need at runtime.
+  //
+  // Using '/api/**' covers every API route — many of them import playwright
+  // (form detection, session loop, test runner, scenario runner, etc.).
   outputFileTracingIncludes: {
-    '/api/contexts/detect': [
+    '/api/**': [
       './node_modules/playwright-core/browsers.json',
       './node_modules/playwright-core/lib/**',
       './node_modules/@sparticuz/chromium/bin/**',
