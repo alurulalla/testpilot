@@ -109,16 +109,29 @@ export async function runTestsAsync(
   }
 
   return new Promise((resolve) => {
-    const args = ['playwright', 'test', '--config', 'playwright.config.ts'];
-    if (headed) args.push('--headed');
+    // Resolve the Playwright CLI entry point directly from node_modules so
+    // we never rely on `npx` finding the `playwright` binary.  On Vercel the
+    // workspace's node_modules is a symlink to /var/task/node_modules, so
+    // the CLI file exists at a known absolute path.  We run it with the
+    // current Node.js executable (process.execPath) rather than via a shell.
+    const playwrightCliCandidates = [
+      // 1. Through the workspace's node_modules symlink (Vercel / local both)
+      path.join(workspace.dir, 'node_modules', '@playwright', 'test', 'cli.js'),
+      // 2. App-level node_modules fallback
+      path.join(process.cwd(), 'node_modules', '@playwright', 'test', 'cli.js'),
+    ];
+    const playwrightCli = playwrightCliCandidates.find(existsSync)
+      ?? playwrightCliCandidates[0]; // use first and let it fail with a clear error
+
+    const nodeArgs = [playwrightCli, 'test', '--config', 'playwright.config.ts'];
+    if (headed) nodeArgs.push('--headed');
 
     const proc = spawn(
-      process.platform === 'win32' ? 'npx.cmd' : 'npx',
-      args,
+      process.execPath, // current node binary — always available
+      nodeArgs,
       {
         cwd: workspace.dir,
         stdio: 'pipe',
-        shell: process.platform === 'win32',
         env: { ...process.env, ...chromiumEnv },
       },
     );

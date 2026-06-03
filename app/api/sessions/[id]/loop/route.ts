@@ -385,6 +385,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
         const { passed, failed, total, errors } = result.stats;
         if (errors > 0 && total === 0) {
+          // Distinguish infrastructure failures (runner not found, OOM, etc.)
+          // from actual syntax/import errors in the generated test files.
+          // Infrastructure failures cannot be fixed by editing the spec files —
+          // logging them as errors and stopping is the right behaviour.
+          const isInfraError =
+            result.output.includes('command not found') ||
+            result.output.includes('Cannot find module') ||
+            result.output.includes('MODULE_NOT_FOUND') ||
+            result.output.includes('ENOENT') ||
+            result.output.includes('Executable doesn\'t exist') ||
+            result.output.includes('browserType.launch');
+          if (isInfraError) {
+            addLog(id, `Test runner infrastructure error — cannot auto-heal:\n${result.output.slice(0, 500)}`, 'error');
+            break;
+          }
+
           addLog(id, 'Test run failed — syntax error or no tests found. Attempting auto-heal…', 'error');
           setStatus(id, 'fixing');
           const syntaxFixed = await fixSyntaxErrors(
