@@ -1157,69 +1157,44 @@ export default function SessionPage() {
       .catch(() => {});
   }, []);
 
-  // Initial fetch → then auto-start the loop
+  // Live-updates effect:
+  //   1. Fetch current session state.
+  //   2a. If the session is freshly created (idle, no work) → POST /loop and
+  //       read SSE events directly from the streaming response body.  Both the
+  //       loop and the event stream share the same Lambda invocation so events
+  //       are never lost across container boundaries.
+  //   2b. If the session already has work / is running → open an EventSource to
+  //       /stream for live updates (reconnect scenario, e.g. page refresh).
+  //   3.  Polling fallback at 4 s whenever the stream is not connected.
   useEffect(() => {
     if (!id) return;
-    fetch(`/api/sessions/${id}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`Session not found (${r.status})`);
-        return r.json();
-      })
-      .then((data: unknown) => {
-        applySession(data);
-        // Auto-start only if freshly created (still idle, no work done)
-        if (
-          isValidSession(data) &&
-          data.status === "idle" &&
-          !data.siteMap &&
-          (data.testFiles ?? []).length === 0
-        ) {
-          fetch(`/api/sessions/${id}/loop`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ maxIterations: 5 }),
-          }).catch(() => {});
-        }
-      })
-      .catch((err) => {
-        setFetchError((err as Error).message ?? "Could not load session");
-      });
-  }, [id]);
 
-  // SSE real-time updates with polling fallback while stream is down
-  useEffect(() => {
-    if (!id) return;
+    let destroyed = false;
+    let loopReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
     let es: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
-    let destroyed = false;
 
-    function handleMessage(e: MessageEvent) {
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    function handleSseData(data: string) {
       try {
-        const event = JSON.parse(e.data as string) as {
+        const event = JSON.parse(data) as {
           type: string;
           session?: unknown;
-          entry?: {
-            ts: number;
-            msg: string;
-            level: "info" | "error" | "success";
-          };
+          entry?: { ts: number; msg: string; level: "info" | "error" | "success" };
         };
         if (event.type === "init" || event.type === "update") {
           applySession(event.session);
         } else if (event.type === "log" && event.entry) {
           setSession((prev) => {
             if (!prev) return prev;
-            return {
-              ...prev,
-              logs: [...(prev.logs ?? []), event.entry!],
-              updatedAt: Date.now(),
-            };
+            // Deduplicate: skip entries that are already in the log array
+            if (prev.logs?.some((l) => l.ts === event.entry!.ts && l.msg === event.entry!.msg)) return prev;
+            return { ...prev, logs: [...(prev.logs ?? []), event.entry!], updatedAt: Date.now() };
           });
         }
-      } catch {
-        /* ignore malformed frames */
-      }
+      } catch { /* ignore malformed frames */ }
     }
 
     function startPolling() {
@@ -1228,42 +1203,107 @@ export default function SessionPage() {
         try {
           const r = await fetch(`/api/sessions/${id}`);
           if (r.ok) applySession(await r.json());
-        } catch {
-          /* ignore */
-        }
+        } catch { /* ignore */ }
       }, 4000);
     }
 
     function stopPolling() {
-      if (pollTimer) {
-        clearInterval(pollTimer);
-        pollTimer = null;
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    // ── stream reader (for POST /loop SSE response body) ─────────────────────
+
+    async function readLoopStream(body: ReadableStream<Uint8Array>) {
+      const reader = body.getReader();
+      loopReader = reader;
+      const decoder = new TextDecoder();
+      let buf = "";
+      setSseConnected(true);
+      stopPolling();
+      try {
+        while (!destroyed) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (line.startsWith("data: ") && line.length > 6) {
+              handleSseData(line.slice(6));
+            }
+          }
+        }
+      } catch { /* stream cancelled or errored */ } finally {
+        setSseConnected(false);
+        startPolling(); // fall back to polling once loop stream closes
       }
     }
 
-    function connect() {
+    // ── EventSource (for reconnect / already-running sessions) ───────────────
+
+    function connectEventSource() {
       if (destroyed) return;
       es = new EventSource(`/api/sessions/${id}/stream`);
-      es.onopen = () => {
-        setSseConnected(true);
-        stopPolling();
-      };
-      es.onmessage = handleMessage;
+      es.onopen = () => { setSseConnected(true); stopPolling(); };
+      es.onmessage = (e: MessageEvent) => handleSseData(e.data as string);
       es.onerror = () => {
-        es?.close();
-        es = null;
+        es?.close(); es = null;
         setSseConnected(false);
         startPolling();
-        reconnectTimer = setTimeout(connect, 6000);
+        reconnectTimer = setTimeout(connectEventSource, 6000);
       };
     }
 
-    connect();
+    // ── main ─────────────────────────────────────────────────────────────────
+
+    (async () => {
+      // Always load current session state first
+      let data: unknown;
+      try {
+        const r = await fetch(`/api/sessions/${id}`);
+        if (!r.ok) throw new Error(`Session not found (${r.status})`);
+        data = await r.json();
+        applySession(data);
+      } catch (err) {
+        setFetchError((err as Error).message ?? "Could not load session");
+        return;
+      }
+
+      if (destroyed) return;
+
+      const isFresh =
+        isValidSession(data) &&
+        (data as { status: string }).status === "idle" &&
+        !(data as { siteMap: unknown }).siteMap &&
+        ((data as { testFiles?: unknown[] }).testFiles ?? []).length === 0;
+
+      if (isFresh) {
+        // Fresh session — start loop and stream from the same response
+        try {
+          const res = await fetch(`/api/sessions/${id}/loop`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ maxIterations: 5 }),
+          });
+          if (!res.ok || !res.body) {
+            startPolling();
+          } else {
+            await readLoopStream(res.body);
+          }
+        } catch {
+          startPolling();
+        }
+      } else {
+        // Session has existing work — connect via EventSource for live updates
+        connectEventSource();
+      }
+    })();
 
     return () => {
       destroyed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       stopPolling();
+      loopReader?.cancel();
       es?.close();
     };
   }, [id]);

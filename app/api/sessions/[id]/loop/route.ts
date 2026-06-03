@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   getSession, setStatus, setSiteMap, setTestResult, setFixResult,
   setTriageResult, setError, addLog, updateSession, isStopping, clearStopping,
+  subscribe, unsubscribe,
 } from '@/lib/session-store';
 import { getSessionOrRestore } from '@/lib/get-session-or-restore';
 import { runSiteExplorer, runGenerateSuite, Workspace } from '@/lib/pilot';
@@ -37,6 +38,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const maxPages = session.maxPages ?? 10;
   // Note: headedMode is intentionally NOT captured here — it is read fresh from the
   // session store before each test run so the user can toggle it during exploration/generation.
+
+  // ── SSE stream ─────────────────────────────────────────────────────────────
+  // Return a Server-Sent Events stream from this very Lambda invocation so that
+  // log events flow directly to the client without crossing Lambda containers.
+  // The IIFE below runs asynchronously; the Lambda stays alive while the stream
+  // is open, which is also what prevents the fire-and-forget task from being
+  // killed after the HTTP response headers are sent.
+  const enc = new TextEncoder();
+  let streamCtrl!: ReadableStreamDefaultController;
+
+  const responseStream = new ReadableStream({
+    start(ctrl) {
+      streamCtrl = ctrl;
+      subscribe(id, ctrl);
+      // Send current session state so the client is up-to-date on connect.
+      const s = getSession(id);
+      if (s) ctrl.enqueue(enc.encode(`data: ${JSON.stringify({ type: 'init', session: s })}\n\n`));
+    },
+    cancel() {
+      try { unsubscribe(id, streamCtrl); } catch { /* already closed */ }
+    },
+  });
 
   addLog(id, `Starting full loop (max ${maxIterations} iterations)…`, 'info');
 
@@ -444,8 +467,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       addLog(id, `Loop failed: ${msg}`, 'error');
     } finally {
       clearStopping(id);
+      // Close the SSE stream once the loop is done so the client knows to stop reading.
+      try { unsubscribe(id, streamCtrl); streamCtrl.close(); } catch { /* already closed */ }
     }
   })();
 
-  return NextResponse.json({ started: true });
+  return new Response(responseStream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    },
+  });
 }
