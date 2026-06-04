@@ -21,6 +21,7 @@ import { performPreLogin, patchPlaywrightConfigForAuth } from '@/lib/pre-login';
 import { runAuthenticatedSiteExplorer } from '@/lib/authenticated-site-explorer';
 import { writeContextMd } from '@/lib/build-context-md';
 import { compareCrawlToDocs } from '@/lib/compare-crawl-to-docs';
+import { runNavClickExplorer } from '@/lib/pilot/nav-click-explorer';
 import { writeFileSync, existsSync, readFileSync } from 'fs';
 import path from 'path';
 
@@ -245,6 +246,49 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               );
               if (!isAuthenticatedCrawl && docComparison.missing.length > 0) {
                 addLog(id, '  💡 Tip: Add login credentials on the prepare page to enable a deeper authenticated crawl.', 'info');
+              }
+
+              // Phase 1.6: Doc-guided click navigation
+              // Try to reach missing features by clicking navigation elements.
+              // This discovers routes that have no <a> tag and aren't in the sitemap.
+              addLog(id, `Phase 1.6: Attempting to reach ${docComparison.missing.length} missing feature(s) via navigation clicks…`, 'info');
+              try {
+                const clickResult = await runNavClickExplorer({
+                  startUrl:        exploreStartUrl,
+                  authFile:        authFile ?? undefined,
+                  missingFeatures: docComparison.missing,
+                  existingSiteMap: siteMap,
+                  onProgress:      (line) => addLog(id, line, 'info'),
+                });
+
+                if (clickResult.discoveredPages.length > 0) {
+                  // Merge newly discovered pages into the sitemap.
+                  // Pilot's PageInfo is a superset of session's PageInfo (adds accessibility_tree)
+                  // so casting through unknown is safe here.
+                  const merged: SiteMap = {
+                    ...siteMap,
+                    pages:       [...siteMap.pages, ...(clickResult.discoveredPages as unknown as SiteMap['pages'])],
+                    total_pages: siteMap.total_pages + clickResult.discoveredPages.length,
+                  };
+                  siteMap = merged;
+                  setSiteMap(id, merged as unknown as SiteMap);
+                  workspace.writeSiteMap(merged);
+                  addLog(
+                    id,
+                    `  ✓ Click-nav found ${clickResult.discoveredPages.length} new page(s) for: ${clickResult.foundFeatures.join(', ')}`,
+                    'success',
+                  );
+                }
+                if (clickResult.missedFeatures.length > 0) {
+                  addLog(
+                    id,
+                    `  ○ Still not reachable via navigation: ${clickResult.missedFeatures.join(', ')}`,
+                    'info',
+                  );
+                }
+              } catch (clickErr) {
+                // Non-fatal — click navigation is best-effort
+                addLog(id, `  Phase 1.6 click-nav error (non-fatal): ${clickErr instanceof Error ? clickErr.message : String(clickErr)}`, 'error');
               }
             }
           }
