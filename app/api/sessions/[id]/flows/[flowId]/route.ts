@@ -7,14 +7,14 @@ import { getSession, removeUserFlow } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { writeContextMd } from '@/lib/build-context-md';
 import { getSessionDir } from '@/lib/config';
-import { getSessionOrRestore } from '@/lib/get-session-or-restore';
+
 
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; flowId: string }> },
 ) {
   const { id, flowId } = await params;
-  const session = getSessionOrRestore(id, req);
+  const session = getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   removeUserFlow(id, flowId);

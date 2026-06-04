@@ -1,0 +1,27 @@
+# Dependencies (reinstalled inside Docker)
+node_modules
+
+# Next.js build output (rebuilt inside Docker)
+.next
+
+# TestPilot runtime data (not part of the image)
+.testpilot
+test-results
+
+# Dev / local files
+.env.local
+.env*.local
+*.log
+
+# Git
+.git
+.gitignore
+
+# Docs / assets not needed at runtime
+*.docx
+*.png
+logo-*.png
+
+# OS
+.DS_Store
+Thumbs.db

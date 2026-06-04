@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
 import { getSession, subscribe, unsubscribe } from '@/lib/session-store';
-import { getSessionOrRestore } from '@/lib/get-session-or-restore';
+
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = getSessionOrRestore(id, req);
+  const session = getSession(id);
   if (!session) return new Response('Not found', { status: 404 });
 
   let controller: ReadableStreamDefaultController;

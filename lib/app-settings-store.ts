@@ -1,9 +1,7 @@
 /**
  * App settings store — persists user-configurable runtime options.
  *
- * Storage strategy (same as llm-config-store):
- *  - Local dev:  <cwd>/.testpilot/app-settings.json (gitignored)
- *  - Vercel:     /tmp/.testpilot/app-settings.json  (ephemeral per instance)
+ * Storage: <cwd>/.testpilot/app-settings.json
  *
  * Resolution order for each value:
  *  1. Value saved via the UI settings panel (JSON file)
@@ -20,9 +18,7 @@ export interface AppSettings {
   autoSelfHeal?:     boolean;
 }
 
-const CONFIG_DIR = process.env.VERCEL === '1'
-  ? path.join('/tmp', '.testpilot')
-  : path.join(process.cwd(), '.testpilot');
+const CONFIG_DIR = path.join(process.cwd(), '.testpilot');
 
 const SETTINGS_FILE = path.join(CONFIG_DIR, 'app-settings.json');
 

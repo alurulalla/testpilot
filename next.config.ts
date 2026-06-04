@@ -22,40 +22,13 @@ try {
 }
 
 const nextConfig: NextConfig = {
-  // These packages must NOT be bundled by webpack — they either contain native
-  // binaries, binary asset files (.br), or are ES-module-only packages that
-  // webpack can't inline.  They are required at runtime from node_modules.
+  // Playwright packages must NOT be bundled by webpack — they must be
+  // required at runtime from node_modules (spawned as a CLI child process).
   serverExternalPackages: [
     'playwright',
     'playwright-core',
-    '@playwright/test',   // test runner — must stay external (spawned as CLI, not bundled)
-    '@sparticuz/chromium', // ES module + compressed Chromium binary (.br files)
-    'ffmpeg-static',       // static ffmpeg binary — resolved at runtime, not bundled
+    '@playwright/test',
   ],
-
-  // Vercel's static file tracer (@vercel/nft) cannot follow dynamic require()
-  // calls like `require(path.join(packageRoot, "browsers.json"))`.  Force-include
-  // the files that playwright-core and @sparticuz/chromium need at runtime.
-  //
-  // Using '/api/**' covers every API route — many of them import playwright
-  // (form detection, session loop, test runner, scenario runner, etc.).
-  outputFileTracingIncludes: {
-    '/api/**': [
-      './node_modules/playwright-core/browsers.json',
-      './node_modules/playwright-core/lib/**',
-      './node_modules/@sparticuz/chromium/bin/**',
-      './node_modules/@sparticuz/chromium/build/**',
-      // playwright and @playwright/test are spawned as a CLI child process at
-      // runtime — nft can't trace the dynamic path, so include both packages
-      // in full (root files like index.js / package.json + all of lib/).
-      './node_modules/playwright/**',
-      './node_modules/@playwright/test/**',
-      // ffmpeg-static: the Linux x64 binary (downloaded at npm install time on
-      // Vercel's build machine) is symlinked into /tmp at runtime so playwright
-      // can find it for video recording.
-      './node_modules/ffmpeg-static/**',
-    ],
-  },
 };
 
 export default nextConfig;

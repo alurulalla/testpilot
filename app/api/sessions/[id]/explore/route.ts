@@ -4,11 +4,11 @@ import { runSiteExplorer, Workspace } from '@/lib/pilot';
 import { SiteMap } from '@/types/session';
 import path from 'path';
 import { getSessionDir } from '@/lib/config';
-import { getSessionOrRestore } from '@/lib/get-session-or-restore';
+
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = getSessionOrRestore(id, req);
+  const session = getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (['exploring','generating','running','fixing'].includes(session.status)) {
     return NextResponse.json({ error: 'Session already running' }, { status: 409 });

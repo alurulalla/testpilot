@@ -1,9 +1,7 @@
 /**
  * LLM config store — persists the user's chosen provider, model, and API key.
  *
- * Storage strategy:
- *  - Local dev:  <cwd>/.testpilot/llm-config.json (gitignored)
- *  - Vercel/read-only fs: /tmp/.testpilot/llm-config.json (ephemeral per instance)
+ * Storage: <cwd>/.testpilot/llm-config.json
  *
  * Key resolution order:
  *  1. Value saved via the UI settings panel (JSON file)
@@ -18,11 +16,7 @@ import path from 'path';
 import type { LlmConfig } from './pilot/model-factory';
 import { DEFAULT_LLM_CONFIG } from './pilot/model-factory';
 
-// On Vercel the project root is read-only; /tmp is the only writable directory.
-// The VERCEL env var is always '1' inside Vercel Serverless/Edge functions.
-const CONFIG_DIR = process.env.VERCEL === '1'
-  ? path.join('/tmp', '.testpilot')
-  : path.join(process.cwd(), '.testpilot');
+const CONFIG_DIR = path.join(process.cwd(), '.testpilot');
 
 const CONFIG_FILE = path.join(CONFIG_DIR, 'llm-config.json');
 

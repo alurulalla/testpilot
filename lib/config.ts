@@ -4,16 +4,10 @@ import { getAppSettings } from './app-settings-store';
 
 /**
  * Return the root directory used for all per-session workspaces (.testpilot/).
- *
- * - Local dev / self-hosted:  <cwd>/.testpilot/
- * - Vercel (read-only cwd):   /tmp/.testpilot/
- *
  * All API routes should call this helper instead of hardcoding `process.cwd()`.
  */
 export function getTestpilotRoot(): string {
-  return process.env.VERCEL === '1'
-    ? '/tmp/.testpilot'
-    : join(process.cwd(), '.testpilot');
+  return join(process.cwd(), '.testpilot');
 }
 
 /** Return the workspace directory for a specific session. */

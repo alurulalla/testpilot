@@ -8,11 +8,11 @@ import { getLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import path from 'path';
 import { getSessionDir, getAutoSelfHeal } from '@/lib/config';
-import { getSessionOrRestore } from '@/lib/get-session-or-restore';
+
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = getSessionOrRestore(id, req);
+  const session = getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (session.testFiles.length === 0) return NextResponse.json({ error: 'No tests to run' }, { status: 400 });
   if (['exploring','generating','running','fixing'].includes(session.status)) {

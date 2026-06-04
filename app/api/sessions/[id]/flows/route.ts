@@ -10,14 +10,14 @@ import { Workspace } from '@/lib/pilot';
 import { writeContextMd } from '@/lib/build-context-md';
 import type { UserFlow } from '@/types/session';
 import { getSessionDir } from '@/lib/config';
-import { getSessionOrRestore } from '@/lib/get-session-or-restore';
+
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSessionOrRestore(id, req);
+  const session = getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json({ flows: session.userFlows });
 }
@@ -27,7 +27,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSessionOrRestore(id, req);
+  const session = getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const body = await req.json().catch(() => ({})) as {

@@ -119,50 +119,34 @@ export class Workspace {
     const nodeModulesDir = path.join(this.dir, 'node_modules');
     if (existsSync(nodeModulesDir)) return;
 
-    if (process.env.VERCEL === '1') {
-      // On Vercel the filesystem is read-only (except /tmp), there is no npm
-      // home directory, and Playwright's bundled Chromium isn't available.
-      // Instead, symlink the workspace node_modules to the app-level
-      // node_modules at /var/task/node_modules so `npx playwright test` can
-      // resolve @playwright/test and the playwright CLI without a fresh install.
-      // The Chromium binary is supplied by @sparticuz/chromium at runtime.
-      const appNodeModules = path.join(process.cwd(), 'node_modules');
+    // Symlink the app-level node_modules into the workspace so the test runner
+    // uses the exact same Playwright version (and browser cache) as the app.
+    // This is faster than a fresh npm install and avoids browser revision mismatches.
+    const appNodeModules = path.join(process.cwd(), 'node_modules');
+    if (existsSync(appNodeModules)) {
       try {
         symlinkSync(appNodeModules, nodeModulesDir);
+        return;
       } catch (e) {
-        // Symlink may fail if another concurrent request already created it
-        if (!existsSync(nodeModulesDir)) throw e;
+        // EEXIST = already linked by a concurrent request — fine
+        if ((e as NodeJS.ErrnoException).code === 'EEXIST') return;
+        // Any other error — fall through to npm install
       }
-      return;
     }
 
     console.log('Installing dependencies in workspace...');
     execSync('npm install', { cwd: this.dir, stdio: 'inherit' });
-    console.log('Installing Playwright chromium browser...');
-    execSync('npx playwright install chromium', { cwd: this.dir, stdio: 'inherit' });
   }
 
   writePlaywrightConfig(): void {
     const baseUrl = JSON.stringify(this.url);
     const config = `import { defineConfig } from '@playwright/test';
 
-// On Vercel/serverless, Playwright's bundled Chromium isn't available.
-// runTestsAsync resolves @sparticuz/chromium and passes the path via env var.
-const _exePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-
-// Serverless-safe Chrome flags: required when running inside a Lambda container.
-const _serverlessArgs = _exePath
-  ? ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
-     '--single-process', '--no-zygote', '--disable-gpu']
-  : [];
-
 export default defineConfig({
   testDir: './tests',
   outputDir: './test-results',
   timeout: 30_000,
   expect: { timeout: 5_000 },
-  // workers: 1 prevents multiple Chromium instances running simultaneously,
-  // which would exhaust Lambda memory (each instance uses ~150-200 MB).
   fullyParallel: false,
   workers: 1,
   retries: 0,
@@ -176,13 +160,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: {
-        browserName: 'chromium',
-        launchOptions: {
-          executablePath: _exePath,
-          args: _serverlessArgs,
-        },
-      },
+      use: { browserName: 'chromium' },
     },
   ],
 });

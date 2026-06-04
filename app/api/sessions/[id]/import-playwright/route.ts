@@ -5,7 +5,7 @@ import { getSession, setImportedProject, updateSession } from '@/lib/session-sto
 import { importPlaywrightProject } from '@/lib/import-playwright';
 import { Workspace } from '@/lib/pilot';
 import { getSessionDir } from '@/lib/config';
-import { getSessionOrRestore } from '@/lib/get-session-or-restore';
+
 
 /** Minimal fixtures.ts that makes existing Playwright specs runnable in our workspace. */
 function buildFixturesTs(targetUrl: string): string {
@@ -26,7 +26,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSessionOrRestore(id, req);
+  const session = getSession(id);
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
   let formData: FormData;

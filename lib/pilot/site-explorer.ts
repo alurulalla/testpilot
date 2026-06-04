@@ -16,15 +16,12 @@ import path from 'path';
 import { launchBrowser } from '@/lib/browser';
 import type { SiteMap, PageInfo } from './types';
 
-// ── Vercel-aware tuning ───────────────────────────────────────────────────────
-// On Vercel serverless the CPU is slower, memory is tighter, and the Lambda
-// has a hard timeout.  Use more aggressive limits to stay within budget.
-const IS_VERCEL = process.env.VERCEL === '1';
-const NAV_TIMEOUT      = IS_VERCEL ?  10_000 : 20_000;  // ms per page load
-const IDLE_TIMEOUT     = IS_VERCEL ?   1_000 :  3_000;  // ms for networkidle
-const FULL_PAGE_SHOT   = !IS_VERCEL;                     // full-page is slow on Lambda
-const MAX_INTERACTIVES = IS_VERCEL ?      40 :    100;   // elements to inspect
-const MAX_LINKS        = IS_VERCEL ?      30 :     60;   // links to extract
+// ── Crawler tuning ────────────────────────────────────────────────────────────
+const NAV_TIMEOUT      = 20_000;  // ms per page load
+const IDLE_TIMEOUT     =  3_000;  // ms for networkidle
+const FULL_PAGE_SHOT   = true;    // full-page screenshots
+const MAX_INTERACTIVES =    100;  // elements to inspect per page
+const MAX_LINKS        =     60;  // links to extract per page
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

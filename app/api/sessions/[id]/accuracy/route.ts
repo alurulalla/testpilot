@@ -18,7 +18,7 @@ import { createModelFromConfig } from '@/lib/pilot/model-factory';
 import { getLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import { getSessionDir } from '@/lib/config';
-import { getSessionOrRestore } from '@/lib/get-session-or-restore';
+
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -184,7 +184,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSessionOrRestore(id, req);
+  const session = getSession(id);
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
   const workspace = new Workspace({

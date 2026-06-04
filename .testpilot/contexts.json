@@ -210,17 +210,17 @@
         "key": "user_name",
         "label": "Username",
         "type": "text",
-        "value": "admin",
+        "value": "standard_user",
         "sensitive": false
       },
       {
         "key": "password",
         "label": "Password",
         "type": "password",
-        "value": "password",
+        "value": "secret_sauce",
         "sensitive": true
       }
     ],
-    "updatedAt": 1780399999269
+    "updatedAt": 1780555543047
   }
 }

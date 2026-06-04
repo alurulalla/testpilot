@@ -32,20 +32,14 @@ export interface DetectedFormGroup {
   fields: DetectedField[];
 }
 
-// ── Env-aware tuning ──────────────────────────────────────────────────────────
-//
-// On Vercel serverless the function timeout is 60 s (including ~10-15 s for
-// @sparticuz/chromium cold-start).  We use tighter per-page budgets and scan
-// fewer pages in parallel to comfortably finish within that window.
-
-const IS_VERCEL = process.env.VERCEL === '1';
+// ── Tuning ────────────────────────────────────────────────────────────────────
 
 /** Max ms to wait for a page to load (goto). */
-const GOTO_TIMEOUT    = IS_VERCEL ?  8_000 : 15_000;
+const GOTO_TIMEOUT     = 15_000;
 /** Max ms to wait for the first input/textarea/select to appear. */
-const SELECTOR_TIMEOUT = IS_VERCEL ?  1_200 :  2_000;
+const SELECTOR_TIMEOUT =  2_000;
 /** Max form-link pages to scan after the entry page. */
-const MAX_LINKS       = IS_VERCEL ?      4 :     10;
+const MAX_LINKS        =     10;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -67,16 +61,13 @@ const FORM_PATH_PATTERNS = [
 
 /**
  * Common auth paths to probe directly when anchor-based link discovery yields
- * nothing (e.g. the home page is behind bot-protection, or uses JS-only nav).
- * On Vercel we keep only the highest-hit paths to stay within the 60 s budget.
+ * nothing (e.g. the home page uses JS-only navigation).
  */
-const FALLBACK_AUTH_PATHS = IS_VERCEL
-  ? ['/login', '/signin', '/signup', '/register']
-  : [
-      '/login', '/signin', '/sign-in', '/sign_in',
-      '/signup', '/register', '/sign-up', '/sign_up', '/create-account',
-      '/account/login', '/user/login', '/auth/login', '/users/sign_in',
-    ];
+const FALLBACK_AUTH_PATHS = [
+  '/login', '/signin', '/sign-in', '/sign_in',
+  '/signup', '/register', '/sign-up', '/sign_up', '/create-account',
+  '/account/login', '/user/login', '/auth/login', '/users/sign_in',
+];
 
 /** Anchor text patterns that suggest a link leads to a form */
 const FORM_LINK_TEXT_PATTERNS = [

@@ -14,13 +14,12 @@ import path from 'path';
 import type { SiteMap } from '@/lib/pilot';
 import { launchBrowser } from '@/lib/browser';
 
-// ── Vercel-aware tuning ───────────────────────────────────────────────────────
-const IS_VERCEL = process.env.VERCEL === '1';
-const NAV_TIMEOUT      = IS_VERCEL ?  10_000 : 20_000;
-const IDLE_TIMEOUT     = IS_VERCEL ?   1_000 :  3_000;
-const FULL_PAGE_SHOT   = !IS_VERCEL;
-const MAX_INTERACTIVES = IS_VERCEL ?      40 :    100;
-const MAX_LINKS        = IS_VERCEL ?      30 :     60;
+// ── Crawler tuning ────────────────────────────────────────────────────────────
+const NAV_TIMEOUT      = 20_000;
+const IDLE_TIMEOUT     =  3_000;
+const FULL_PAGE_SHOT   = true;
+const MAX_INTERACTIVES =    100;
+const MAX_LINKS        =     60;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

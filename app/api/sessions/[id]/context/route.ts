@@ -14,7 +14,7 @@ import { Workspace } from '@/lib/pilot';
 import { writeContextMd } from '@/lib/build-context-md';
 import type { UserFlow } from '@/types/session';
 import { getSessionDir } from '@/lib/config';
-import { getSessionOrRestore } from '@/lib/get-session-or-restore';
+
 
 function workspace(session: { url: string }, id: string) {
   return new Workspace({ url: session.url, rootDir: getSessionDir(id) });
@@ -79,7 +79,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSessionOrRestore(id, req);
+  const session = getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json({
     content: session.contextDoc,
@@ -92,7 +92,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSessionOrRestore(id, req);
+  const session = getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const contentType = req.headers.get('content-type') ?? '';
@@ -149,7 +149,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSessionOrRestore(id, req);
+  const session = getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   setContextDoc(id, null, null);

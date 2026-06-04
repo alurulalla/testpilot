@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync, readdirSync, symlinkSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync, readdirSync } from 'fs';
 import path from 'path';
 import { Workspace } from '@/lib/pilot';
 import { TestResult, TestStats } from '@/types/session';
@@ -39,7 +39,6 @@ function patchPlaywrightConfigForVideo(workspaceDir: string): void {
   try {
     let content = readFileSync(configPath, 'utf8');
     if (content.includes('video:')) return; // already configured
-    // Insert video: 'on' at the start of the use: { … } block
     content = content.replace(/(\buse\s*:\s*\{)/, "$1\n    video: 'on',");
     writeFileSync(configPath, content, 'utf8');
   } catch {
@@ -70,64 +69,7 @@ function collectVideos(workspaceDir: string): string[] {
   return videos;
 }
 
-/**
- * On Vercel, playwright's own ffmpeg binary is not installed (it requires
- * `npx playwright install ffmpeg` which can't run in a serverless deploy).
- * Instead we ship `ffmpeg-static` (a static Linux binary bundled in node_modules)
- * and symlink it into the directory structure playwright-core expects:
- *   /tmp/ms-playwright/ffmpeg-{revision}/ffmpeg
- * We then set PLAYWRIGHT_BROWSERS_PATH=/tmp/ms-playwright so playwright finds it.
- * PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH still takes precedence for Chromium,
- * so the @sparticuz/chromium binary continues to be used for the browser.
- */
-async function setupFfmpegEnv(workspaceDir: string): Promise<Record<string, string>> {
-  if (process.env.VERCEL !== '1') return {};
-  try {
-    // Read the ffmpeg revision playwright-core expects from its browsers.json
-    const browsersJsonPath = path.join(workspaceDir, 'node_modules', 'playwright-core', 'browsers.json');
-    const browsersJsonFallback = path.join(process.cwd(), 'node_modules', 'playwright-core', 'browsers.json');
-    const browsersJsonFile = existsSync(browsersJsonPath) ? browsersJsonPath : browsersJsonFallback;
-    if (!existsSync(browsersJsonFile)) return {};
-
-    const browsersData = JSON.parse(readFileSync(browsersJsonFile, 'utf8')) as {
-      browsers: Array<{ name: string; revision: string }>;
-    };
-    const ffmpegEntry = browsersData.browsers.find(b => b.name === 'ffmpeg');
-    if (!ffmpegEntry?.revision) return {};
-    const revision = ffmpegEntry.revision;
-
-    // Locate the ffmpeg-static binary (deployed in node_modules)
-    const ffmpegStaticCandidates = [
-      path.join(workspaceDir, 'node_modules', 'ffmpeg-static', 'ffmpeg'),
-      path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg'),
-    ];
-    const ffmpegStaticBin = ffmpegStaticCandidates.find(existsSync);
-    if (!ffmpegStaticBin) return {};
-
-    // Create the directory structure playwright expects and symlink our binary
-    const browsersPath = '/tmp/ms-playwright';
-    const ffmpegDir = path.join(browsersPath, `ffmpeg-${revision}`);
-    mkdirSync(ffmpegDir, { recursive: true });
-
-    const ffmpegTarget = path.join(ffmpegDir, 'ffmpeg');
-    // Use try/catch rather than existsSync — a broken symlink would make
-    // existsSync return false but symlinkSync throw EEXIST.
-    try {
-      symlinkSync(ffmpegStaticBin, ffmpegTarget);
-    } catch (e) {
-      // EEXIST = symlink already created by a prior run in this Lambda instance — OK
-      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
-    }
-
-    return { PLAYWRIGHT_BROWSERS_PATH: browsersPath };
-  } catch {
-    // Non-fatal — tests will run but may fail if video recording is enabled
-    return {};
-  }
-}
-
 // Non-blocking test runner — uses spawn() so the Node.js event loop stays free for SSE.
-// Uses spawn() so the Node.js event loop stays free for SSE and other requests.
 // Pass sessionId to register the child process for killable stop support.
 export async function runTestsAsync(
   workspace: Workspace,
@@ -146,61 +88,31 @@ export async function runTestsAsync(
   // Inject auth.json storageState if pre-login was performed for this session
   patchPlaywrightConfigForAuth(workspace.dir);
 
+  // Enable video recording — ffmpeg is installed in the Docker image
+  patchPlaywrightConfigForVideo(workspace.dir);
+
   const start = Date.now();
-
-  // On Vercel, Playwright's bundled Chromium is not available. Use the
-  // @sparticuz/chromium binary (which self-extracts to /tmp on first call)
-  // and tell Playwright where to find it via the env var.
-  let chromiumEnv: Record<string, string> = {};
-  if (process.env.VERCEL === '1') {
-    try {
-      const { default: Chromium } = await import('@sparticuz/chromium') as { default: { executablePath: () => Promise<string>; args: string[] } };
-      const executablePath = await Chromium.executablePath();
-      chromiumEnv = { PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: executablePath };
-    } catch {
-      // Non-fatal — Playwright will try its default browser lookup
-    }
-  }
-
-  // On Vercel, symlink ffmpeg-static into the directory playwright-core expects.
-  // Must run BEFORE patchPlaywrightConfigForVideo so we only enable video
-  // when we can confirm ffmpeg will be available.
-  const ffmpegEnv = await setupFfmpegEnv(workspace.dir);
-
-  // Enable video recording only when ffmpeg is confirmed available.
-  // On Vercel: ffmpegEnv is non-empty only if the symlink was set up successfully.
-  // Locally:   always enable (ffmpegEnv is {} but VERCEL flag is not set).
-  const ffmpegReady = process.env.VERCEL !== '1' || 'PLAYWRIGHT_BROWSERS_PATH' in ffmpegEnv;
-  if (ffmpegReady) {
-    patchPlaywrightConfigForVideo(workspace.dir);
-  }
 
   return new Promise((resolve) => {
     // Resolve the Playwright CLI entry point directly from node_modules so
-    // we never rely on `npx` finding the `playwright` binary.  On Vercel the
-    // workspace's node_modules is a symlink to /var/task/node_modules, so
-    // the CLI file exists at a known absolute path.  We run it with the
-    // current Node.js executable (process.execPath) rather than via a shell.
+    // we never rely on `npx` finding the `playwright` binary.
     const playwrightCliCandidates = [
-      // 1. playwright/cli.js uses relative require('./lib/program') — bypasses exports
-      //    map resolution that fails on Vercel with @playwright/test/cli.js
       path.join(workspace.dir, 'node_modules', 'playwright', 'cli.js'),
-      // 2. App-level node_modules fallback
       path.join(process.cwd(), 'node_modules', 'playwright', 'cli.js'),
     ];
     const playwrightCli = playwrightCliCandidates.find(existsSync)
-      ?? playwrightCliCandidates[0]; // use first and let it fail with a clear error
+      ?? playwrightCliCandidates[0];
 
     const nodeArgs = [playwrightCli, 'test', '--config', 'playwright.config.ts'];
     if (headed) nodeArgs.push('--headed');
 
     const proc = spawn(
-      process.execPath, // current node binary — always available
+      process.execPath,
       nodeArgs,
       {
         cwd: workspace.dir,
         stdio: 'pipe',
-        env: { ...process.env, ...chromiumEnv, ...ffmpegEnv },
+        env: { ...process.env },
       },
     );
 
@@ -219,7 +131,6 @@ export async function runTestsAsync(
     proc.stderr?.on('data', (data: Buffer) => {
       const text = data.toString();
       output += text;
-      // Surface stderr as errors so SyntaxError / compilation failures are visible
       for (const l of text.split('\n')) {
         if (l.trim()) onProgress?.(`[stderr] ${l.trim()}`);
       }
