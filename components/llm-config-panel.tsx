@@ -164,10 +164,14 @@ export default function LlmConfigPanel() {
     setSaving(true);
     setSaveMsg('');
     try {
+      // Only include apiKey when the user actually typed a new one.
+      // Omitting it tells the server to keep the existing stored key.
+      const payload: Record<string, string> = { provider, model, baseUrl };
+      if (apiKey.trim()) payload.apiKey = apiKey.trim();
       const res = await fetch('/api/llm-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, model, apiKey, baseUrl }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Unknown error' }));
