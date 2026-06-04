@@ -1,43 +1,53 @@
 /**
  * GET /api/sessions/[id]/download
  *
- * Packages the generated Playwright test suite into a ZIP file and streams
- * it to the browser as a download.
+ * Packages the entire workspace into a ZIP file and streams it to the browser.
  *
- * Included in the ZIP:
- *  tests/             ← all spec files + fixtures.ts
- *  playwright.config.ts
- *  package.json
- *  tsconfig.json      (if present)
- *  README.md          (auto-generated with run instructions)
+ * Includes everything except node_modules (which the recipient runs `npm install`
+ * to recreate) and any symlinks pointing outside the workspace.
  *
- * Excluded: node_modules, reports, test-results, snapshots, site_map.json
+ * Excluded: node_modules/
  */
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
-import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
+import { existsSync, readdirSync, lstatSync } from 'fs';
 import AdmZip from 'adm-zip';
 import { getSession } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { getSessionDir } from '@/lib/config';
 
+/** Directories to skip entirely — too large or not useful outside the server. */
+const SKIP_DIRS = new Set(['node_modules']);
 
-/** Recursively add every file under `dir` into the zip under `zipPrefix`. */
+/**
+ * Recursively add every file under `dir` into the zip under `zipPrefix`.
+ * Skips node_modules and symlinks (node_modules is often a symlink on Railway).
+ */
 function addDirToZip(zip: AdmZip, dir: string, zipPrefix: string) {
   if (!existsSync(dir)) return;
   const entries = readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
+    if (SKIP_DIRS.has(entry.name)) continue;
+
     const fullPath = path.join(dir, entry.name);
-    const zipPath  = path.join(zipPrefix, entry.name);
+    const zipPath  = zipPrefix ? path.join(zipPrefix, entry.name) : entry.name;
+
+    // Skip symlinks — node_modules on Railway is a symlink to the app-level
+    // node_modules. Following it would bundle the entire dependency tree.
+    try {
+      const stat = lstatSync(fullPath);
+      if (stat.isSymbolicLink()) continue;
+    } catch { continue; }
+
     if (entry.isDirectory()) {
       addDirToZip(zip, fullPath, zipPath);
     } else if (entry.isFile()) {
-      zip.addLocalFile(fullPath, path.dirname(zipPath));
+      zip.addLocalFile(fullPath, path.dirname(zipPath) === '.' ? '' : path.dirname(zipPath));
     }
   }
 }
 
-/** Generate a minimal README so the recipient knows how to run the suite. */
+/** Generate a README so the recipient knows how to run the suite. */
 function buildReadme(url: string): string {
   return `# TestPilot — Generated Test Suite
 
@@ -67,6 +77,13 @@ npx playwright test tests/<filename>.spec.ts
 \`\`\`bash
 npx playwright show-report
 \`\`\`
+
+## Credentials
+
+Test credentials are stored in \`.env\`. Playwright loads this file automatically.
+To override any value, edit \`.env\` or set the environment variable before running.
+
+> ⚠️  **Do not commit \`.env\` to source control.** It is already listed in \`.gitignore\`.
 `;
 }
 
@@ -91,22 +108,30 @@ export async function GET(
 
   const zip = new AdmZip();
 
-  // ── tests/ directory ──────────────────────────────────────────────────────
-  addDirToZip(zip, workspace.testsDir, 'tests');
+  // ── Add everything in the workspace except node_modules ───────────────────
+  addDirToZip(zip, workspace.dir, '');
 
-  // ── root config files ──────────────────────────────────────────────────────
-  const rootFiles = ['playwright.config.ts', 'package.json', 'tsconfig.json'];
-  for (const file of rootFiles) {
-    const fullPath = path.join(workspace.dir, file);
-    if (existsSync(fullPath)) {
-      zip.addLocalFile(fullPath, '');   // add to zip root
+  // ── Strip storageState from playwright.config.ts in the zip ──────────────
+  // Generated spec files use manual login helpers, not Playwright storageState.
+  // If the server previously patched storageState into the config (for the crawler),
+  // remove it so the downloaded project doesn't start browsers pre-authenticated,
+  // which would redirect away from the login page and break every login helper.
+  const configZipPath = 'playwright.config.ts';
+  const configEntry = zip.getEntry(configZipPath);
+  if (configEntry) {
+    const configContent = configEntry.getData().toString('utf8');
+    if (configContent.includes('storageState')) {
+      const cleaned = configContent
+        .replace(/\s*storageState\s*:\s*['"][^'"]+['"]\s*,?\n?/g, '\n')
+        .replace(/\n{3,}/g, '\n\n'); // collapse extra blank lines
+      zip.updateFile(configZipPath, Buffer.from(cleaned, 'utf8'));
     }
   }
 
-  // ── auto-generated README ─────────────────────────────────────────────────
+  // ── Inject a fresh README at the zip root (replaces any existing one) ─────
   zip.addFile('README.md', Buffer.from(buildReadme(session.url), 'utf8'));
 
-  // ── build a clean filename from the URL ───────────────────────────────────
+  // ── Build a clean filename from the URL ───────────────────────────────────
   let slug = '';
   try {
     const u = new URL(session.url);

@@ -311,15 +311,34 @@ function buildSystemPrompt(contextMd: string | null): string {
   return prompt;
 }
 
-/** Returns true if the crawled page appears to be in an authenticated state. */
-function pageRequiresAuth(elements: Record<string, unknown>): boolean {
+/**
+ * Returns true if the crawled page appears to be in an authenticated state.
+ * Checks both interactive element names (logout/profile indicators) and the
+ * page URL (non-root paths like /inventory.html, /dashboard are typically post-login).
+ */
+function pageRequiresAuth(elements: Record<string, unknown>, pageUrl?: string): boolean {
   const ints = (elements.interactives as { name: string }[] | undefined) ?? [];
   const LOGOUT_RE    = /\b(logout|log\s*out|sign\s*out)\b/i;
   const HELLO_RE     = /\b(hello|welcome|hi)\s+\w+/i;
   const ACCOUNT_RE   = /\b(my\s+account|manage\s+account|profile)\b/i;
-  return ints.some(el =>
+  const hasAuthElement = ints.some(el =>
     LOGOUT_RE.test(el.name) || HELLO_RE.test(el.name) || ACCOUNT_RE.test(el.name)
   );
+  if (hasAuthElement) return true;
+
+  // If the page URL is not a root/login page but a deep path, it's likely authenticated.
+  // Common post-login paths: /inventory, /dashboard, /cart, /checkout, /account, /profile, /home
+  if (pageUrl) {
+    try {
+      const pathname = new URL(pageUrl).pathname;
+      const LOGIN_PATHS  = /^\/?$|\/login|\/signin|\/sign-in|\/auth|\/index\.html?$/i;
+      // Match segment-exact keywords: /inventory, /inventory.html, /inventory/, but NOT /inventory-item
+      const AUTHED_PATHS = /\/(inventory|dashboard|cart|checkout|account|profile|home|orders?|settings|admin)(\/|\.html?|$)/i;
+      if (!LOGIN_PATHS.test(pathname) && AUTHED_PATHS.test(pathname)) return true;
+    } catch { /* invalid URL — ignore */ }
+  }
+
+  return false;
 }
 
 function buildPageTestPrompt(page: PageData, baseUrl: string, hasProductDoc: boolean): string {
@@ -343,7 +362,7 @@ function buildPageTestPrompt(page: PageData, baseUrl: string, hasProductDoc: boo
   ).slice(0, 2_000);
 
   // Detect authenticated page — require login() call in every test
-  const needsLogin = pageRequiresAuth(page.elements);
+  const needsLogin = pageRequiresAuth(page.elements, page.url);
   const authRule = needsLogin
     ? `⚠ AUTH REQUIRED: This page was crawled in an AUTHENTICATED state (elements like "Logout" or ` +
       `"Hello admin!" are visible). Every single test in this file MUST call ` +
@@ -385,7 +404,16 @@ function buildPageTestPrompt(page: PageData, baseUrl: string, hasProductDoc: boo
     `- For links WITHOUT an href hint: use getByRole('link', { name: 'exact name' })\n` +
     `- EMOJI RULE: if a row shows  ← use /regex/  → write  getByRole(role, { name: /Name/i })\n` +
     `- NEVER invent IDs, class names, or attributes not shown in the data above\n` +
-    `- For inputs: prefer getByLabel('…') using the aria_label from the inputs list\n` +
+    `- For inputs: if the input has a non-empty aria_label, use getByLabel('…'). ` +
+    `If aria_label is empty, use a locator based on the id, data-test, or name attribute shown in the crawl data. ` +
+    `NEVER call getByLabel() when aria_label is empty — it will fail at runtime.\n` +
+    `- PASSWORD INPUT RULE: <input type="password"> is NOT matched by getByRole('textbox'). ` +
+    `Always use locator('input[type="password"]') or an id/data-test selector for password fields.\n` +
+    `- CREDENTIAL RULE: If you write a login helper that fills a password field, use ` +
+    `process.env.TESTPILOT_PASSWORD ?? 'fallbackPassword' where fallbackPassword is the actual ` +
+    `password value from the credentials section in the product documentation above. ` +
+    `Same for username: process.env.TESTPILOT_USER_NAME ?? 'fallbackUsername'. ` +
+    `NEVER use ?? '' as a credential fallback — if the env var is missing the test must still run.\n` +
     loginImport +
     `- import { TARGET_URL } from './fixtures.js'\n` +
     `- Each test must be independent\n` +
@@ -527,7 +555,8 @@ function buildDocFeaturePrompt(
     `- For links WITHOUT an href hint: use getByRole('link', { name: 'exact name' })\n` +
     `- EMOJI RULE: if a row shows  ← use /regex/  → write  getByRole(role, { name: /Name/i })\n` +
     `- NEVER invent IDs, class names, or button text not present in the crawled data\n` +
-    `- For text inputs: use getByLabel('…') with the aria_label value from the inputs list\n` +
+    `- For text inputs: if aria_label is non-empty use getByLabel('…'); otherwise use an id/data-test/name locator from the crawl data. NEVER call getByLabel() when aria_label is empty.\n` +
+    `- CREDENTIAL RULE: Any login helper must use process.env.TESTPILOT_PASSWORD ?? 'fallbackPassword' (actual password from credentials above) and process.env.TESTPILOT_USER_NAME ?? 'fallbackUsername'. NEVER use ?? '' for credentials.\n` +
     `- import { test, expect } from './fixtures.js'\n` +
     `- import { TARGET_URL } from './fixtures.js'\n` +
     `- Test names MUST be: "${feature.name}: <what is verified>"\n` +
@@ -702,6 +731,13 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
         'ignore any training-data knowledge about this site. ' +
         'Do NOT invent selectors not in the crawl data. ' +
         'If a required element is missing from the crawl, skip that assertion with a comment. ' +
+        'CREDENTIAL RULE: Any login helper must use process.env.TESTPILOT_PASSWORD ?? \'actual_password\' and ' +
+        'process.env.TESTPILOT_USER_NAME ?? \'actual_username\' where the actual values come from the ' +
+        'credentials section in the product documentation. NEVER use ?? \'\' — empty fallback breaks offline runs. ' +
+        'INPUT SELECTOR RULE: Only use getByLabel() when the input has a non-empty aria_label. ' +
+        'For inputs with empty aria_label, use id/data-test/name attributes from the crawl data. ' +
+        'PASSWORD INPUT: <input type="password"> is NOT matched by getByRole(\'textbox\') in Playwright — ' +
+        'always use locator(\'input[type="password"]\') or an id/data-test selector for password inputs. ' +
         'Test names MUST follow: "<Feature Name>: <what is verified>". ' +
         'Do NOT use test.describe blocks — flat test() calls only. ' +
         'Return ONLY the TypeScript file — no markdown fences, no explanation.\n\n' +

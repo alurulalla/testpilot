@@ -154,6 +154,87 @@ async function collectNavItems(page: Page): Promise<NavItem[]> {
   }).catch(() => []);
 }
 
+// ── Direct URL navigation ─────────────────────────────────────────────────────
+
+/**
+ * Extract the URL path from a feature name that contains a hint like (/cart.html).
+ * Returns the full URL to navigate to, or null if no path hint is present.
+ *
+ * Examples:
+ *   "Cart Page (/cart.html)"             → "https://example.com/cart.html"
+ *   "Checkout – Step 1 (/checkout-step-one.html)" → full URL
+ *   "standard_user"                      → null (no path hint)
+ */
+function extractDirectUrl(featureName: string, baseUrl: string): string | null {
+  const match = featureName.match(/\((\/[a-zA-Z0-9\-_./?#]+)\)/);
+  if (!match) return null;
+  try {
+    const origin = new URL(baseUrl).origin;
+    return origin + match[1];
+  } catch { return null; }
+}
+
+/**
+ * Navigate directly to targetUrl and capture the page.
+ * Returns null if the URL was already known, is off-origin, or the page fails to load.
+ *
+ * Handles GitHub Pages / SPA 404s: these sites serve the app via a custom 404.html,
+ * so an HTTP 404 response still renders real content.  We rely on whether the page
+ * ends up at the expected path after React Router hydration rather than on the HTTP
+ * status code.
+ */
+async function navigateAndCapture(
+  ctx: BrowserContext,
+  targetUrl: string,
+  alreadySeen: Set<string>,
+  baseUrl: string,
+  log: (msg: string) => void,
+): Promise<PageInfo | null> {
+  if (!sameOrigin(targetUrl, baseUrl)) return null;
+  if (alreadySeen.has(dedupeKey(targetUrl))) return null;
+
+  const page = await ctx.newPage();
+  try {
+    await page.addInitScript(PUSHSTATE_INTERCEPT_SCRIPT);
+    await page.goto(targetUrl, { waitUntil: 'load', timeout: NAV_TIMEOUT }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: IDLE_TIMEOUT }).catch(() => {});
+
+    const finalUrl = page.url();
+
+    // If the SPA redirected us somewhere already in the sitemap (e.g. back to /inventory.html
+    // because the cart is empty or the route requires prior state), skip.
+    if (!sameOrigin(finalUrl, baseUrl)) return null;
+    if (alreadySeen.has(dedupeKey(finalUrl))) return null;
+
+    // Sanity check: make sure the page rendered actual content, not a blank shell.
+    const bodyText = await page.textContent('body').catch(() => '') ?? '';
+    if (bodyText.trim().length < 30) return null;
+
+    log(`  [click-nav] direct URL "${targetUrl}" → ${finalUrl}`);
+
+    const title = await page.title();
+    const elements = await collectPageElements(page);
+    const accessibility_tree = await collectAccessibilityTree(page);
+
+    return {
+      url:   finalUrl,
+      depth: 99, // marker: discovered via click-nav
+      title,
+      status_code: 200,
+      elements,
+      accessibility_tree,
+      child_urls: [],
+      screenshot: '',
+      error: null,
+    };
+  } catch (err) {
+    log(`  [click-nav] direct URL "${targetUrl}" failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
 // ── Single-page click & capture ───────────────────────────────────────────────
 
 /**
@@ -282,51 +363,78 @@ export async function runNavClickExplorer(
     const ctx = await browser.newContext(ctxOpts);
     ctx.setDefaultNavigationTimeout(NAV_TIMEOUT);
 
-    // ── Step 1: Collect nav items from the start URL ──────────────────────
-    log(`  [click-nav] Collecting navigation elements from ${startUrl}…`);
-    const probePage = await ctx.newPage();
-    let navItems: NavItem[] = [];
-    try {
-      await probePage.goto(startUrl, { waitUntil: 'load', timeout: NAV_TIMEOUT });
-      await probePage.waitForLoadState('networkidle', { timeout: IDLE_TIMEOUT }).catch(() => {});
-      navItems = await collectNavItems(probePage);
-      log(`  [click-nav] Found ${navItems.length} navigation element(s)`);
-    } finally {
-      await probePage.close().catch(() => {});
-    }
-
-    if (navItems.length === 0) {
-      return { discoveredPages: [], foundFeatures: [], missedFeatures: [...missingFeatures] };
-    }
-
-    // ── Step 2: Match missing features to nav items ───────────────────────
-    const matches = matchFeaturesToNavItems(navItems, missingFeatures);
+    // ── Step 1: Direct URL navigation for features with explicit path hints ──
+    // Feature names like "Cart Page (/cart.html)" or "Checkout (/checkout-step-one.html)"
+    // contain the URL path directly.  Navigate there first — faster and more reliable
+    // than trying to find a text-matching nav element (e.g. the cart icon has no label).
+    const needsClickNav: string[] = [];
 
     for (const feature of missingFeatures) {
-      const match = matches.get(feature);
-      if (!match) {
-        log(`  [click-nav] No nav match found for: "${feature}"`);
-        missedFeatures.push(feature);
+      const directUrl = extractDirectUrl(feature, startUrl);
+      if (!directUrl) {
+        needsClickNav.push(feature);
         continue;
       }
-
-      if (clickCount.n >= MAX_CLICKS) {
-        log(`  [click-nav] Max clicks (${MAX_CLICKS}) reached — skipping remaining features`);
-        missedFeatures.push(feature);
-        continue;
-      }
-
-      log(`  [click-nav] "${feature}" → trying "${match.label}" (score: ${match.score.toFixed(2)})`);
-      clickCount.n++;
-
-      const newPage = await clickAndCapture(ctx, startUrl, match, knownKeys, startUrl, log);
+      log(`  [click-nav] "${feature}" → direct URL: ${directUrl}`);
+      const newPage = await navigateAndCapture(ctx, directUrl, knownKeys, startUrl, log);
       if (newPage) {
         knownKeys.add(dedupeKey(newPage.url));
         discoveredPages.push(newPage);
         foundFeatures.push(feature);
       } else {
-        log(`  [click-nav] "${match.label}" did not navigate to a new page`);
-        missedFeatures.push(feature);
+        // Direct navigation failed or redirected to a known page — try click-based
+        log(`  [click-nav] Direct URL did not yield a new page for "${feature}" — will try click nav`);
+        needsClickNav.push(feature);
+      }
+    }
+
+    // ── Step 2: Collect nav items for features that still need click-based nav ──
+    if (needsClickNav.length > 0) {
+      log(`  [click-nav] Collecting navigation elements from ${startUrl}…`);
+      const probePage = await ctx.newPage();
+      let navItems: NavItem[] = [];
+      try {
+        await probePage.goto(startUrl, { waitUntil: 'load', timeout: NAV_TIMEOUT });
+        await probePage.waitForLoadState('networkidle', { timeout: IDLE_TIMEOUT }).catch(() => {});
+        navItems = await collectNavItems(probePage);
+        log(`  [click-nav] Found ${navItems.length} navigation element(s)`);
+      } finally {
+        await probePage.close().catch(() => {});
+      }
+
+      if (navItems.length === 0) {
+        missedFeatures.push(...needsClickNav);
+      } else {
+        // ── Step 3: Match remaining features to nav items ──────────────────
+        const matches = matchFeaturesToNavItems(navItems, needsClickNav);
+
+        for (const feature of needsClickNav) {
+          const match = matches.get(feature);
+          if (!match) {
+            log(`  [click-nav] No nav match found for: "${feature}"`);
+            missedFeatures.push(feature);
+            continue;
+          }
+
+          if (clickCount.n >= MAX_CLICKS) {
+            log(`  [click-nav] Max clicks (${MAX_CLICKS}) reached — skipping remaining features`);
+            missedFeatures.push(feature);
+            continue;
+          }
+
+          log(`  [click-nav] "${feature}" → trying "${match.label}" (score: ${match.score.toFixed(2)})`);
+          clickCount.n++;
+
+          const newPage = await clickAndCapture(ctx, startUrl, match, knownKeys, startUrl, log);
+          if (newPage) {
+            knownKeys.add(dedupeKey(newPage.url));
+            discoveredPages.push(newPage);
+            foundFeatures.push(feature);
+          } else {
+            log(`  [click-nav] "${match.label}" did not navigate to a new page`);
+            missedFeatures.push(feature);
+          }
+        }
       }
     }
 

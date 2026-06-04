@@ -4,7 +4,12 @@ import path from 'path';
 import { Workspace } from '@/lib/pilot';
 import { TestResult, TestStats } from '@/types/session';
 import { registerProcess, unregisterProcess } from '@/lib/session-store';
-import { patchPlaywrightConfigForAuth } from '@/lib/pre-login';
+// NOTE: patchPlaywrightConfigForAuth is intentionally NOT called here.
+// Generated spec files use manual login (loginAndGoto helpers). Adding a global
+// storageState: './auth.json' would pre-authenticate the browser context so that
+// navigating to '/' redirects to /inventory.html before the login form appears,
+// breaking every test that tries to fill the login form. auth.json is used only
+// during exploration (authenticated-site-explorer), not for test execution.
 
 function parseStats(reportPath: string): TestStats {
   if (!existsSync(reportPath)) {
@@ -84,9 +89,6 @@ export async function runTestsAsync(
 
   const reportPath = path.join(reportsDir, 'report.json');
   try { unlinkSync(reportPath); } catch { /* no prior report */ }
-
-  // Inject auth.json storageState if pre-login was performed for this session
-  patchPlaywrightConfigForAuth(workspace.dir);
 
   // Enable video recording — ffmpeg is installed in the Docker image
   patchPlaywrightConfigForVideo(workspace.dir);

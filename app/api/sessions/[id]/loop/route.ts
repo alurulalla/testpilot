@@ -17,7 +17,7 @@ import { withRateLimit } from '@/lib/rate-limited-model';
 import { getUrlContext, saveUrlContext, contextToEnv, contextToPromptHint } from '@/lib/url-context-store';
 import { getSessionDir, getDeepCrawlMaxPages, getAutoSelfHeal } from '@/lib/config';
 import { extractCredentialsFromDoc } from '@/lib/extract-credentials-from-doc';
-import { performPreLogin, patchPlaywrightConfigForAuth } from '@/lib/pre-login';
+import { performPreLogin } from '@/lib/pre-login';
 import { runAuthenticatedSiteExplorer } from '@/lib/authenticated-site-explorer';
 import { writeContextMd } from '@/lib/build-context-md';
 import { compareCrawlToDocs } from '@/lib/compare-crawl-to-docs';
