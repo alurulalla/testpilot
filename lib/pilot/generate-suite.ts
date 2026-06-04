@@ -125,6 +125,7 @@ interface LoginInfo {
   submitButtonText: string;
   usernameValue: string;
   passwordEnvVar: string;
+  passwordValue: string;
 }
 
 function buildFixturesFile(baseUrl: string, loginInfo?: LoginInfo): string {
@@ -147,7 +148,7 @@ export async function login(page: Page): Promise<void> {
   );
   // Password
   await page.locator('input[type="password"]').first().fill(
-    process.env.${loginInfo.passwordEnvVar} ?? '',
+    process.env.${loginInfo.passwordEnvVar} ?? ${JSON.stringify(loginInfo.passwordValue)},
   );
   // Submit button — exact text captured during form detection
   await page.locator('button[type="submit"], input[type="submit"]')
@@ -596,7 +597,8 @@ function readLoginInfo(workspaceDir: string): LoginInfo | undefined {
     const usernameLine = lines.find(l => /^TESTPILOT_.*USERNAME=/i.test(l));
     const usernameValue = usernameLine ? usernameLine.split('=').slice(1).join('=').trim() : '';
     const passwordLine  = lines.find(l => /^TESTPILOT_.*PASSWORD=/i.test(l));
-    const passwordEnvVar = passwordLine ? passwordLine.split('=')[0] : 'TESTPILOT_LOGIN_PASSWORD';
+    const passwordEnvVar  = passwordLine ? passwordLine.split('=')[0] : 'TESTPILOT_LOGIN_PASSWORD';
+    const passwordValue   = passwordLine ? passwordLine.split('=').slice(1).join('=').trim() : '';
 
     return {
       loginUrl,
@@ -604,6 +606,7 @@ function readLoginInfo(workspaceDir: string): LoginInfo | undefined {
       submitButtonText: get('TESTPILOT_LOGIN_SUBMIT_TEXT') || 'Log in',
       usernameValue,
       passwordEnvVar,
+      passwordValue,
     };
   } catch {
     return undefined;
