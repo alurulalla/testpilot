@@ -124,12 +124,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           (line) => addLog(id, line, 'info'),
         );
         if (loginResult.success) {
-          // Start exploration from the site's origin URL, not the exact post-login path.
-          // The auth cookies in storageState handle the redirect to the authenticated
-          // home page automatically. Using the deep path (e.g. /inventory.html) risks
-          // a 404 if the session expires between pre-login and exploration.
+          // Start exploration from the actual post-login page (e.g. /inventory.html).
+          // Stripping to the bare origin was previously used to avoid 404s on session
+          // expiry, but it breaks on sites that show the login form at the root URL
+          // regardless of session state (e.g. saucedemo). Using the exact post-login
+          // path with query/hash stripped is both safer and more useful.
           try {
-            exploreStartUrl = new URL(loginResult.postLoginUrl).origin;
+            const parsed = new URL(loginResult.postLoginUrl);
+            exploreStartUrl = parsed.origin + parsed.pathname;
           } catch {
             exploreStartUrl = loginResult.postLoginUrl;
           }
@@ -251,12 +253,31 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               // Phase 1.6: Doc-guided click navigation
               // Try to reach missing features by clicking navigation elements.
               // This discovers routes that have no <a> tag and aren't in the sitemap.
-              addLog(id, `Phase 1.6: Attempting to reach ${docComparison.missing.length} missing feature(s) via navigation clicks…`, 'info');
+              // Only attempt navigation for features that look like actual pages/sections
+              // (contain a URL path hint or a page/screen/dashboard keyword) — doc metadata
+              // headings like "Test Credentials" or "References" are not navigable.
+              const navigableFeatures = docComparison.missing.filter(f => {
+                const lower = f.toLowerCase();
+                // Has a URL-path hint like (/path.html) or (/dashboard)
+                if (/\(\/[a-zA-Z0-9\-_./?]+\)/.test(f)) return true;
+                // Ends with or contains a UI-section keyword
+                if (/\b(page|screen|view|dashboard|panel|form|module|list|detail|editor|settings|profile|home|landing)\b/i.test(f)) return true;
+                // Exclude known documentation-only keywords
+                const docOnly = ['credential', 'persona', 'scenario', 'path', 'limitation',
+                  'reference', 'selector', 'suitability', 'regression', 'performance', 'automation'];
+                if (docOnly.some(kw => lower.includes(kw))) return false;
+                return false; // default: don't attempt navigation for ambiguous headings
+              });
+
+              if (navigableFeatures.length === 0) {
+                addLog(id, 'Phase 1.6: No navigable page features to attempt — skipping click navigation.', 'info');
+              } else {
+              addLog(id, `Phase 1.6: Attempting to reach ${navigableFeatures.length} page feature(s) via navigation clicks…`, 'info');
               try {
                 const clickResult = await runNavClickExplorer({
                   startUrl:        exploreStartUrl,
                   authFile:        authFile ?? undefined,
-                  missingFeatures: docComparison.missing,
+                  missingFeatures: navigableFeatures,
                   existingSiteMap: siteMap,
                   onProgress:      (line) => addLog(id, line, 'info'),
                 });
@@ -290,6 +311,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                 // Non-fatal — click navigation is best-effort
                 addLog(id, `  Phase 1.6 click-nav error (non-fatal): ${clickErr instanceof Error ? clickErr.message : String(clickErr)}`, 'error');
               }
+              } // end navigableFeatures.length > 0
             }
           }
         } catch {
