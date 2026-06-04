@@ -1376,6 +1376,22 @@ export default function SessionPage() {
     }
   }, [id, session]);
 
+  const toggleAutoSelfHeal = useCallback(async () => {
+    const next = !autoSelfHeal;
+    // Optimistically update local state so the badge flips immediately
+    setAutoSelfHeal(next);
+    try {
+      await fetch('/api/app-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ autoSelfHeal: next }),
+      });
+    } catch {
+      // Revert on failure
+      setAutoSelfHeal(!next);
+    }
+  }, [autoSelfHeal]);
+
   // Close image lightbox on Escape — must be before any conditional returns
   useEffect(() => {
     if (!imageModal) return;
@@ -1659,14 +1675,18 @@ export default function SessionPage() {
               }
               state={getPhaseState(session, "fix")}
             >
-              {/* Auto-heal mode badge */}
-              <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                autoSelfHeal
-                  ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
-                  : 'text-zinc-500 bg-zinc-800 border-zinc-700'
-              }`}>
+              {/* Auto-heal mode toggle */}
+              <button
+                onClick={toggleAutoSelfHeal}
+                title={autoSelfHeal ? 'Auto-heal is ON — click to disable' : 'Auto-heal is OFF — click to enable'}
+                className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${
+                  autoSelfHeal
+                    ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/20'
+                    : 'text-zinc-500 bg-zinc-800 border-zinc-700 hover:border-zinc-500 hover:text-zinc-300'
+                }`}
+              >
                 {autoSelfHeal ? '⚡ Auto-heal ON' : '⏸ Auto-heal OFF'}
-              </span>
+              </button>
 
               {/* Triage summary when available */}
               {triage && hasFailures && (

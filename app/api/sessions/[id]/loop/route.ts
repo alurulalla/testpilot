@@ -363,13 +363,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       } // end !isImportMode (explore + generate phases)
 
-      // Read AUTO_SELF_HEAL at loop start so changes take effect without restart
-      const autoSelfHeal = getAutoSelfHeal();
-      if (!autoSelfHeal) {
-        addLog(id, 'ℹ Auto-heal is OFF. Self-healing must be triggered manually.', 'info');
-      }
-
       // Phase 3-N: Run → Triage → (optionally) Fix loop
+      // AUTO_SELF_HEAL is re-read every iteration so toggling on the session
+      // page takes effect without restarting the pipeline.
       for (let i = 1; i <= maxIterations; i++) {
         if (stopped()) return;
         updateSession(id, { iteration: i });
@@ -446,6 +442,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             );
           }
         }
+
+        // Re-read AUTO_SELF_HEAL each iteration so the session-page toggle
+        // takes effect immediately (even mid-run).
+        const autoSelfHeal = getAutoSelfHeal();
 
         // If AUTO_SELF_HEAL is OFF, stop here — let the user decide what to do
         if (!autoSelfHeal) {
