@@ -414,6 +414,13 @@ function buildPageTestPrompt(page: PageData, baseUrl: string, hasProductDoc: boo
     `password value from the credentials section in the product documentation above. ` +
     `Same for username: process.env.TESTPILOT_USER_NAME ?? 'fallbackUsername'. ` +
     `NEVER use ?? '' as a credential fallback — if the env var is missing the test must still run.\n` +
+    `- SPA NAVIGATION RULE: For buttons that trigger SPA navigation (React/Vue/Angular apps), ` +
+    `use getByRole('button', { name: '...' }) or locator('[data-test="..."]'). ` +
+    `NEVER use locator('a[href="/some-page.html"]') for SPA navigation — those hrefs are '#' or absent.\n` +
+    `- STRICT MODE RULE: page.getByText() resolves every matching DOM node. ` +
+    `If the text (e.g. a price like '$29.99', or 'total') might appear in more than one place, ` +
+    `use a more specific container locator first (.summary_subtotal_label, [data-test="..."], etc.) ` +
+    `then use toContainText() on that container. NEVER assert getByText('$X.XX').toBeVisible() for prices or totals.\n` +
     loginImport +
     `- import { TARGET_URL } from './fixtures.js'\n` +
     `- Each test must be independent\n` +
@@ -557,6 +564,8 @@ function buildDocFeaturePrompt(
     `- NEVER invent IDs, class names, or button text not present in the crawled data\n` +
     `- For text inputs: if aria_label is non-empty use getByLabel('…'); otherwise use an id/data-test/name locator from the crawl data. NEVER call getByLabel() when aria_label is empty.\n` +
     `- CREDENTIAL RULE: Any login helper must use process.env.TESTPILOT_PASSWORD ?? 'fallbackPassword' (actual password from credentials above) and process.env.TESTPILOT_USER_NAME ?? 'fallbackUsername'. NEVER use ?? '' for credentials.\n` +
+    `- SPA NAVIGATION RULE: For buttons that trigger SPA navigation, use getByRole('button', { name: '...' }) or locator('[data-test="..."]'). NEVER use locator('a[href="/some-page.html"]') — SPA hrefs are '#' or absent.\n` +
+    `- STRICT MODE RULE: getByText() fails if it matches more than one element. For prices, totals, counts — use a specific container locator first, then toContainText(). NEVER use getByText('$X.XX') or getByText(/total/i) directly.\n` +
     `- import { test, expect } from './fixtures.js'\n` +
     `- import { TARGET_URL } from './fixtures.js'\n` +
     `- Test names MUST be: "${feature.name}: <what is verified>"\n` +
@@ -738,6 +747,11 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
         'For inputs with empty aria_label, use id/data-test/name attributes from the crawl data. ' +
         'PASSWORD INPUT: <input type="password"> is NOT matched by getByRole(\'textbox\') in Playwright — ' +
         'always use locator(\'input[type="password"]\') or an id/data-test selector for password inputs. ' +
+        'SPA NAVIGATION RULE: For buttons triggering SPA navigation, use getByRole(\'button\', { name: \'...\' }) ' +
+        'or locator(\'[data-test="..."]\') — NEVER locator(\'a[href="/page.html"]\') for SPA buttons (hrefs are \'#\' or absent). ' +
+        'STRICT MODE RULE: getByText() fails in strict mode if it matches more than one element. ' +
+        'For prices, amounts, totals — use a specific container locator (class or data-test), then toContainText(). ' +
+        'NEVER assert getByText(\'$X.XX\') or getByText(/total/i) directly on a summary page. ' +
         'Test names MUST follow: "<Feature Name>: <what is verified>". ' +
         'Do NOT use test.describe blocks — flat test() calls only. ' +
         'Return ONLY the TypeScript file — no markdown fences, no explanation.\n\n' +

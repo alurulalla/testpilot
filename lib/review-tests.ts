@@ -170,9 +170,15 @@ function buildReviewSystemPrompt(): string {
     '   - If role + "X" is in the tables → leave it UNCHANGED.\n' +
     '   - If NOT found → look for the closest match by intent:\n' +
     '     a) Close match exists → replace with the exact name shown in the table.\n' +
-    '     b) No equivalent at all → comment out only the single failing action line ' +
-    'and add: // TODO: element "X" not found in crawl. Do NOT skip the whole test.\n' +
-    '3. Never change test names, URL assertions (toHaveURL), or visibility checks.\n' +
+    '     b) No equivalent at all → comment out BOTH the failing action line AND any ' +
+    'assertion that depends on the result of that action. ' +
+    'Example: if you comment out a ".click()" that causes navigation, also comment out ' +
+    'the "await expect(page).toHaveURL(...)" that follows it. ' +
+    'Example: if you comment out a Remove click, also comment out the "not.toBeVisible()" check on the removed item. ' +
+    'Add: // TODO: element "X" not found in crawl — skipping dependent assertion. ' +
+    'Do NOT skip the whole test.\n' +
+    '3. Never change test names. Only change URL assertions (toHaveURL) or visibility checks ' +
+    'if they directly depend on a commented-out action — in that case comment them out too (see rule 2b).\n' +
     '4. Be conservative — only touch locators clearly absent from the crawled data.\n' +
     '5. IMPORTANT: Return ONLY the complete TypeScript file starting with the import statements. ' +
     'No reasoning, no prose, no markdown fences. ' +
