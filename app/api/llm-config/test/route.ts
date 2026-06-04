@@ -9,7 +9,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getLlmConfig } from '@/lib/llm-config-store';
-import { createModelFromConfig, resolveApiKey } from '@/lib/pilot/model-factory';
+import { createModelFromConfig } from '@/lib/pilot/model-factory';
 import type { LlmConfig } from '@/lib/pilot/model-factory';
 
 /**
@@ -33,24 +33,26 @@ function sanitizeErrorMessage(msg: string, apiKey?: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  // Caller may send an in-progress config (not yet saved) to test before saving
+  // Always use the stored API key — never accept it from the request body.
+  // The UI sends only provider/model/baseUrl so the key is never transmitted.
+  const stored = getLlmConfig();
   let config: LlmConfig;
   try {
     const body = await req.json().catch(() => null);
     if (body && body.provider) {
-      // Merge with stored config so we preserve the saved key when none is typed
-      const stored = getLlmConfig();
+      // Allow provider / model / baseUrl overrides (e.g. testing before save),
+      // but the apiKey ALWAYS comes from the server-side store.
       config = {
         provider: body.provider ?? stored.provider,
         model:    body.model    ?? stored.model,
-        apiKey:   (body.apiKey && body.apiKey.trim()) ? body.apiKey.trim() : stored.apiKey,
+        apiKey:   stored.apiKey,   // never from body
         baseUrl:  (body.baseUrl && body.baseUrl.trim()) ? body.baseUrl.trim() : stored.baseUrl,
       };
     } else {
-      config = getLlmConfig();
+      config = stored;
     }
   } catch {
-    config = getLlmConfig();
+    config = stored;
   }
 
   try {

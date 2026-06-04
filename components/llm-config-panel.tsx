@@ -187,13 +187,20 @@ export default function LlmConfigPanel() {
   }
 
   async function handleTest() {
+    // Never send the API key over the wire — the server always uses the stored key.
+    // If the user has typed a new key that hasn't been saved yet, ask them to save first.
+    if (apiKey.trim()) {
+      setTestMsg({ ok: false, text: 'Save your settings first, then test the connection.' });
+      return;
+    }
     setTesting(true);
     setTestMsg(null);
     try {
       const res = await fetch('/api/llm-config/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, model, apiKey, baseUrl }),
+        // apiKey intentionally omitted — server uses the stored key
+        body: JSON.stringify({ provider, model, baseUrl }),
       });
       const data = await res.json() as { ok: boolean; error?: string; hint?: string; model?: string };
       if (data.ok) {
