@@ -521,6 +521,7 @@ function buildDocFeaturePrompt(
   baseUrl: string,
   feature: { name: string; items: string[] },
   pages: PageData[],
+  selectorHints?: { pageUrl: string; featureName: string; hints: { action: string; selector: string; confidence: string }[] }[],
 ): string {
   // Per-page budgets — interactives table + a11y tree are the primary locator sources.
   // Give a11y generous space; it compresses well (YAML not JSON).
@@ -547,9 +548,36 @@ function buildDocFeaturePrompt(
     ? feature.items.map(i => `- ${i}`).join('\n')
     : '(see feature name above)';
 
+  // Build the verified selector map block if hints are available for this feature.
+  // Normalise feature names for comparison: strip number prefixes and backtick escapes.
+  const normalise = (s: string) =>
+    s.toLowerCase()
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/^\d+[\d.]*[.)]\s*/, '')
+      .trim();
+
+  const featureHints = (selectorHints ?? [])
+    .filter(m => normalise(m.featureName) === normalise(feature.name))
+    .flatMap(m => m.hints);
+
+  const verifiedMapBlock = featureHints.length > 0
+    ? (
+      `╔═ VERIFIED SELECTOR MAP (pre-resolved by LLM — USE THESE FIRST) ═╗\n` +
+      featureHints.map(h =>
+        `  action:     ${h.action}\n` +
+        `  selector:   ${h.selector}\n` +
+        `  confidence: ${h.confidence}`,
+      ).join('\n\n') +
+      `\n╚════════════════════════════════════════════════════════════════╝\n\n` +
+      `⚠ SELECTOR RULE: For every action listed in the VERIFIED SELECTOR MAP above, ` +
+      `you MUST use the exact selector shown. Do NOT substitute a different locator.\n\n`
+    )
+    : '';
+
   return (
     `Generate a Playwright test file that verifies the "${feature.name}" feature.\n` +
     `Base URL: ${baseUrl}\n\n` +
+    verifiedMapBlock +
     `╔═ CRAWLED PAGE DATA — use ONLY the selectors, roles, text, and attributes found here ═╗\n` +
     `${crawlData}\n` +
     `╚══════════════════════════════════════════════════════════════════════════════════════╝\n\n` +
@@ -726,6 +754,20 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
     if (docFeatures.length > 0) {
       console.log(`  Generating ${docFeatures.length} per-feature spec file(s) from crawled data…`);
 
+      // Load Phase 1.75 selector hints if available.
+      // These are pre-resolved by an LLM that examined the real DOM of each page
+      // and mapped every documented action to a precise Playwright selector.
+      type SelectorHint = { action: string; selector: string; confidence: string };
+      type PageSelectorMap = { pageUrl: string; featureName: string; hints: SelectorHint[] };
+      let selectorHints: PageSelectorMap[] = [];
+      try {
+        const hintsRaw = workspace.readSelectorHints();
+        if (Array.isArray(hintsRaw)) selectorHints = hintsRaw as PageSelectorMap[];
+        if (selectorHints.length > 0) {
+          console.log(`  Loaded ${selectorHints.length} pre-resolved selector map(s) from Phase 1.75`);
+        }
+      } catch { /* non-fatal — generate without hints */ }
+
       // System prompt shared by all feature generations
       const featureSystemPrompt =
         'You are an expert Playwright test engineer (TypeScript). ' +
@@ -755,6 +797,11 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
         'Test names MUST follow: "<Feature Name>: <what is verified>". ' +
         'Do NOT use test.describe blocks — flat test() calls only. ' +
         'Return ONLY the TypeScript file — no markdown fences, no explanation.\n\n' +
+        (selectorHints.length > 0
+          ? 'IMPORTANT: Each user message may contain a VERIFIED SELECTOR MAP section. ' +
+            'When present, you MUST use the exact selectors listed there — they were ' +
+            'pre-resolved from the live DOM and are guaranteed to work.\n\n'
+          : '') +
         contextMd;
 
       const generatedSlugs = new Set<string>();
@@ -769,7 +816,7 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
         console.log(`  Generating ${slug}.spec.ts for "${feature.name}" (${feature.items.length} item(s))…`);
 
         try {
-          const featureUserPrompt = buildDocFeaturePrompt(baseUrl, feature, pages);
+          const featureUserPrompt = buildDocFeaturePrompt(baseUrl, feature, pages, selectorHints);
           const featureResult = await model.invoke([
             { role: 'system', content: featureSystemPrompt },
             { role: 'user',   content: featureUserPrompt },

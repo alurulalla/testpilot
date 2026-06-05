@@ -22,6 +22,7 @@ import { runAuthenticatedSiteExplorer } from '@/lib/authenticated-site-explorer'
 import { writeContextMd } from '@/lib/build-context-md';
 import { compareCrawlToDocs } from '@/lib/compare-crawl-to-docs';
 import { runNavClickExplorer } from '@/lib/pilot/nav-click-explorer';
+import { discoverSelectors } from '@/lib/pilot/discover-selectors';
 import { writeFileSync, existsSync, readFileSync } from 'fs';
 import path from 'path';
 
@@ -320,6 +321,39 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
 
       if (stopped('doc comparison')) return;
+
+      // Phase 1.75: LLM Selector Discovery
+      // For each crawled page that matches a doc feature section, ask an LLM to
+      // map every documented action to the most precise Playwright selector found
+      // in the real DOM.  The result is written to selector-hints.json and
+      // injected by the generator as pre-verified ground-truth selectors.
+      // Non-fatal — a failure here never blocks test generation.
+      const sessionForDiscovery = getSession(id);
+      if (sessionForDiscovery?.contextDoc) {
+        try {
+          addLog(id, 'Phase 1.75: LLM selector discovery…', 'info');
+          const selectorMaps = await discoverSelectors({
+            siteMap: siteMap as unknown as Parameters<typeof discoverSelectors>[0]['siteMap'],
+            contextMd: sessionForDiscovery.contextDoc,
+            model: chatModel,
+            onProgress: (line) => addLog(id, line, 'info'),
+          });
+          if (selectorMaps.length > 0) {
+            workspace.writeSelectorHints(selectorMaps);
+            addLog(id, `  ✓ Selector hints written for ${selectorMaps.length} page/feature pair(s)`, 'success');
+          } else {
+            addLog(id, '  Phase 1.75: no selector hints produced (pages may not match doc features)', 'info');
+          }
+        } catch (err) {
+          addLog(
+            id,
+            `  Phase 1.75 error (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+            'error',
+          );
+        }
+      }
+
+      if (stopped('selector discovery')) return;
 
       // Phase 2: Generate
       setStatus(id, 'generating');

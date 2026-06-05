@@ -40,6 +40,7 @@ export class Workspace {
   readonly reportsDir: string;
   readonly snapshotsDir: string;
   readonly siteMapFile: string;
+  readonly selectorHintsFile: string;
   readonly configFile: string;
 
   constructor(config: WorkspaceConfig) {
@@ -50,8 +51,9 @@ export class Workspace {
     this.testsDir = path.join(this.dir, 'tests');
     this.reportsDir = path.join(this.dir, 'reports');
     this.snapshotsDir = path.join(this.dir, 'snapshots');
-    this.siteMapFile = path.join(this.dir, 'site_map.json');
-    this.configFile = path.join(this.dir, 'playwright.config.ts');
+    this.siteMapFile        = path.join(this.dir, 'site_map.json');
+    this.selectorHintsFile  = path.join(this.dir, 'selector-hints.json');
+    this.configFile         = path.join(this.dir, 'playwright.config.ts');
   }
 
   init(): void {
@@ -183,6 +185,17 @@ export default defineConfig({
 
   writeSiteMap(data: unknown): void {
     writeFileSync(this.siteMapFile, JSON.stringify(data, null, 2), 'utf8');
+  }
+
+  writeSelectorHints(data: unknown): void {
+    writeFileSync(this.selectorHintsFile, JSON.stringify(data, null, 2), 'utf8');
+  }
+
+  readSelectorHints(): unknown {
+    if (!existsSync(this.selectorHintsFile)) return null;
+    try {
+      return JSON.parse(readFileSync(this.selectorHintsFile, 'utf8'));
+    } catch { return null; }
   }
 
   testFiles(): string[] {

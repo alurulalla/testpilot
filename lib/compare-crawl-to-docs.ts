@@ -29,12 +29,13 @@ export interface CrawlVsDocsResult {
 function extractFeatureNames(contextMd: string): string[] {
   const names: string[] = [];
 
-  // Once we hit a doc-metadata section, stop collecting entirely.
-  // Checked against the bare heading name (number prefix already stripped).
-  const STOP = /^(Typical\s+User\s+Journey|Best Practices?|Summary|User Flows? to Test|Test Credentials?|Key Testing Scenarios?|Automation|Known Limitations?|References?|Useful\s+.+Selectors?|Visual Regression|Performance|Broken Functionality|Negative|Happy Path)/i;
-
-  // Skip broad parent headings that aren't specific features.
-  const SKIP = /^(Overview|Homepage Sections?|Sections?|Features?|Summary|Table of Contents|Introduction|Application Pages?|Navigation|Global Elements?|User Personas?)/i;
+  // Skip doc-metadata headings — they have no page elements and shouldn't be counted
+  // as testable features.
+  // NOTE: use SKIP (continue) not STOP (break) — in many docs like demo.md the credentials
+  // section appears BEFORE the application page sections (e.g. §2 "Test Credentials" before
+  // §4 "Application Pages"), so breaking on the first metadata heading would cause every
+  // page feature to be missed.
+  const SKIP = /^(Typical\s+User\s+Journey|Best Practices?|Summary|User Flows? to Test|Test Credentials?|Key Testing Scenarios?|Automation|Known Limitations?|References?|Useful\s+.+Selectors?|Visual Regression|Performance|Broken Functionality|Negative|Happy Path|Overview|Homepage Sections?|Sections?|Features?|Table of Contents|Introduction|Application Pages?|Navigation|Global Elements?|User Personas?)/i;
 
   for (const raw of contextMd.split('\n')) {
     const line = raw.trim();
@@ -45,8 +46,7 @@ function extractFeatureNames(contextMd: string): string[] {
       .replace(/`([^`]+)`/g, '$1') // strip backtick escapes: `standard_user` → standard_user
       .trim();
 
-    if (name.match(STOP)) break;   // stop at doc-metadata sections
-    if (name.match(SKIP)) continue; // skip broad parent sections
+    if (name.match(SKIP)) continue; // skip metadata and broad parent sections
 
     names.push(name);
   }
