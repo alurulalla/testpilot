@@ -15,7 +15,7 @@
  *    to 16 384 (same as before) when not specified.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import type { ChatMessage, ChatModel } from './types';
+import type { ChatMessage, ChatModel, MessageContent } from './types';
 
 export interface CreateAnthropicModelOptions {
   apiKey: string;
@@ -24,6 +24,36 @@ export interface CreateAnthropicModelOptions {
 
 /** Minimum character count before we apply cache_control (~1 024 tokens). */
 const CACHE_MIN_CHARS = 4_000;
+
+/**
+ * Convert our provider-agnostic MessageContent to Anthropic content block array.
+ * Handles plain strings, text blocks, and base64 image blocks.
+ */
+function toAnthropicContent(
+  content: MessageContent,
+  applyCache = false,
+): Anthropic.ContentBlockParam[] {
+  if (typeof content === 'string') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return [{ type: 'text', text: content, ...(applyCache ? { cache_control: { type: 'ephemeral' as const } } : {}) } as any];
+  }
+  return content.map((block, i): Anthropic.ContentBlockParam => {
+    if (block.type === 'image') {
+      return {
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: block.mediaType as Anthropic.Base64ImageSource['media_type'],
+          data: block.data,
+        },
+      };
+    }
+    // Text block — cache only the first one when requested
+    const shouldCache = applyCache && i === 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { type: 'text', text: block.text, ...(shouldCache ? { cache_control: { type: 'ephemeral' as const } } : {}) } as any;
+  });
+}
 
 export async function createAnthropicModel(
   options: CreateAnthropicModelOptions,
@@ -45,14 +75,13 @@ export async function createAnthropicModel(
       const nonSystemMessages = messages.filter(m => m.role !== 'system');
 
       // ── System blocks (with automatic caching for long prompts) ─────────────
+      // System messages are always plain strings — safe to cast
       const systemBlocks: Anthropic.TextBlockParam[] = systemMessages.map((m, i) => {
+        const text    = m.content as string;
         const isLast  = i === systemMessages.length - 1;
-        const isLong  = m.content.length >= CACHE_MIN_CHARS;
-        return {
-          type: 'text',
-          text: m.content,
-          ...(isLast && isLong ? { cache_control: { type: 'ephemeral' } } : {}),
-        };
+        const isLong  = text.length >= CACHE_MIN_CHARS;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return { type: 'text', text, ...(isLast && isLong ? { cache_control: { type: 'ephemeral' } } : {}) } as any;
       });
 
       // ── User / assistant messages ─────────────────────────────────────────
@@ -60,16 +89,16 @@ export async function createAnthropicModel(
       // block that contains the interactives table or product documentation —
       // the same content is reused across many calls in a session).
       const builtMessages: Anthropic.MessageParam[] = nonSystemMessages.map((m, i) => {
-        const cacheThisBlock =
-          i === 0 &&
-          m.role === 'user' &&
-          m.content.length >= CACHE_MIN_CHARS;
+        // For caching, measure character length of text portions only
+        const textLen = typeof m.content === 'string'
+          ? m.content.length
+          : m.content.filter(b => b.type === 'text').reduce((n, b) => n + (b as {type:'text';text:string}).text.length, 0);
+
+        const cacheThisBlock = i === 0 && m.role === 'user' && textLen >= CACHE_MIN_CHARS;
 
         return {
           role: m.role as 'user' | 'assistant',
-          content: cacheThisBlock
-            ? [{ type: 'text', text: m.content, cache_control: { type: 'ephemeral' } }]
-            : m.content,
+          content: toAnthropicContent(m.content, cacheThisBlock),
         };
       });
 

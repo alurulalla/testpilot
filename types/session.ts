@@ -65,6 +65,8 @@ export interface FigmaDiscrepancy {
   issue: string;
   figmaValue?: string;
   liveValue?: string;
+  /** Relative path (from workspace dir) to a screenshot of the specific live element */
+  screenshotPath?: string;
 }
 
 export interface FigmaComparison {
@@ -209,6 +211,10 @@ export interface Session {
   triageResult: TriageResult | null;
   figmaResult: FigmaResult | null;
   figmaFileUrl: string | null;
+  /** When true, skip test generation/execution — run Figma design verification only. */
+  figmaOnly: boolean;
+  /** True while Figma design verification is in progress (independent of the main pipeline status). */
+  figmaChecking: boolean;
   iteration: number;
   error: string | null;
   maxPages: number;

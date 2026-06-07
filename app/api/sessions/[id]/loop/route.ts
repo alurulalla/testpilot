@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getSession, setStatus, setSiteMap, setTestResult, setFixResult,
-  setTriageResult, setError, addLog, updateSession, isStopping, clearStopping,
-  subscribe, unsubscribe,
+  setTriageResult, setFigmaResult, setFigmaChecking, setError,
+  addLog, updateSession, isStopping, clearStopping, subscribe, unsubscribe,
 } from '@/lib/session-store';
 
 import { runSiteExplorer, runGenerateSuite, Workspace } from '@/lib/pilot';
@@ -15,7 +15,8 @@ import { triageFailures } from '@/lib/triage-failures';
 import { SiteMap } from '@/types/session';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import { getUrlContext, saveUrlContext, contextToEnv, contextToPromptHint } from '@/lib/url-context-store';
-import { getSessionDir, getDeepCrawlMaxPages, getAutoSelfHeal } from '@/lib/config';
+import { getSessionDir, getDeepCrawlMaxPages, getAutoSelfHeal, getFigmaToken } from '@/lib/config';
+import { runFigmaComparison, isFigmaConfigured } from '@/lib/figma-client';
 import { extractCredentialsFromDoc } from '@/lib/extract-credentials-from-doc';
 import { performPreLogin } from '@/lib/pre-login';
 import { runAuthenticatedSiteExplorer } from '@/lib/authenticated-site-explorer';
@@ -226,6 +227,44 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       setSiteMap(id, siteMap as unknown as SiteMap);
       addLog(id, `Found ${siteMap.total_pages} page(s).`, 'success');
       if (stopped('explore')) return;
+
+      // Phase 1.8: Figma design verification — fire-and-forget in parallel.
+      // Exploration is now done so knownUrls is fully populated, which lets
+      // guessUrl() map Figma frames to real crawled pages instead of inventing slugs.
+      {
+        const figmaSession = getSession(id);
+        const figmaToken = getFigmaToken();
+        if (figmaSession?.figmaFileUrl && !figmaSession.figmaChecking && isFigmaConfigured(figmaToken, figmaSession.figmaFileUrl)) {
+          setFigmaChecking(id, true);
+          addLog(id, '🎨 Phase 1.8: Figma design verification starting (parallel with test generation)…', 'info');
+          const knownUrls = (siteMap.pages as Array<{ url: string }>).map(p => p.url);
+          runFigmaComparison(
+            figmaToken!,
+            figmaSession.figmaFileUrl,
+            session.url,
+            workspace.dir,
+            knownUrls,
+            (line) => addLog(id, line, 'info'),
+            chatModel,
+          ).then(result => {
+            setFigmaResult(id, result);
+            const totalIssues = result.comparisons.reduce((n, c) => n + (c.discrepancies?.length ?? 0), 0);
+            const scoredComparisons = result.comparisons.filter(c => c.matchScore != null);
+            const avgScore = scoredComparisons.length > 0
+              ? Math.round(scoredComparisons.reduce((n, c) => n + c.matchScore!, 0) / scoredComparisons.length)
+              : 0;
+            addLog(
+              id,
+              `🎨 Figma verification complete — ${result.comparisons.length} frame(s), ${totalIssues} issue(s), avg match ${avgScore}/100.`,
+              totalIssues === 0 ? 'success' : 'info',
+            );
+          }).catch(err => {
+            addLog(id, `🎨 Figma verification failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
+          }).finally(() => {
+            setFigmaChecking(id, false);
+          });
+        }
+      }
 
       // Phase 1.5: Compare crawled content against product documentation
       // This tells us which documented features were visible in the crawl

@@ -2,9 +2,23 @@
  * Shared TypeScript types for the TestPilot Pilot engine.
  */
 
+/**
+ * A single content block inside a message — either plain text or an inline image.
+ * Images are sent as base64-encoded PNG/JPEG/WEBP so no external hosting is needed.
+ */
+export type ContentBlock =
+  | { type: 'text';  text: string }
+  | { type: 'image'; mediaType: 'image/png' | 'image/jpeg' | 'image/webp'; data: string };
+
+/**
+ * A message can be a plain string (backward-compatible) or an array of content
+ * blocks that may include inline images (for vision-capable models).
+ */
+export type MessageContent = string | ContentBlock[];
+
 export interface ChatMessage {
   role: string;
-  content: string;
+  content: MessageContent;
 }
 
 /** Options forwarded to the underlying model on a single invoke call. */

@@ -331,6 +331,88 @@ async function discoverFormLinks(page: Page, origin: string): Promise<string[]> 
   return links.slice(0, MAX_LINKS); // cap (4 on Vercel, 10 locally)
 }
 
+// ── Sign-in button detection (inline, no extra page load) ────────────────────
+
+export interface SignInPresenceInfo {
+  /** True when a sign-in/login button or link was found on the page */
+  hasSignInButton: boolean;
+  /** Text labels of found sign-in elements */
+  buttonLabels: string[];
+  /** True when the sign-in link goes to a different domain */
+  isExternalAuth: boolean;
+  /** The external auth URL, if detected */
+  externalAuthUrl: string | null;
+}
+
+/**
+ * Extract sign-in button/link info from an already-loaded page.
+ * Zero extra network requests — reads the DOM of the page that's already open.
+ */
+async function extractSignInInfo(page: Page, origin: string): Promise<SignInPresenceInfo> {
+  return page.evaluate((origin) => {
+    const AUTH_PATTERN = /sign[\s-]?in|log[\s-]?in|login|my\s+account/i;
+    const els = Array.from(
+      document.querySelectorAll<HTMLElement>('a, button, [role="button"]'),
+    ).filter(el =>
+      AUTH_PATTERN.test(el.textContent?.trim() ?? '') ||
+      AUTH_PATTERN.test(el.getAttribute('aria-label') ?? ''),
+    );
+    const labels = [...new Set(
+      els.map(el => el.textContent?.trim() ?? '').filter(Boolean),
+    )].slice(0, 5);
+    const externalLinks = els
+      .filter(el => el.tagName === 'A')
+      .map(el => (el as HTMLAnchorElement).href)
+      .filter(href => href && !href.startsWith(origin) && /^https?:\/\//.test(href));
+    return {
+      hasSignInButton: els.length > 0,
+      buttonLabels: labels,
+      isExternalAuth: externalLinks.length > 0,
+      externalAuthUrl: externalLinks[0] ?? null,
+    };
+  }, origin);
+}
+
+// ── Single-page login scanner ─────────────────────────────────────────────────
+
+/**
+ * Scan a single specific URL for login/signup form fields.
+ * No link-following, no fallback path probing — just that one page.
+ * Used when the user manually provides their login URL.
+ */
+export async function scanLoginPage(url: string): Promise<DetectedFormGroup[]> {
+  const browser = await launchBrowser();
+  try {
+    const ctx = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+        '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    });
+    await ctx.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      // @ts-ignore
+      window.chrome = { runtime: {} };
+    });
+    const page = await ctx.newPage();
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: GOTO_TIMEOUT });
+      await page.waitForSelector('input, textarea, select', { timeout: SELECTOR_TIMEOUT }).catch(() => {});
+      const rawFields = await extractFieldsFromPage(page);
+      const fields = rawFields.filter(f => !isSearchLikeField(f));
+      if (fields.length === 0) return [];
+      const pageTitle = await page.title();
+      const formLabel = inferFormLabel(pageTitle, page.url(), fields);
+      if (formLabel === '__DISCARD__' || isSearchOnlyForm(fields) || isOrderLookupForm(fields)) return [];
+      return [{ pageUrl: page.url(), pageTitle, formLabel, fields }];
+    } finally {
+      await ctx.close();
+    }
+  } finally {
+    await browser.close();
+  }
+}
+
 // ── Main scan ─────────────────────────────────────────────────────────────────
 
 /** Strip ;jsessionid=… and query params for stable page deduplication */
@@ -343,13 +425,19 @@ function dedupeKey(pageUrl: string): string {
   }
 }
 
+export interface DetectAllResult {
+  groups: DetectedFormGroup[];
+  signInInfo: SignInPresenceInfo | null;
+}
+
 export async function detectAllFormFields(
   url: string,
   onProgress?: (msg: string) => void,
-): Promise<DetectedFormGroup[]> {
+): Promise<DetectAllResult> {
   const log = (msg: string) => onProgress?.(msg);
   const groups: DetectedFormGroup[] = [];
   const visitedUrls = new Set<string>();
+  let signInInfo: SignInPresenceInfo | null = null;
 
   let origin: string;
   try { origin = new URL(url).origin; } catch { origin = url; }
@@ -416,6 +504,11 @@ export async function detectAllFormFields(
           }
         }
 
+        // Capture sign-in button info from the entry page (no extra network req)
+        if (key === dedupeKey(url) && signInInfo === null) {
+          signInInfo = await extractSignInInfo(page, origin);
+        }
+
         // Only follow links from the entry page to avoid infinite crawling
         if (key === dedupeKey(url)) {
           const discovered = await discoverFormLinks(page, origin);
@@ -457,7 +550,7 @@ export async function detectAllFormFields(
     await browser.close();
   }
 
-  return deduplicateGroups(groups);
+  return { groups: deduplicateGroups(groups), signInInfo };
 }
 
 /**

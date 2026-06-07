@@ -4,13 +4,36 @@
  * Completions API.
  */
 import OpenAI from 'openai';
-import type { ChatMessage, ChatModel, InvokeOptions } from './types';
+import type { ChatMessage, ChatModel, InvokeOptions, MessageContent } from './types';
 
 export interface CreateOpenAICompatModelOptions {
   apiKey: string;
   model?: string;
   baseUrl?: string;
   providerName?: string;
+}
+
+/**
+ * Convert our provider-agnostic MessageContent to the OpenAI content format.
+ * For vision: images become image_url blocks with a data-URI.
+ * Plain strings stay as strings (backward-compatible).
+ */
+function toOpenAIContent(
+  content: MessageContent,
+): string | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string; detail: 'auto' } }> {
+  if (typeof content === 'string') return content;
+  return content.map(block => {
+    if (block.type === 'image') {
+      return {
+        type: 'image_url' as const,
+        image_url: {
+          url:    `data:${block.mediaType};base64,${block.data}`,
+          detail: 'auto' as const,
+        },
+      };
+    }
+    return { type: 'text' as const, text: block.text };
+  });
 }
 
 export async function createOpenAICompatModel(
@@ -33,28 +56,33 @@ export async function createOpenAICompatModel(
     async invoke(messages: ChatMessage[], invokeOptions?: InvokeOptions): Promise<string> {
       // Some local models (older Ollama builds) don't handle the 'system' role
       // in the messages array. Merge the system prompt into the first user message.
-      let apiMessages: { role: 'system' | 'user' | 'assistant'; content: string }[];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let apiMessages: { role: 'system' | 'user' | 'assistant'; content: any }[];
       if (isLocal) {
-        const systemParts = messages.filter(m => m.role === 'system').map(m => m.content);
+        // Local models (Ollama, LM Studio) don't handle system role or image blocks — text only.
+        const textOnly = (c: MessageContent) =>
+          typeof c === 'string' ? c : c.filter(b => b.type === 'text').map(b => (b as { type: 'text'; text: string }).text).join('\n');
+
+        const systemParts = messages.filter(m => m.role === 'system').map(m => textOnly(m.content));
         const nonSystem   = messages.filter(m => m.role !== 'system');
         if (systemParts.length > 0 && nonSystem.length > 0) {
           apiMessages = [
-            { role: 'user', content: `${systemParts.join('\n\n')}\n\n${nonSystem[0].content}` },
+            { role: 'user', content: `${systemParts.join('\n\n')}\n\n${textOnly(nonSystem[0].content)}` },
             ...nonSystem.slice(1).map(m => ({
               role: m.role as 'user' | 'assistant',
-              content: m.content,
+              content: textOnly(m.content),
             })),
           ];
         } else {
           apiMessages = nonSystem.map(m => ({
             role: m.role as 'user' | 'assistant',
-            content: m.content,
+            content: textOnly(m.content),
           }));
         }
       } else {
         apiMessages = messages.map(m => ({
           role: m.role as 'system' | 'user' | 'assistant',
-          content: m.content,
+          content: toOpenAIContent(m.content),
         }));
       }
 

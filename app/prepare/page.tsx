@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/logo';
 import type { ContextField } from '@/lib/url-context-store';
-import type { DetectedFormGroup } from '@/lib/detect-form-fields';
+import type { DetectedFormGroup, SignInPresenceInfo } from '@/lib/detect-form-fields';
 import type { Session, ImportedUseCase } from '@/types/session';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -161,6 +161,14 @@ function PrepareContent() {
   const [savedAt, setSavedAt] = useState<number | null>(null);
   // Auto-detection: tracks whether the initial background scan has run
   const autoDetectRan = useRef(false);
+
+  // Three-stage auth fallback (when no forms found in auto-scan)
+  const [signInInfo, setSignInInfo] = useState<SignInPresenceInfo | null>(null);
+  // 'none' | 'prompt-url' | 'scanning-url' | 'manual'
+  const [authFallbackStage, setAuthFallbackStage] = useState<string>('none');
+  const [loginUrlInput, setLoginUrlInput] = useState('');
+  const [loginUrlScanLoading, setLoginUrlScanLoading] = useState(false);
+  const [loginUrlScanError, setLoginUrlScanError] = useState('');
   // Which form group is active in the inline credential tabs (default: Login)
   const [activeGroupLabel, setActiveGroupLabel] = useState<string>('');
 
@@ -235,6 +243,10 @@ function PrepareContent() {
     setDetectLoading(true);
     setDetectError('');
     setGroups([]);
+    setSignInInfo(null);
+    setAuthFallbackStage('none');
+    setLoginUrlInput('');
+    setLoginUrlScanError('');
     try {
       const res = await fetch('/api/contexts/detect', {
         method: 'POST',
@@ -245,11 +257,27 @@ function PrepareContent() {
         groups?: DetectedFormGroup[];
         fields?: ContextField[];
         error?: string;
+        signInInfo?: SignInPresenceInfo;
       };
+
+      // Helper: apply signInInfo and pre-fill external URL when detected
+      const applySignInInfo = (info: SignInPresenceInfo | undefined) => {
+        if (info) {
+          setSignInInfo(info);
+          if (info.isExternalAuth && info.externalAuthUrl) {
+            setLoginUrlInput(info.externalAuthUrl);
+          }
+        }
+      };
+
       if (!res.ok || data.error) {
+        applySignInInfo(data.signInInfo);
         setDetectError(data.error ?? 'Detection failed');
+        setAuthFallbackStage('prompt-url');
       } else if (!data.fields?.length) {
+        applySignInInfo(data.signInInfo);
         setDetectError('No form fields detected on this page or its linked pages.');
+        setAuthFallbackStage('prompt-url');
       } else {
         const detectedGroups = data.groups ?? [];
         setGroups(detectedGroups);
@@ -259,16 +287,85 @@ function PrepareContent() {
           return stored?.value ? { ...f, value: stored.value } : f;
         }));
         // Auto-select the Login/Sign-in group; fall back to the first group.
-        // Use tabKey (formLabel__index) to match the unique tab keys used in the UI.
+        const loginIdx = detectedGroups.findIndex(g => /login|sign.?in/i.test(g.formLabel));
+        const defaultIdx = loginIdx >= 0 ? loginIdx : 0;
+        setActiveGroupLabel(`${detectedGroups[defaultIdx]?.formLabel ?? ''}__${defaultIdx}`);
+
+        // If none of the detected groups are auth forms, check whether there's a
+        // sign-in button pointing somewhere else and surface the fallback UI.
+        const hasAuth = detectedGroups.some(g =>
+          /login|sign.?in|sign.?up|register|auth/i.test(g.formLabel),
+        );
+        if (!hasAuth) {
+          applySignInInfo(data.signInInfo);
+          setAuthFallbackStage('prompt-url');
+        }
+      }
+    } catch {
+      setDetectError('Network error during detection');
+      setAuthFallbackStage('prompt-url');
+    } finally {
+      setDetectLoading(false);
+    }
+  }
+
+  // ── Scan a single user-provided login URL ─────────────────────────────────
+  async function scanUserLoginUrl() {
+    const targetUrl = loginUrlInput.trim();
+    if (!targetUrl) return;
+    setLoginUrlScanLoading(true);
+    setLoginUrlScanError('');
+    try {
+      const res = await fetch('/api/contexts/detect-page', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: normalizeUrl(targetUrl) }),
+      });
+      const data = await res.json() as {
+        groups?: DetectedFormGroup[];
+        fields?: ContextField[];
+        error?: string;
+      };
+      if (!res.ok || data.error || !data.fields?.length) {
+        // Nothing found on this page either → fall back to manual entry
+        setLoginUrlScanError(data.error ?? 'No login form found on this page.');
+        setAuthFallbackStage('manual');
+        // Seed manual fields: username + password
+        setFields([
+          { key: 'username', label: 'Username', type: 'text', value: '', sensitive: false },
+          { key: 'password', label: 'Password', type: 'password', value: '', sensitive: true },
+        ]);
+        setGroups([]);
+      } else {
+        const detectedGroups = data.groups ?? [];
+        setGroups(detectedGroups);
+        setAuthFallbackStage('none');
+        setLoginUrlScanError('');
+        setFields(prev => (data.fields ?? []).map(f => {
+          const stored = prev.find(s => s.key === f.key);
+          return stored?.value ? { ...f, value: stored.value } : f;
+        }));
         const loginIdx = detectedGroups.findIndex(g => /login|sign.?in/i.test(g.formLabel));
         const defaultIdx = loginIdx >= 0 ? loginIdx : 0;
         setActiveGroupLabel(`${detectedGroups[defaultIdx]?.formLabel ?? ''}__${defaultIdx}`);
       }
     } catch {
-      setDetectError('Network error during detection');
+      setLoginUrlScanError('Network error while scanning login page.');
+      setAuthFallbackStage('manual');
     } finally {
-      setDetectLoading(false);
+      setLoginUrlScanLoading(false);
     }
+  }
+
+  // ── Enable manual credential entry ────────────────────────────────────────
+  function useManualEntry() {
+    setAuthFallbackStage('manual');
+    setLoginUrlScanError('');
+    setFields([
+      { key: 'username', label: 'Username', type: 'text', value: '', sensitive: false },
+      { key: 'password', label: 'Password', type: 'password', value: '', sensitive: true },
+    ]);
+    setGroups([]);
   }
 
   // ── Save context ──────────────────────────────────────────────────────────
@@ -362,8 +459,10 @@ function PrepareContent() {
   const hasAuthForm = groups.some(g =>
     /login|sign.?in|sign.?up|register|auth/i.test(g.formLabel)
   );
+  // Manual entry also counts as auth context for deep crawl
+  const hasManualAuth = authFallbackStage === 'manual' && hasFilledFields;
   // True when the user has provided auth credentials → deep crawl will be enabled
-  const deepCrawlEnabled = hasFilledFields && hasAuthForm;
+  const deepCrawlEnabled = hasFilledFields && (hasAuthForm || hasManualAuth);
   // True when an import is loaded and its baseURL doesn't match the target URL
   const importUrlMismatch =
     importValidation?.valid === true &&
@@ -448,15 +547,17 @@ function PrepareContent() {
             <div className={`rounded-xl border p-5 space-y-4 transition-colors ${
               deepCrawlEnabled
                 ? 'border-violet-500/40 bg-violet-500/5'
-                : hasAuthForm
+                : hasAuthForm || authFallbackStage === 'manual'
                   ? 'border-amber-500/40 bg-amber-500/5'
-                  : 'border-zinc-800 bg-zinc-900'
+                  : authFallbackStage === 'prompt-url'
+                    ? 'border-amber-500/20 bg-zinc-900'
+                    : 'border-zinc-800 bg-zinc-900'
             }`}>
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-start gap-3">
                   {deepCrawlEnabled
                     ? <ShieldCheck className="h-4 w-4 text-violet-400 mt-0.5 shrink-0" />
-                    : hasAuthForm
+                    : hasAuthForm || authFallbackStage === 'manual'
                       ? <Lock className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
                       : <Search className="h-4 w-4 text-zinc-500 mt-0.5 shrink-0" />
                   }
@@ -466,16 +567,24 @@ function PrepareContent() {
                         ? 'Deep Crawl Enabled'
                         : hasAuthForm
                           ? 'Login Form Detected'
-                          : 'Form Detection'}
+                          : authFallbackStage === 'manual'
+                            ? 'Manual Credentials'
+                            : authFallbackStage === 'prompt-url'
+                              ? 'Login Page Not Found'
+                              : 'Form Detection'}
                     </h2>
                     <p className="text-xs text-zinc-500 mt-0.5">
                       {deepCrawlEnabled
                         ? 'TestPilot will log in and crawl the full authenticated app before generating tests.'
                         : hasAuthForm
                           ? 'Enter your credentials below to unlock deep authenticated crawling of every page.'
-                          : detectLoading
-                            ? 'Scanning for login and signup forms…'
-                            : 'Automatically scans the site for login, register, and other forms.'}
+                          : authFallbackStage === 'manual'
+                            ? 'Credentials entered manually — TestPilot will use these to authenticate.'
+                            : authFallbackStage === 'prompt-url'
+                              ? 'Provide your login page URL or enter credentials manually.'
+                              : detectLoading
+                                ? 'Scanning for login and signup forms…'
+                                : 'Automatically scans the site for login, register, and other forms.'}
                     </p>
                   </div>
                 </div>
@@ -501,13 +610,122 @@ function PrepareContent() {
                 </div>
               )}
 
-              {/* Detect error (only show when no groups found — not just a notice) */}
-              {detectError && groups.length === 0 && !detectLoading && (
-                <p className="text-xs text-zinc-500 flex items-center gap-1.5">
-                  <X className="h-3 w-3 shrink-0 text-zinc-600" />
-                  {detectError.includes('No form') ? 'No login/signup forms detected — authentication is optional.' : detectError}
-                </p>
-              )}
+              {/* Three-stage auth fallback UI — shown whenever auth forms weren't found */}
+              {!detectLoading && authFallbackStage !== 'none' && (() => {
+                // Stage 2: prompt-url — no forms found, ask user for login URL
+                if (authFallbackStage === 'prompt-url') {
+                  const externalDomain = signInInfo?.isExternalAuth && signInInfo.externalAuthUrl
+                    ? (() => { try { return new URL(signInInfo.externalAuthUrl).hostname; } catch { return signInInfo.externalAuthUrl; } })()
+                    : null;
+                  return (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-2.5">
+                      <p className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
+                        <Lock className="h-3.5 w-3.5 shrink-0" />
+                        {signInInfo?.hasSignInButton
+                          ? externalDomain
+                            ? `Sign In detected — redirects to ${externalDomain}`
+                            : 'Sign In button detected on this page'
+                          : 'No login form detected automatically'}
+                      </p>
+                      <p className="text-xs text-zinc-200">
+                        {externalDomain
+                          ? `Your sign-in page appears to be hosted on ${externalDomain}. Confirm the URL below or enter a different login URL to scan.`
+                          : signInInfo?.hasSignInButton
+                            ? "The sign-in link couldn't be followed automatically. Enter your login page URL to scan it directly."
+                            : 'Enter your login page URL so TestPilot can find the credential fields.'}
+                      </p>
+                      <form
+                        className="flex gap-2"
+                        onSubmit={e => { e.preventDefault(); scanUserLoginUrl(); }}
+                      >
+                        <input
+                          type="text"
+                          value={loginUrlInput}
+                          onChange={e => setLoginUrlInput(e.target.value)}
+                          placeholder="https://login.example.com"
+                          className="flex-1 h-8 px-2.5 rounded-md bg-zinc-800 border border-amber-500/40 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-amber-400 text-xs"
+                        />
+                        <Button
+                          size="sm"
+                          type="submit"
+                          variant="secondary"
+                          disabled={!loginUrlInput.trim() || loginUrlScanLoading}
+                          className="shrink-0"
+                        >
+                          {loginUrlScanLoading
+                            ? <Loader2 className="h-3 w-3 animate-spin" />
+                            : <Search className="h-3 w-3" />}
+                          Scan
+                        </Button>
+                      </form>
+                      {loginUrlScanError && (
+                        <p className="text-xs text-red-400 flex items-center gap-1">
+                          <X className="h-3 w-3 shrink-0" /> {loginUrlScanError}
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={useManualEntry}
+                        className="text-xs text-zinc-400 hover:text-zinc-100 transition-colors underline underline-offset-2"
+                      >
+                        Enter credentials manually instead
+                      </button>
+                    </div>
+                  );
+                }
+
+                // Stage 3: manual — no form found anywhere, show manual username/password
+                if (authFallbackStage === 'manual') {
+                  return (
+                    <div className="rounded-lg border border-zinc-700 bg-zinc-800/60 p-3 space-y-2.5">
+                      <p className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                        <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                        Enter your login credentials manually
+                      </p>
+                      <p className="text-xs text-zinc-300">
+                        No login form was detected automatically. Enter your credentials below
+                        so TestPilot can authenticate during testing.
+                      </p>
+                      <div className="space-y-2">
+                        {fields.map((f, idx) => (
+                          <FieldInput
+                            key={f.key}
+                            field={f}
+                            displayLabel={f.label}
+                            showValue={showValues[f.key] ?? false}
+                            onToggleShow={() => setShowValues(v => ({ ...v, [f.key]: !v[f.key] }))}
+                            onChange={val => {
+                              const updated = [...fields];
+                              updated[idx] = { ...f, value: val };
+                              setFields(updated);
+                            }}
+                          />
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-3 pt-1">
+                        {fields.some(f => f.value) && (
+                          <button
+                            type="button"
+                            onClick={saveContext}
+                            className="flex items-center gap-1.5 text-xs text-violet-400 hover:text-violet-300 transition-colors"
+                          >
+                            <Check className="h-3 w-3" /> Save credentials
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setAuthFallbackStage('prompt-url')}
+                          className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+                        >
+                          ← Try scanning a URL instead
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return null;
+              })()}
 
               {/* Auth form detected → tabbed credential entry */}
               {hasAuthForm && groups.length > 0 && (() => {
@@ -1021,11 +1239,13 @@ function PrepareContent() {
                       Override with <code>DEEP_CRAWL_MAX_PAGES</code> in .env.local
                     </p>
                   </div>
-                ) : hasAuthForm ? (
+                ) : hasAuthForm || authFallbackStage === 'manual' ? (
                   <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2.5">
                     <p className="text-xs text-amber-300 flex items-center gap-1.5">
                       <Lock className="h-3.5 w-3.5" />
-                      Fill in credentials to enable deep crawl
+                      {authFallbackStage === 'manual'
+                        ? 'Enter credentials to enable authenticated testing'
+                        : 'Fill in credentials to enable deep crawl'}
                     </p>
                   </div>
                 ) : storedContext ? (
@@ -1038,7 +1258,7 @@ function PrepareContent() {
                 ) : null}
 
                 {/* Saved context summary (when auth fields shown inline above, just show summary here) */}
-                {hasContext && hasAuthForm ? (
+                {hasContext && (hasAuthForm || authFallbackStage === 'manual') ? (
                   <div className="space-y-2">
                     <p className="text-xs text-zinc-500">
                       Credentials for <span className="text-zinc-300 break-all">{url}</span>

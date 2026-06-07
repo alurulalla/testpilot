@@ -1306,20 +1306,33 @@ export default function SessionPage() {
         ((data as { testFiles?: unknown[] }).testFiles ?? []).length === 0;
 
       if (isFresh) {
-        // Fresh session — start loop and stream from the same response
-        try {
-          const res = await fetch(`/api/sessions/${id}/loop`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ maxIterations: 5 }),
-          });
-          if (!res.ok || !res.body) {
-            startPolling();
-          } else {
-            await readLoopStream(res.body);
-          }
-        } catch {
+        const isFigmaOnly =
+          isValidSession(data) && !!(data as { figmaOnly?: boolean }).figmaOnly;
+
+        if (isFigmaOnly) {
+          // Design QA only — skip test generation and run only Figma verification
+          try {
+            await fetch(`/api/sessions/${id}/figma`, { method: "POST" });
+          } catch { /* non-fatal */ }
           startPolling();
+        } else {
+          // Full pipeline — start loop and stream from the same response.
+          // Figma verification is triggered automatically inside the loop
+          // once exploration completes (so knownUrls are available for URL mapping).
+          try {
+            const res = await fetch(`/api/sessions/${id}/loop`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ maxIterations: 5 }),
+            });
+            if (!res.ok || !res.body) {
+              startPolling();
+            } else {
+              await readLoopStream(res.body);
+            }
+          } catch {
+            startPolling();
+          }
         }
       } else {
         // Session has existing work — connect via EventSource for live updates
@@ -1443,7 +1456,9 @@ export default function SessionPage() {
   // canFix: there are failures AND (no triage yet OR triage recommends healing)
   const canFix = !isRunning && hasFailures && (!triage || triage.selfHealRecommended);
   const hasLayers = !!session.figmaFileUrl;
-  const canLayers = !isRunning && hasLayers;
+  // Figma verification is independent of the pipeline — canLayers is true whenever
+  // the session has a Figma URL, regardless of whether tests are running.
+  const canLayers = hasLayers;
 
   return (
     <main className="flex-1 flex flex-col min-h-0">
@@ -1746,7 +1761,7 @@ export default function SessionPage() {
                 title="Figma Verification"
                 description="Compare live page DOM against Figma design spec."
                 state={
-                  session.status === "figma-checking"
+                  session.figmaChecking
                     ? "running"
                     : session.figmaResult
                       ? "done"
@@ -1758,29 +1773,34 @@ export default function SessionPage() {
                     size="sm"
                     variant="secondary"
                     onClick={() => triggerPhase("figma")}
-                    disabled={actionLoading}
+                    disabled={actionLoading || session.figmaChecking}
                   >
-                    <Layers className="h-3.5 w-3.5" /> Verify vs Figma
+                    {session.figmaChecking
+                      ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking…</>
+                      : <><Layers className="h-3.5 w-3.5" /> Verify vs Figma</>
+                    }
                   </Button>
                 )}
                 {session.figmaResult && (() => {
                   const totalIssues = session.figmaResult.comparisons.reduce(
                     (n, c) => n + (c.discrepancies?.length ?? 0), 0,
                   );
-                  const avgScore = session.figmaResult.comparisons.length > 0
-                    ? Math.round(
-                        session.figmaResult.comparisons.reduce(
-                          (n, c) => n + (c.matchScore ?? 100), 0,
-                        ) / session.figmaResult.comparisons.length,
-                      )
-                    : 100;
+                  const totalHigh   = session.figmaResult.comparisons.reduce((n, c) => n + (c.discrepancies ?? []).filter(d => d.severity === 'high').length, 0);
+                  const totalMedium = session.figmaResult.comparisons.reduce((n, c) => n + (c.discrepancies ?? []).filter(d => d.severity === 'medium').length, 0);
+                  const totalLow    = session.figmaResult.comparisons.reduce((n, c) => n + (c.discrepancies ?? []).filter(d => d.severity === 'low').length, 0);
                   return (
                     <div className="space-y-1">
-                      <p className={`text-xs font-medium ${avgScore >= 80 ? 'text-emerald-400' : avgScore >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
-                        {avgScore}/100 match · {session.figmaResult.comparisons.length} frame(s)
+                      <p className="text-xs text-zinc-400">
+                        {session.figmaResult.comparisons.length} frame(s) checked
                       </p>
-                      {totalIssues > 0 && (
-                        <p className="text-xs text-zinc-500">{totalIssues} discrepancy(ies) found</p>
+                      {totalIssues === 0 ? (
+                        <p className="text-xs text-emerald-400">✓ No issues found</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {totalHigh > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">{totalHigh} high</span>}
+                          {totalMedium > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">{totalMedium} med</span>}
+                          {totalLow > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-zinc-700/60 text-zinc-400">{totalLow} low</span>}
+                        </div>
                       )}
                     </div>
                   );
@@ -1954,11 +1974,6 @@ export default function SessionPage() {
                         const highCount   = issues.filter(d => d.severity === 'high').length;
                         const mediumCount = issues.filter(d => d.severity === 'medium').length;
                         const lowCount    = issues.filter(d => d.severity === 'low').length;
-                        const scoreColor  =
-                          score == null ? 'text-zinc-500'
-                          : score >= 80  ? 'text-emerald-400'
-                          : score >= 50  ? 'text-amber-400'
-                          : 'text-red-400';
 
                         return (
                           <div
@@ -1971,11 +1986,31 @@ export default function SessionPage() {
                               <span className="text-sm font-medium text-zinc-200 flex-1 truncate">
                                 {c.frameName}
                               </span>
-                              {score != null && (
-                                <span className={`text-xs font-semibold ${scoreColor} shrink-0`}>
-                                  {score}/100
+                              {/* Severity summary — more intuitive than a raw score */}
+                              {issues.length === 0 && score != null ? (
+                                <span className="text-xs font-semibold text-emerald-400 shrink-0">✓ Matches design</span>
+                              ) : issues.length > 0 ? (
+                                <span
+                                  className="flex items-center gap-1.5 shrink-0"
+                                  title={`Design match score: ${score ?? '–'}/100 (−15 per HIGH, −8 per MEDIUM, −3 per LOW issue)`}
+                                >
+                                  {highCount > 0 && (
+                                    <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">
+                                      {highCount} high
+                                    </span>
+                                  )}
+                                  {mediumCount > 0 && (
+                                    <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">
+                                      {mediumCount} med
+                                    </span>
+                                  )}
+                                  {lowCount > 0 && (
+                                    <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-zinc-700/60 text-zinc-400">
+                                      {lowCount} low
+                                    </span>
+                                  )}
                                 </span>
-                              )}
+                              ) : null}
                               <span className="text-xs text-zinc-600 font-mono shrink-0 hidden md:block truncate max-w-[200px]">
                                 {c.url}
                               </span>
@@ -2037,7 +2072,7 @@ export default function SessionPage() {
                             {issues.length > 0 ? (
                               <div className="divide-y divide-zinc-800/60 border-t border-zinc-800">
                                 {issues.map((d, j) => (
-                                  <div key={j} className="px-4 py-2.5 flex items-start gap-3">
+                                  <div key={j} className="px-4 py-3 flex items-start gap-3">
                                     <span className={`shrink-0 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded mt-0.5 ${
                                       d.severity === 'high'   ? 'bg-red-500/15 text-red-400'
                                       : d.severity === 'medium' ? 'bg-amber-500/15 text-amber-400'
@@ -2063,6 +2098,29 @@ export default function SessionPage() {
                                         </div>
                                       )}
                                     </div>
+                                    {/* Per-discrepancy element screenshot */}
+                                    {d.screenshotPath && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setImageModal({
+                                          src: `/api/sessions/${session.id}/assets/${d.screenshotPath}`,
+                                          alt: `${d.element} — live element`,
+                                          label: `${c.frameName} — ${d.element}`,
+                                        })}
+                                        className="shrink-0 rounded overflow-hidden border border-zinc-700 hover:border-zinc-500 transition-colors group relative"
+                                        title={`Live element: ${d.element} — click to enlarge`}
+                                      >
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img
+                                          src={`/api/sessions/${session.id}/assets/${d.screenshotPath}`}
+                                          alt={d.element}
+                                          className="w-24 h-16 object-cover object-top block group-hover:opacity-75 transition-opacity"
+                                        />
+                                        <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
+                                          <ZoomIn className="h-4 w-4 text-white" />
+                                        </span>
+                                      </button>
+                                    )}
                                   </div>
                                 ))}
                               </div>

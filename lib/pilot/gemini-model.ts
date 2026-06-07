@@ -2,11 +2,23 @@
  * Google Gemini model via @google/genai SDK.
  */
 import { GoogleGenAI } from '@google/genai';
-import type { ChatMessage, ChatModel, InvokeOptions } from './types';
+import type { ChatMessage, ChatModel, InvokeOptions, MessageContent } from './types';
 
 export interface CreateGeminiModelOptions {
   apiKey: string;
   model?: string;
+}
+
+/**
+ * Convert our provider-agnostic MessageContent to Gemini Part array.
+ * Text → { text } · Image → { inlineData: { mimeType, data } }
+ */
+function toGeminiParts(content: MessageContent): { text?: string; inlineData?: { mimeType: string; data: string } }[] {
+  if (typeof content === 'string') return [{ text: content }];
+  return content.map(block => {
+    if (block.type === 'image') return { inlineData: { mimeType: block.mediaType, data: block.data } };
+    return { text: block.text };
+  });
 }
 
 export async function createGeminiModel(
@@ -25,7 +37,7 @@ export async function createGeminiModel(
 
       const contents = nonSystemMessages.map(m => ({
         role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }],
+        parts: toGeminiParts(m.content),
       }));
 
       const response = await client.models.generateContent({

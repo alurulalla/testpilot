@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, setStatus, setFigmaResult, setError, addLog, clearStopping } from '@/lib/session-store';
+import { getSession, setStatus, setFigmaResult, setFigmaChecking, setError, addLog, clearStopping } from '@/lib/session-store';
 import { runFigmaComparison, isFigmaConfigured } from '@/lib/figma-client';
 import { getFigmaToken, getSessionDir } from '@/lib/config';
 import { Workspace, createModelFromConfig } from '@/lib/pilot';
@@ -12,8 +12,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const session = getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  if (['exploring', 'generating', 'running', 'fixing', 'figma-checking'].includes(session.status)) {
-    return NextResponse.json({ error: 'Session already running' }, { status: 409 });
+  // Reject only if Figma is already in progress — the main pipeline can run in parallel
+  if (session.figmaChecking) {
+    return NextResponse.json({ error: 'Figma verification already running' }, { status: 409 });
   }
 
   const token = getFigmaToken();
@@ -24,11 +25,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     );
   }
 
-  // Cast status — we use a custom status string here (not in the union type) to keep things simple;
-  // the session page treats any unknown status as 'running' for the badge.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  setStatus(id, 'figma-checking' as any);
-  addLog(id, 'Running Figma DOM verification…', 'info');
+  // Mark Figma as in-progress (independent of the main pipeline status).
+  // This lets Figma run in parallel with feature discovery / test execution.
+  setFigmaChecking(id, true);
+  // Only show the figma-checking badge when the pipeline is not already running
+  const pipelineActive = ['exploring', 'analyzing', 'generating', 'running', 'fixing'].includes(session.status);
+  if (!pipelineActive) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setStatus(id, 'figma-checking' as any);
+  }
+  addLog(id, 'Running Figma design verification…', 'info');
 
   (async () => {
     clearStopping(id);
@@ -60,24 +66,36 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const totalIssues = result.comparisons.reduce(
         (n, c) => n + (c.discrepancies?.length ?? 0), 0,
       );
-      const avgScore = result.comparisons.length > 0
+      // Only average scored comparisons — undefined means unreachable/unanalysed.
+      // Do NOT default to 100 for failed pages: that would hide real problems.
+      const scoredComparisons = result.comparisons.filter(c => c.matchScore != null);
+      const avgScore = scoredComparisons.length > 0
         ? Math.round(
-            result.comparisons.reduce((n, c) => n + (c.matchScore ?? 100), 0) /
-            result.comparisons.length,
+            scoredComparisons.reduce((n, c) => n + c.matchScore!, 0) /
+            scoredComparisons.length,
           )
-        : 100;
+        : 0;
       addLog(
         id,
         `Figma verification complete: ${result.comparisons.length} frame(s) analysed, ` +
         `${totalIssues} discrepancy(ies) found, avg match score ${avgScore}/100.`,
         totalIssues === 0 ? 'success' : 'info',
       );
-      setStatus(id, 'idle');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setError(id, msg);
       addLog(id, `Figma comparison failed: ${msg}`, 'error');
+      // Only escalate to session-level error when the pipeline is not running
+      const sess = getSession(id);
+      if (sess && !['exploring', 'analyzing', 'generating', 'running', 'fixing'].includes(sess.status)) {
+        setError(id, msg);
+      }
     } finally {
+      setFigmaChecking(id, false);
+      // Restore idle status only if we set it (i.e. pipeline was not active when we started)
+      const sess = getSession(id);
+      if (sess && sess.status === ('figma-checking' as string)) {
+        setStatus(id, 'idle');
+      }
       clearStopping(id);
     }
   })();

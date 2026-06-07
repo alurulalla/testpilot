@@ -11,9 +11,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json() as { url?: string; figmaFileUrl?: string };
-  const { url, figmaFileUrl } = body;
+  const body = await req.json() as { url?: string; figmaFileUrl?: string; figmaOnly?: boolean };
+  const { url, figmaFileUrl, figmaOnly } = body;
   if (!url) return NextResponse.json({ error: 'url is required' }, { status: 400 });
-  const session = createSession(url, getMaxPages(), false, figmaFileUrl ?? null);
+  const session = createSession(url, getMaxPages(), false, figmaFileUrl ?? null, figmaOnly ?? false);
   return NextResponse.json(session, { status: 201 });
 }

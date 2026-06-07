@@ -80,7 +80,7 @@ export function killProcess(id: string): void {
   runningProcesses.delete(id);
 }
 
-export function createSession(url: string, maxPages = 10, headedMode = false, figmaFileUrl: string | null = null): Session {
+export function createSession(url: string, maxPages = 10, headedMode = false, figmaFileUrl: string | null = null, figmaOnly = false): Session {
   const id = randomUUID();
   const session: Session = {
     id,
@@ -93,6 +93,8 @@ export function createSession(url: string, maxPages = 10, headedMode = false, fi
     fixResult: null,
     figmaResult: null,
     figmaFileUrl,
+    figmaOnly,
+    figmaChecking: false,
     iteration: 0,
     error: null,
     maxPages,
@@ -114,6 +116,10 @@ export function createSession(url: string, maxPages = 10, headedMode = false, fi
 
 export function setFigmaResult(id: string, figmaResult: FigmaResult): void {
   updateSession(id, { figmaResult });
+}
+
+export function setFigmaChecking(id: string, checking: boolean): void {
+  updateSession(id, { figmaChecking: checking });
 }
 
 export function setScenarioResult(id: string, scenarioResult: ScenarioResult): void {
