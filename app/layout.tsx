@@ -1,13 +1,17 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { ClerkProvider } from '@clerk/nextjs';
 import './globals.css';
 import LlmConfigPanel from '@/components/llm-config-panel';
 import { ThemeProvider } from '@/components/theme-provider';
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+};
+
 export const metadata: Metadata = {
   title: 'TestPilot — AI-powered E2E Testing',
   description: 'Automatically discover, generate, and run E2E tests for any web app.',
-  viewport: 'width=device-width, initial-scale=1',
   icons: {
     icon: [
       { url: '/icon.svg',     type: 'image/svg+xml' },   // modern browsers (SVG)

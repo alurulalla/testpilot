@@ -5,7 +5,9 @@ import { resolve } from 'path';
 // Turbopack does not inject .env.local values into process.env the same way
 // webpack does. Load the file manually so API routes see all variables.
 try {
-  const envFile = readFileSync(resolve(process.cwd(), '.env.local'), 'utf8');
+  // turbopackIgnore: this path is runtime-only; Turbopack must not trace it
+  // or it will include the entire project directory in every route's NFT list.
+  const envFile = readFileSync(resolve(/*turbopackIgnore: true*/ process.cwd(), '.env.local'), 'utf8');
   for (const line of envFile.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;

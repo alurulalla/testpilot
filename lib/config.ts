@@ -7,7 +7,9 @@ import { getAppSettings } from './app-settings-store';
  * All API routes should call this helper instead of hardcoding `process.cwd()`.
  */
 export function getTestpilotRoot(): string {
-  return join(process.cwd(), '.testpilot');
+  // turbopackIgnore tells Turbopack's bundler not to trace files under this
+  // path — it is a runtime-only directory, never part of the JS bundle.
+  return join(/*turbopackIgnore: true*/ process.cwd(), '.testpilot');
 }
 
 /**
@@ -21,8 +23,10 @@ export function getTestpilotRoot(): string {
  * migration step.
  */
 export function getSessionDir(sessionId: string, orgId: string): string {
-  const orgPath = join(getTestpilotRoot(), orgId, sessionId);
-  const legacyPath = join(getTestpilotRoot(), sessionId);
+  const root = getTestpilotRoot();
+  // turbopackIgnore: runtime-only paths — never bundled, must not be traced.
+  const orgPath    = join(/*turbopackIgnore: true*/ root, orgId, sessionId);
+  const legacyPath = join(/*turbopackIgnore: true*/ root, sessionId);
   if (!existsSync(orgPath) && existsSync(legacyPath)) return legacyPath;
   return orgPath;
 }
