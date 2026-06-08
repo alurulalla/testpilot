@@ -1,12 +1,20 @@
 # ── Stage 1: Install dependencies ────────────────────────────────────────────
 FROM node:22-slim AS deps
 
+# OpenSSL is required by Prisma's query engine
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY package*.json ./
+# prisma generate runs as postinstall — it needs the schema and config up front
+COPY prisma/schema.prisma ./prisma/schema.prisma
+COPY prisma.config.ts ./
 RUN npm install --frozen-lockfile 2>/dev/null || npm install
 
 # ── Stage 2: Build the Next.js app ────────────────────────────────────────────
 FROM node:22-slim AS builder
+
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
