@@ -18,6 +18,10 @@ RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
+# Prisma generates its client into lib/generated/prisma (custom output path).
+# That directory is created in the deps stage, not inside node_modules, so it
+# must be copied explicitly before next build tries to resolve it.
+COPY --from=deps /app/lib/generated ./lib/generated
 COPY . .
 RUN npm run build
 
@@ -53,6 +57,7 @@ RUN apt-get update && apt-get install -y \
 
 # Copy built app and dependencies
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/lib/generated ./lib/generated
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY package*.json ./
