@@ -76,16 +76,19 @@ function DonutChart({ passed, failed, errors }: DonutProps) {
 
   return (
     <svg viewBox="0 0 104 104" className="w-24 h-24 shrink-0">
-      {/* Track */}
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#27272a" strokeWidth={11} />
+      {/* Track — light in light mode, dark in dark mode */}
+      <circle cx={cx} cy={cy} r={r} fill="none" strokeWidth={11}
+        className="stroke-zinc-200 dark:stroke-zinc-800" />
       {passed > 0 && arc('#10b981', pL, 0)}
       {failed > 0 && arc('#ef4444', fL, pL)}
       {errors > 0 && arc('#f59e0b', eL, pL + fL)}
-      {/* Centre label */}
-      <text x={cx} y={cy - 4} textAnchor="middle" fill="#f4f4f5" fontSize={17} fontWeight="bold">
+      {/* Centre label — dark in light mode, light in dark mode */}
+      <text x={cx} y={cy - 4} textAnchor="middle" fontSize={17} fontWeight="bold"
+        className="fill-zinc-900 dark:fill-zinc-100">
         {passRate}%
       </text>
-      <text x={cx} y={cy + 11} textAnchor="middle" fill="#71717a" fontSize={9}>
+      <text x={cx} y={cy + 11} textAnchor="middle" fontSize={9}
+        className="fill-zinc-500">
         pass rate
       </text>
     </svg>
