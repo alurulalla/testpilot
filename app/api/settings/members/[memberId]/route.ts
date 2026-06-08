@@ -87,7 +87,12 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
 
 // ── POST — resend invite ──────────────────────────────────────────────────────
 
-export async function POST(_req: NextRequest, { params }: Params) {
+function appOrigin(req: NextRequest): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '');
+  return new URL(req.url).origin;
+}
+
+export async function POST(req: NextRequest, { params }: Params) {
   const { memberId } = await params;
   try {
     const { ctx, member } = await getOrgAndMember(memberId);
@@ -99,7 +104,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
     const client = await clerkClient();
     await client.invitations.createInvitation({
       emailAddress: member.email,
-      redirectUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/sign-up`,
+      redirectUrl: `${appOrigin(req)}/sign-up`,
       publicMetadata: { orgId: ctx.org.id, role: member.role },
       ignoreExisting: true,
     });

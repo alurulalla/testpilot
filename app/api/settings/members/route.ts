@@ -20,6 +20,13 @@ export async function GET() {
   }
 }
 
+/** Derive the public-facing app origin for invitation redirect URLs.
+ *  Priority: explicit env var → origin of the incoming request. */
+function appOrigin(req: NextRequest): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '');
+  return new URL(req.url).origin;
+}
+
 export async function POST(req: NextRequest) {
   let orgCtx: Awaited<ReturnType<typeof requireOrgAdmin>>;
   try {
@@ -72,7 +79,7 @@ export async function POST(req: NextRequest) {
     const client = await clerkClient();
     await client.invitations.createInvitation({
       emailAddress: normalizedEmail,
-      redirectUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/sign-up`,
+      redirectUrl: `${appOrigin(req)}/sign-up`,
       publicMetadata: { orgId: org.id, role },
       ignoreExisting: true,
     });
