@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, setStatus, setTestResult, setTriageResult, setError, addLog } from '@/lib/session-store';
+import { getSession, getCachedSession, setStatus, setTestResult, setTriageResult, setError, addLog } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { runTestsAsync } from '@/lib/run-tests-async';
 import { triageFailures } from '@/lib/triage-failures';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
-import { getLlmConfig } from '@/lib/llm-config-store';
+import { getOrgLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import path from 'path';
 import { getSessionDir, getAutoSelfHeal } from '@/lib/config';
@@ -12,7 +12,7 @@ import { getSessionDir, getAutoSelfHeal } from '@/lib/config';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (session.testFiles.length === 0) return NextResponse.json({ error: 'No tests to run' }, { status: 400 });
   if (['exploring','generating','running','fixing'].includes(session.status)) {
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     try {
       const workspace = new Workspace({
         url: session.url,
-        rootDir: getSessionDir(id),
+        rootDir: getSessionDir(id, session.orgId),
       });
 
       const result = await runTestsAsync(workspace, (line) => addLog(id, line, 'info'), id, session.headedMode ?? false);
@@ -46,10 +46,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (failed > 0) {
         try {
           addLog(id, 'Analysing failures…', 'info');
-          const llmConfig = getLlmConfig();
+          const llmConfig = await getOrgLlmConfig(session.orgId);
           const baseModel = await createModelFromConfig(llmConfig);
           const chatModel = withRateLimit(baseModel);
-          const fresh = getSession(id);
+          const fresh = getCachedSession(id);
           const triage = await triageFailures(
             workspace,
             fresh?.contextDoc ?? null,

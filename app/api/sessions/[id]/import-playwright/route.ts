@@ -26,7 +26,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
   let formData: FormData;
@@ -50,7 +50,7 @@ export async function POST(
   }
 
   // ── Write spec files into the TestPilot workspace ─────────────────────────
-  const rootDir   = getSessionDir(id);
+  const rootDir   = getSessionDir(id, session.orgId);
   const workspace = new Workspace({ url: session.url, rootDir });
   workspace.init();
 
@@ -96,7 +96,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  if (!getSession(id)) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+  if (!(await getSession(id))) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   setImportedProject(id, null);
   // Reset test files — they came from the import
   updateSession(id, { testFiles: [], siteMap: null, coverageAnalysis: null });

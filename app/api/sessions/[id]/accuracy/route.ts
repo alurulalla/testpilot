@@ -15,7 +15,7 @@ import path from 'path';
 import { getSession } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
-import { getLlmConfig } from '@/lib/llm-config-store';
+import { getOrgLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import { getSessionDir } from '@/lib/config';
 
@@ -184,12 +184,12 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
   const workspace = new Workspace({
     url: session.url,
-    rootDir: getSessionDir(id),
+    rootDir: getSessionDir(id, session.orgId),
   });
 
   // ── 1. Read spec files ─────────────────────────────────────────────────────
@@ -227,7 +227,7 @@ export async function POST(
 
   if (docFeatures.length > 0 && allTestNames.length > 0) {
     try {
-      const llmConfig = getLlmConfig();
+      const llmConfig = await getOrgLlmConfig(session.orgId);
       const baseModel = await createModelFromConfig(llmConfig);
       const model     = withRateLimit(baseModel);
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, setStatus, setError, addLog, updateSession } from '@/lib/session-store';
 import { runGenerateSuite, Workspace } from '@/lib/pilot';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
-import { getLlmConfig } from '@/lib/llm-config-store';
+import { getOrgLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import path from 'path';
 import { getSessionDir } from '@/lib/config';
@@ -10,7 +10,7 @@ import { getSessionDir } from '@/lib/config';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (!session.siteMap) return NextResponse.json({ error: 'Run explore first' }, { status: 400 });
   if (['exploring','generating','running','fixing'].includes(session.status)) {
@@ -22,12 +22,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   (async () => {
     try {
-      const llmConfig = getLlmConfig();
+      const llmConfig = await getOrgLlmConfig(session.orgId);
       const baseModel = await createModelFromConfig(llmConfig);
       const chatModel = withRateLimit(baseModel);
       const workspace = new Workspace({
         url: session.url,
-        rootDir: getSessionDir(id),
+        rootDir: getSessionDir(id, session.orgId),
       });
       workspace.init();
       await workspace.installDeps();

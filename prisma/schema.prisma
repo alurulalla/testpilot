@@ -1,0 +1,142 @@
+// TestPilot — Multi-tenant Prisma schema
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  // In Prisma 7, the connection URL is passed via the adapter in PrismaClient
+  // (lib/prisma.ts) for runtime, and via prisma.config.ts for CLI migrations.
+}
+
+// ── Organizations (tenants) ───────────────────────────────────────────────────
+
+model Organization {
+  id             String   @id @default(cuid())
+  name           String
+  slug           String   @unique
+  licenseKey     String   @unique @default(cuid())
+  licenseStatus  String   @default("active") // active | suspended | expired
+  maxMembers     Int      @default(5)
+  createdAt      DateTime @default(now())
+  createdByAdmin String   // email of super admin who provisioned this org
+
+  members  OrgMember[]
+  apiKeys  OrgApiKey[]
+  sessions Session[]
+  contexts ContextStore[]
+}
+
+// ── Org members ───────────────────────────────────────────────────────────────
+
+model OrgMember {
+  id          String   @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  clerkUserId String?  // null until invite is accepted
+  email       String
+  displayName String?  // set from Clerk profile on first login
+  role        String   @default("MEMBER")  // ORG_ADMIN | MEMBER
+  status      String   @default("invited") // invited | active | suspended
+  invitedAt   DateTime @default(now())
+  joinedAt    DateTime?
+
+  @@unique([orgId, email])
+  @@index([clerkUserId])
+}
+
+// ── Org-level API keys (encrypted at rest) ────────────────────────────────────
+
+model OrgApiKey {
+  id          String   @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  keyName     String   // ANTHROPIC_API_KEY | FIGMA_TOKEN | OPENAI_API_KEY
+  keyValue    String   // AES-256-GCM encrypted value
+  maskedValue String   // e.g. "sk-ant-...a1b2" — safe to show in UI
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([orgId, keyName])
+}
+
+// ── Sessions ──────────────────────────────────────────────────────────────────
+
+model Session {
+  id              String   @id @default(cuid())
+  orgId           String
+  org             Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdByUserId String   // clerkUserId of the member who started this session
+
+  // Target site
+  url             String
+  figmaFileUrl    String?
+
+  // Pipeline state
+  status          String   @default("idle")
+  figmaChecking   Boolean  @default(false)
+
+  // Workspace
+  workspaceDir    String?
+
+  // Results (JSON blobs — not huge, no logs here)
+  siteMap          Json?
+  figmaResult      Json?
+  testFiles        Json?    // string[] — absolute paths to spec files
+  testResult       Json?    // TestResult
+  fixResult        Json?    // FixResult
+  triageResult     Json?    // TriageResult
+  scenarioResult   Json?    // ScenarioResult
+  importedProject  Json?    // ImportedProject
+  coverageAnalysis Json?    // CoverageAnalysis
+  userFlows        Json?    // UserFlow[]
+  contextDoc       String?
+  contextDocName   String?
+  iteration        Int      @default(0)
+  error            String?
+  maxPages         Int      @default(10)
+  headedMode       Boolean  @default(false)
+  figmaOnly        Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  logs SessionLog[]
+}
+
+// ── Session logs (every log line, persisted) ──────────────────────────────────
+
+model SessionLog {
+  id        BigInt   @id @default(autoincrement())
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  message   String
+  level     String   @default("info") // info | error | warn
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId, id]) // efficient cursor-based streaming: WHERE id > lastSeen
+}
+
+// ── Context store (saved credentials per URL, per org) ────────────────────────
+
+model ContextStore {
+  id      String   @id @default(cuid())
+  orgId   String
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  urlKey  String   // normalized URL used as lookup key
+  url     String   // display URL
+  fields  Json     // ContextField[]
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, urlKey])
+}

@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/session-store';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
-import { getLlmConfig } from '@/lib/llm-config-store';
+import { getOrgLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 
 
@@ -16,14 +16,14 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (!session.contextDoc) {
     return NextResponse.json({ error: 'No documentation uploaded yet' }, { status: 400 });
   }
 
   try {
-    const llmConfig = getLlmConfig();
+    const llmConfig = await getOrgLlmConfig(session.orgId);
     const baseModel = await createModelFromConfig(llmConfig);
     const model = withRateLimit(baseModel);
 

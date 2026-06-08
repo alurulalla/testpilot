@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/logo';
+import { UserMenu } from '@/components/user-menu';
 import type { ContextField } from '@/lib/url-context-store';
 import type { DetectedFormGroup, SignInPresenceInfo } from '@/lib/detect-form-fields';
 import type { Session, ImportedUseCase } from '@/types/session';
@@ -476,7 +477,7 @@ function PrepareContent() {
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <header className="border-b border-zinc-800 px-6 py-3.5 flex items-center gap-4 shrink-0">
         <button
-          onClick={() => router.push('/')}
+          onClick={() => router.push('/dashboard')}
           className="text-zinc-500 hover:text-zinc-100 transition-colors"
           title="Back to home"
         >
@@ -534,6 +535,7 @@ function PrepareContent() {
             : <Zap className="h-3.5 w-3.5" />}
           {launching ? 'Launching…' : 'Run TestPilot'}
         </Button>
+        <UserMenu />
       </header>
 
       {/* ── Body ─────────────────────────────────────────────────────────── */}

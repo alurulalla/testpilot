@@ -200,6 +200,10 @@ export interface UserFlow {
 
 export interface Session {
   id: string;
+  /** Organisation that owns this session — used for scoping DB queries server-side. */
+  orgId: string;
+  /** Clerk user ID of the member who started this session. */
+  createdByUserId: string;
   url: string;
   status: SessionStatus;
   logs: LogEntry[];

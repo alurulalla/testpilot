@@ -6,12 +6,21 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "db:reset": "prisma migrate reset"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@clerk/nextjs": "^7.4.3",
     "@google/genai": "^1.0.0",
     "@playwright/test": "^1.60.0",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "@types/pg": "^8.20.0",
     "@xyflow/react": "^12.10.2",
     "adm-zip": "^0.5.17",
     "class-variance-authority": "^0.7.1",
@@ -19,9 +28,12 @@
     "lucide-react": "^1.16.0",
     "next": "16.2.6",
     "openai": "^4.104.0",
+    "pg": "^8.21.0",
     "playwright": "^1.60.0",
+    "prisma": "^7.8.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "svix": "^1.95.1",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
@@ -31,6 +43,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "docx": "^9.7.1",
+    "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",

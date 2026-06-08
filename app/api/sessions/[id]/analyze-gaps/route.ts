@@ -12,7 +12,7 @@ import {
 } from '@/lib/session-store';
 import { Workspace, runSiteExplorer } from '@/lib/pilot';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
-import { getLlmConfig } from '@/lib/llm-config-store';
+import { getOrgLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import { analyzeCoverageGaps } from '@/lib/analyze-coverage-gaps';
 import { runAuthenticatedSiteExplorer } from '@/lib/authenticated-site-explorer';
@@ -28,7 +28,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   if (!session.importedProject) {
     return NextResponse.json({ error: 'No imported project — upload a Playwright ZIP first.' }, { status: 400 });
@@ -40,10 +40,10 @@ export async function POST(
   // Fire-and-forget async — client watches via SSE stream
   (async () => {
     try {
-      const llmConfig  = getLlmConfig();
+      const llmConfig  = await getOrgLlmConfig(session.orgId);
       const baseModel  = await createModelFromConfig(llmConfig);
       const chatModel  = withRateLimit(baseModel);
-      const rootDir    = getSessionDir(id);
+      const rootDir    = getSessionDir(id, session.orgId);
       const workspace  = new Workspace({ url: session.url, rootDir });
       workspace.init();
       const maxPages   = session.maxPages ?? 10;
@@ -53,7 +53,7 @@ export async function POST(
       addLog(id, 'Crawling site to discover all features…', 'info');
 
       let siteMap: SiteMap;
-      const urlCtx = getUrlContext(session.url);
+      const urlCtx = await getUrlContext(session.url, session.orgId);
       let authFile: string | null = null;
 
       if (urlCtx?.fields.some(f => f.value)) {
@@ -126,7 +126,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   if (!session.coverageAnalysis) {
     return NextResponse.json({ error: 'No analysis yet' }, { status: 400 });

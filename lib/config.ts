@@ -1,4 +1,4 @@
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { getAppSettings } from './app-settings-store';
 
@@ -10,9 +10,21 @@ export function getTestpilotRoot(): string {
   return join(process.cwd(), '.testpilot');
 }
 
-/** Return the workspace directory for a specific session. */
-export function getSessionDir(sessionId: string): string {
-  return join(getTestpilotRoot(), sessionId);
+/**
+ * Return the workspace directory for a specific session.
+ *
+ * New layout:  .testpilot/{orgId}/{sessionId}/
+ * Legacy layout: .testpilot/{sessionId}/   (used when migrating existing sessions)
+ *
+ * If the org-scoped path does not yet exist but the legacy path does, the
+ * legacy path is returned so existing sessions keep working without a manual
+ * migration step.
+ */
+export function getSessionDir(sessionId: string, orgId: string): string {
+  const orgPath = join(getTestpilotRoot(), orgId, sessionId);
+  const legacyPath = join(getTestpilotRoot(), sessionId);
+  if (!existsSync(orgPath) && existsSync(legacyPath)) return legacyPath;
+  return orgPath;
 }
 
 function readEnvLocal(): Record<string, string> {

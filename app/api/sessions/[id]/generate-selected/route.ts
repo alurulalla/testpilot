@@ -9,7 +9,7 @@ import {
   getSession, setStatus, addLog, updateSession,
 } from '@/lib/session-store';
 import { Workspace, createModelFromConfig } from '@/lib/pilot';
-import { getLlmConfig } from '@/lib/llm-config-store';
+import { getOrgLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import { getSessionDir } from '@/lib/config';
 
@@ -73,7 +73,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   if (!session.coverageAnalysis) {
     return NextResponse.json({ error: 'Run coverage analysis first.' }, { status: 400 });
@@ -92,10 +92,10 @@ export async function POST(
   // Fire-and-forget
   (async () => {
     try {
-      const llmConfig  = getLlmConfig();
+      const llmConfig  = await getOrgLlmConfig(session.orgId);
       const baseModel  = await createModelFromConfig(llmConfig);
       const chatModel  = withRateLimit(baseModel);
-      const rootDir    = getSessionDir(id);
+      const rootDir    = getSessionDir(id, session.orgId);
       const workspace  = new Workspace({ url: session.url, rootDir });
 
       // Read the site map pages for locator context

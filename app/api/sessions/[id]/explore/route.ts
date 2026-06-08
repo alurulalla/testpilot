@@ -8,7 +8,7 @@ import { getSessionDir } from '@/lib/config';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (['exploring','generating','running','fixing'].includes(session.status)) {
     return NextResponse.json({ error: 'Session already running' }, { status: 409 });
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   (async () => {
     try {
-      const workspace = new Workspace({ url: session.url, rootDir: getSessionDir(id) });
+      const workspace = new Workspace({ url: session.url, rootDir: getSessionDir(id, session.orgId) });
       workspace.init();
       const siteMap = await runSiteExplorer({
         url: session.url,

@@ -9,15 +9,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { getSession, setContextDoc, addUserFlow } from '@/lib/session-store';
+import { getSession, getCachedSession, setContextDoc, addUserFlow } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { writeContextMd } from '@/lib/build-context-md';
 import type { UserFlow } from '@/types/session';
 import { getSessionDir } from '@/lib/config';
 
 
-function workspace(session: { url: string }, id: string) {
-  return new Workspace({ url: session.url, rootDir: getSessionDir(id) });
+function workspace(session: { url: string; orgId: string }, id: string) {
+  return new Workspace({ url: session.url, rootDir: getSessionDir(id, session.orgId) });
 }
 
 /**
@@ -79,7 +79,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json({
     content: session.contextDoc,
@@ -92,7 +92,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const contentType = req.headers.get('content-type') ?? '';
@@ -132,7 +132,7 @@ export async function POST(
   }
 
   // Rebuild CONTEXT.md with the new flows included
-  const freshSession = getSession(id);
+  const freshSession = getCachedSession(id);
   const ws = workspace(session, id);
   writeContextMd(ws.dir, content, freshSession?.userFlows ?? []);
 
@@ -149,7 +149,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   setContextDoc(id, null, null);

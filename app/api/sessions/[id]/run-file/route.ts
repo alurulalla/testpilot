@@ -28,7 +28,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
   if (['exploring', 'generating', 'running', 'fixing'].includes(session.status)) {
@@ -46,7 +46,7 @@ export async function POST(
 
   const workspace = new Workspace({
     url: session.url,
-    rootDir: getSessionDir(id),
+    rootDir: getSessionDir(id, session.orgId),
   });
 
   setStatus(id, 'running');

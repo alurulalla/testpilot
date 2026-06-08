@@ -15,6 +15,8 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import path from 'path';
 import type { LlmConfig } from './pilot/model-factory';
 import { DEFAULT_LLM_CONFIG } from './pilot/model-factory';
+import { getOrgKeys } from './org-keys';
+import { getFigmaToken } from './config';
 
 const CONFIG_DIR = path.join(process.cwd(), '.testpilot');
 
@@ -90,4 +92,47 @@ export function getMaskedLlmConfig(): LlmConfig & { apiKeyMasked?: string } {
     ? `${'*'.repeat(apiKey.length - 4)}${apiKey.slice(-4)}`
     : '****';
   return { ...rest, apiKey: undefined, apiKeyMasked: masked };
+}
+
+// ── Org-aware helpers ─────────────────────────────────────────────────────────
+
+/** Provider → its well-known env-var name (mirrors model-factory.ts). */
+const PROVIDER_ENV_VAR: Record<string, string> = {
+  anthropic:  'ANTHROPIC_API_KEY',
+  openai:     'OPENAI_API_KEY',
+  gemini:     'GOOGLE_API_KEY',
+  groq:       'GROQ_API_KEY',
+  mistral:    'MISTRAL_API_KEY',
+  xai:        'XAI_API_KEY',
+  openrouter: 'OPENROUTER_API_KEY',
+};
+
+/**
+ * getLlmConfig() merged with org-level DB keys.
+ *
+ * Key resolution order:
+ *   1. Org DB key for the active provider (OrgApiKey table, decrypted)
+ *   2. Key stored via the UI settings panel (llm-config.json)
+ *   3. process.env / .env.local  (handled inside createModelFromConfig)
+ *
+ * Call this instead of getLlmConfig() in AI pipeline routes.
+ */
+export async function getOrgLlmConfig(orgId: string): Promise<LlmConfig> {
+  const base = getLlmConfig();
+  const orgKeys = await getOrgKeys(orgId);
+  const envVar = PROVIDER_ENV_VAR[base.provider];
+  const orgKey = envVar ? orgKeys[envVar] : undefined;
+  // Org key takes precedence over the stored key (which may be from another provider)
+  if (orgKey) return { ...base, apiKey: orgKey };
+  return base;
+}
+
+/**
+ * getFigmaToken() with org-level DB key taking precedence over process.env.
+ *
+ * Call this instead of getFigmaToken() in AI pipeline routes.
+ */
+export async function getOrgFigmaToken(orgId: string): Promise<string | undefined> {
+  const orgKeys = await getOrgKeys(orgId);
+  return orgKeys['FIGMA_TOKEN'] || getFigmaToken();
 }

@@ -4,7 +4,7 @@ import { getSession, setStatus, addLog, markStopping, killProcess } from '@/lib/
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   markStopping(id);

@@ -45,6 +45,7 @@ import { ExecutionLog } from "@/components/execution-log";
 import { SiteMapViewer } from "@/components/site-map-viewer";
 import { StatsBar } from "@/components/stats-bar";
 import { Logo } from "@/components/logo";
+import { UserMenu } from "@/components/user-menu";
 
 type PhaseState = "pending" | "running" | "done" | "failed";
 
@@ -1127,40 +1128,59 @@ export default function SessionPage() {
     setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
-  function applySession(data: unknown) {
+  /**
+   * Apply an incoming session snapshot from SSE or polling.
+   *
+   * @param data          - Raw JSON value to validate and apply.
+   * @param preserveLogs  - When true the existing client-side log array is kept
+   *                        unchanged.  Pass true for { type:'update', logsOmitted:true }
+   *                        events where logs have intentionally been stripped from the
+   *                        payload to keep it small — individual log entries arrive via
+   *                        separate { type:'log' } events and accumulate in state.
+   */
+  function applySession(data: unknown, preserveLogs = false) {
     if (!isValidSession(data)) return;
     const incoming = data as Session;
 
-    // Guard against cold-Lambda skeleton responses overwriting real state.
-    //
-    // When a Vercel Lambda container is cold-started for a session that was
-    // created by a different container, getSessionOrRestore() reconstructs a
-    // minimal skeleton from the cookie (status='idle', no logs, no testFiles,
-    // no siteMap). If the client already has meaningful state from a prior SSE
-    // stream, receiving that skeleton via polling would blank the UI entirely.
-    //
-    // Detection: incoming state looks like a skeleton iff it has no logs, no
-    // testFiles, no siteMap, and no testResult. We only reject it when our
-    // current local state has data (otherwise a genuinely empty session is fine).
     const current = sessionRef.current;
-    if (current) {
-      const incomingIsEmpty =
-        (incoming.logs?.length ?? 0) === 0 &&
-        (incoming.testFiles?.length ?? 0) === 0 &&
-        !incoming.siteMap &&
-        !incoming.testResult;
-      const currentHasData =
-        (current.logs?.length ?? 0) > 0 ||
-        (current.testFiles?.length ?? 0) > 0 ||
-        !!current.siteMap ||
-        !!current.testResult;
-      if (incomingIsEmpty && currentHasData) return; // skeleton from cold Lambda — ignore
+
+    if (!preserveLogs) {
+      // Guard against cold-Lambda skeleton responses overwriting real state.
+      //
+      // When a Vercel Lambda container is cold-started for a session that was
+      // created by a different container, getSessionOrRestore() reconstructs a
+      // minimal skeleton from the cookie (status='idle', no logs, no testFiles,
+      // no siteMap). If the client already has meaningful state from a prior SSE
+      // stream, receiving that skeleton via polling would blank the UI entirely.
+      //
+      // Detection: incoming looks like a skeleton iff it has no logs, no testFiles,
+      // no siteMap, and no testResult.  We only reject it when our current local
+      // state already has data (otherwise a genuinely empty session is fine).
+      //
+      // NOTE: this guard is intentionally skipped when preserveLogs=true because in
+      // that case logs are omitted from the payload by design, not because the
+      // session is a skeleton.
+      if (current) {
+        const incomingIsEmpty =
+          (incoming.logs?.length ?? 0) === 0 &&
+          (incoming.testFiles?.length ?? 0) === 0 &&
+          !incoming.siteMap &&
+          !incoming.testResult;
+        const currentHasData =
+          (current.logs?.length ?? 0) > 0 ||
+          (current.testFiles?.length ?? 0) > 0 ||
+          !!current.siteMap ||
+          !!current.testResult;
+        if (incomingIsEmpty && currentHasData) return; // skeleton from cold Lambda — ignore
+      }
     }
 
-    // Ensure arrays are always defined to prevent runtime crashes
+    // Ensure arrays are always defined to prevent runtime crashes.
+    // When preserveLogs is true we keep the existing log array so that
+    // logs accumulated via real-time { type:'log' } events are not lost.
     const safe: Session = {
       ...incoming,
-      logs: incoming.logs ?? [],
+      logs: preserveLogs ? (current?.logs ?? []) : (incoming.logs ?? []),
       testFiles: incoming.testFiles ?? [],
       scenarioResult: incoming.scenarioResult ?? null,
       userFlows: incoming.userFlows ?? [],
@@ -1211,9 +1231,17 @@ export default function SessionPage() {
           type: string;
           session?: unknown;
           entry?: { ts: number; msg: string; level: "info" | "error" | "success" };
+          /** true when the server intentionally stripped logs from this update payload */
+          logsOmitted?: boolean;
         };
-        if (event.type === "init" || event.type === "update") {
-          applySession(event.session);
+        if (event.type === "init") {
+          // Full snapshot — replace everything including the log array
+          applySession(event.session, false);
+        } else if (event.type === "update") {
+          // State-only update — preserve the existing client-side log array when
+          // the server signals it has omitted logs from this payload.  Individual
+          // log entries arrive via separate { type:'log' } events.
+          applySession(event.session, event.logsOmitted === true);
         } else if (event.type === "log" && event.entry) {
           setSession((prev) => {
             if (!prev) return prev;
@@ -1504,7 +1532,7 @@ export default function SessionPage() {
       {/* Header */}
       <header className="border-b border-zinc-800 px-6 py-4 flex items-center gap-4 shrink-0">
         <Link
-          href="/"
+          href="/dashboard"
           className="text-zinc-500 hover:text-zinc-100 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -1563,6 +1591,7 @@ export default function SessionPage() {
             polling
           </span>
         )}
+        <UserMenu />
       </header>
 
       {/* ── Feature Canvas — fixed full-screen overlay (concrete px dimensions guaranteed) ── */}

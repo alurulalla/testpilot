@@ -29,6 +29,11 @@ const nextConfig: NextConfig = {
     'playwright-core',
     '@playwright/test',
   ],
+
+  // Allow ngrok tunnels to access Next.js dev resources (HMR, error overlays).
+  // Any *.ngrok-free.app subdomain is permitted so you don't need to update
+  // this every time ngrok gives you a new URL.
+  allowedDevOrigins: ['*.ngrok-free.app', '*.ngrok.io'],
 };
 
 export default nextConfig;

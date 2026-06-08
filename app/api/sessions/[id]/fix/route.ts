@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  getSession, setStatus, setFixResult, setTestResult, setTriageResult,
+  getSession, getCachedSession, setStatus, setFixResult, setTestResult, setTriageResult,
   setError, addLog, clearStopping,
 } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
-import { getLlmConfig } from '@/lib/llm-config-store';
+import { getOrgLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import { fixTestsPerFile } from '@/lib/fix-tests-per-file';
 import { triageFailures } from '@/lib/triage-failures';
@@ -16,7 +16,7 @@ import { getSessionDir } from '@/lib/config';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (!session.testResult) return NextResponse.json({ error: 'Run tests first' }, { status: 400 });
   if (['exploring','generating','running','fixing'].includes(session.status)) {
@@ -29,12 +29,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   (async () => {
     clearStopping(id);
     try {
-      const llmConfig = getLlmConfig();
+      const llmConfig = await getOrgLlmConfig(session.orgId);
       const baseModel = await createModelFromConfig(llmConfig);
       const chatModel = withRateLimit(baseModel);
       const workspace = new Workspace({
         url: session.url,
-        rootDir: getSessionDir(id),
+        rootDir: getSessionDir(id, session.orgId),
       });
 
       // Run triage if not already done for this test result
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         workspace,
         (line) => addLog(id, line, 'info'),
         id,
-        getSession(id)?.headedMode ?? false,
+        getCachedSession(id)?.headedMode ?? false,
       );
       setTestResult(id, testResult);
 
@@ -114,8 +114,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (failed > 0) {
         const reTriage = await triageFailures(
           workspace,
-          getSession(id)?.contextDoc ?? null,
-          getSession(id)?.url ?? session.url,
+          getCachedSession(id)?.contextDoc ?? null,
+          getCachedSession(id)?.url ?? session.url,
           chatModel,
           (line) => addLog(id, line, 'info'),
         ).catch(() => null);

@@ -1,22 +1,23 @@
 /**
- * Persistent per-URL context store.
+ * Persistent per-URL context store
  *
  * Context holds form-field values the user has provided for a given site
- * (e.g. login credentials, search terms).  Stored in .testpilot/contexts.json
- * so they survive server restarts.
+ * (e.g. login credentials, search terms).  Stored in the ContextStore DB
+ * table so they survive server restarts and are scoped to an organisation.
+ *
+ * All public functions are async.  Pure transformation helpers
+ * (contextToEnv, contextToPromptHint) remain synchronous.
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import path from 'path';
-import { getTestpilotRoot } from './config';
+import { prisma } from '@/lib/prisma';
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface ContextField {
   /** Machine-readable key derived from name/id/placeholder */
   key: string;
   /** Human-readable label shown in the UI */
   label: string;
-  /** HTML input type  */
+  /** HTML input type */
   type: string;
   /** Value provided by the user */
   value: string;
@@ -33,53 +34,60 @@ export interface UrlContext {
   updatedAt: number;
 }
 
-// ── Storage ──────────────────────────────────────────────────────────────────
-
-const STORE_PATH = path.join(getTestpilotRoot(), 'contexts.json');
-
-function readStore(): Record<string, UrlContext> {
-  if (!existsSync(STORE_PATH)) return {};
-  try {
-    return JSON.parse(readFileSync(STORE_PATH, 'utf8')) as Record<string, UrlContext>;
-  } catch {
-    return {};
-  }
-}
-
-function writeStore(data: Record<string, UrlContext>): void {
-  mkdirSync(path.dirname(STORE_PATH), { recursive: true });
-  writeFileSync(STORE_PATH, JSON.stringify(data, null, 2), 'utf8');
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Reduce a URL to just the origin so https://example.com/any/path → https://example.com */
 export function urlKey(url: string): string {
   try { return new URL(url).origin; } catch { return url; }
 }
 
-// ── Public API ───────────────────────────────────────────────────────────────
-
-export function getUrlContext(url: string): UrlContext | null {
-  return readStore()[urlKey(url)] ?? null;
+function rowToContext(row: { urlKey: string; url: string; fields: unknown; updatedAt: Date }): UrlContext {
+  return {
+    urlKey:    row.urlKey,
+    url:       row.url,
+    fields:    row.fields as ContextField[],
+    updatedAt: row.updatedAt.getTime(),
+  };
 }
 
-export function saveUrlContext(url: string, fields: ContextField[]): UrlContext {
-  const store = readStore();
+// ── Public API ────────────────────────────────────────────────────────────────
+
+export async function getUrlContext(url: string, orgId: string): Promise<UrlContext | null> {
+  const row = await prisma.contextStore.findUnique({
+    where: { orgId_urlKey: { orgId, urlKey: urlKey(url) } },
+  });
+  return row ? rowToContext(row) : null;
+}
+
+export async function saveUrlContext(
+  url: string,
+  fields: ContextField[],
+  orgId: string,
+): Promise<UrlContext> {
   const key = urlKey(url);
-  const ctx: UrlContext = { urlKey: key, url, fields, updatedAt: Date.now() };
-  store[key] = ctx;
-  writeStore(store);
-  return ctx;
+  const row = await prisma.contextStore.upsert({
+    where:  { orgId_urlKey: { orgId, urlKey: key } },
+    create: { orgId, urlKey: key, url, fields: fields as object[] },
+    update: { url, fields: fields as object[] },
+  });
+  return rowToContext(row);
 }
 
-export function deleteUrlContext(url: string): void {
-  const store = readStore();
-  delete store[urlKey(url)];
-  writeStore(store);
+export async function deleteUrlContext(url: string, orgId: string): Promise<void> {
+  await prisma.contextStore.deleteMany({
+    where: { orgId, urlKey: urlKey(url) },
+  });
 }
 
-export function listUrlContexts(): UrlContext[] {
-  return Object.values(readStore()).sort((a, b) => b.updatedAt - a.updatedAt);
+export async function listUrlContexts(orgId: string): Promise<UrlContext[]> {
+  const rows = await prisma.contextStore.findMany({
+    where:   { orgId },
+    orderBy: { updatedAt: 'desc' },
+  });
+  return rows.map(rowToContext);
 }
+
+// ── Pure transformation helpers (unchanged) ───────────────────────────────────
 
 /**
  * Convert stored context fields into a flat key→value map suitable for
@@ -116,10 +124,8 @@ export function contextToPromptHint(ctx: UrlContext): string {
   const lines = fields.map(f => {
     const envKey = `TESTPILOT_${f.key.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
     if (f.sensitive) {
-      // Show the env var name — the actual value is in the workspace .env file
       return `  ${f.label || f.key}: process.env.${envKey}  (set in workspace .env)`;
     }
-    // Non-sensitive (e.g. username) — show the value directly so LLM never guesses
     return `  ${f.label || f.key}: "${f.value}"  (env: process.env.${envKey})`;
   });
 

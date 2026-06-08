@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { getSession, addUserFlow } from '@/lib/session-store';
+import { getSession, getCachedSession, addUserFlow } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { writeContextMd } from '@/lib/build-context-md';
 import type { UserFlow } from '@/types/session';
@@ -17,7 +17,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json({ flows: session.userFlows });
 }
@@ -27,7 +27,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const body = await req.json().catch(() => ({})) as {
@@ -53,7 +53,7 @@ export async function POST(
   addUserFlow(id, flow);
 
   // Rebuild CONTEXT.md so the generator picks up the new flow
-  const ws = new Workspace({ url: session.url, rootDir: getSessionDir(id) });
+  const ws = new Workspace({ url: session.url, rootDir: getSessionDir(id, session.orgId) });
   writeContextMd(ws.dir, session.contextDoc, [...session.userFlows, flow]);
 
   return NextResponse.json({ ok: true, flow });

@@ -92,14 +92,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   }
 
   const workspace = new Workspace({
     url: session.url,
-    rootDir: getSessionDir(id),
+    rootDir: getSessionDir(id, session.orgId),
   });
 
   if (!existsSync(workspace.dir)) {

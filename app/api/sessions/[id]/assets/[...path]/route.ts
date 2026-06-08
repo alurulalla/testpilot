@@ -15,12 +15,12 @@ export async function GET(
 ) {
   const { id, path: segments } = await params;
 
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const workspace = new Workspace({
     url: session.url,
-    rootDir: getSessionDir(id),
+    rootDir: getSessionDir(id, session.orgId),
   });
 
   // Resolve the requested path inside the workspace — prevent path traversal

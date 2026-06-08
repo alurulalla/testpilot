@@ -1,19 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSession, listSessions, findSessionsByUrl } from '@/lib/session-store';
+import { requireAuth, authErrorResponse } from '@/lib/auth';
 import { getMaxPages } from '@/lib/config';
 
-/** GET /api/sessions          → all sessions
+/** GET /api/sessions          → all sessions for the current org
  *  GET /api/sessions?url=...  → sessions matching that URL (origin) */
 export async function GET(req: NextRequest) {
-  const url = req.nextUrl.searchParams.get('url');
-  if (url) return NextResponse.json(findSessionsByUrl(url));
-  return NextResponse.json(listSessions());
+  try {
+    const { org } = await requireAuth();
+    const url = req.nextUrl.searchParams.get('url');
+    if (url) return NextResponse.json(await findSessionsByUrl(url, org.id));
+    return NextResponse.json(await listSessions(org.id));
+  } catch (err) {
+    return authErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json() as { url?: string; figmaFileUrl?: string; figmaOnly?: boolean };
-  const { url, figmaFileUrl, figmaOnly } = body;
-  if (!url) return NextResponse.json({ error: 'url is required' }, { status: 400 });
-  const session = createSession(url, getMaxPages(), false, figmaFileUrl ?? null, figmaOnly ?? false);
-  return NextResponse.json(session, { status: 201 });
+  try {
+    const { org, clerkUserId } = await requireAuth();
+    const body = await req.json() as { url?: string; figmaFileUrl?: string; figmaOnly?: boolean };
+    const { url, figmaFileUrl, figmaOnly } = body;
+    if (!url) return NextResponse.json({ error: 'url is required' }, { status: 400 });
+    const session = await createSession(
+      url,
+      getMaxPages(),
+      false,
+      figmaFileUrl ?? null,
+      figmaOnly ?? false,
+      org.id,
+      clerkUserId,
+    );
+    return NextResponse.json(session, { status: 201 });
+  } catch (err) {
+    return authErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 });
+  }
 }

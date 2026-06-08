@@ -14,14 +14,14 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; flowId: string }> },
 ) {
   const { id, flowId } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   removeUserFlow(id, flowId);
 
   // Rebuild CONTEXT.md without the removed flow
   const remaining = session.userFlows.filter(f => f.id !== flowId);
-  const ws = new Workspace({ url: session.url, rootDir: getSessionDir(id) });
+  const ws = new Workspace({ url: session.url, rootDir: getSessionDir(id, session.orgId) });
   writeContextMd(ws.dir, session.contextDoc, remaining);
 
   return NextResponse.json({ ok: true });

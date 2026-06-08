@@ -1,23 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, setStatus, setFigmaResult, setFigmaChecking, setError, addLog, clearStopping } from '@/lib/session-store';
+import { getSession, getCachedSession, setStatus, setFigmaResult, setFigmaChecking, setError, addLog, clearStopping } from '@/lib/session-store';
 import { runFigmaComparison, isFigmaConfigured } from '@/lib/figma-client';
-import { getFigmaToken, getSessionDir } from '@/lib/config';
+import { getSessionDir } from '@/lib/config';
 import { Workspace, createModelFromConfig } from '@/lib/pilot';
-import { getLlmConfig } from '@/lib/llm-config-store';
+import { getOrgLlmConfig, getOrgFigmaToken } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import path from 'path';
 
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   // Reject only if Figma is already in progress — the main pipeline can run in parallel
   if (session.figmaChecking) {
     return NextResponse.json({ error: 'Figma verification already running' }, { status: 409 });
   }
 
-  const token = getFigmaToken();
+  const token = await getOrgFigmaToken(session.orgId);
   if (!isFigmaConfigured(token, session.figmaFileUrl)) {
     return NextResponse.json(
       { error: 'Figma not configured — add FIGMA_TOKEN to .env.local and a Figma URL to this session' },
@@ -41,11 +41,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     try {
       const workspace = new Workspace({
         url: session.url,
-        rootDir: getSessionDir(id),
+        rootDir: getSessionDir(id, session.orgId),
       });
 
       // Build LLM model for DOM comparison
-      const llmConfig = getLlmConfig();
+      const llmConfig = await getOrgLlmConfig(session.orgId);
       const baseModel = await createModelFromConfig(llmConfig);
       const chatModel = withRateLimit(baseModel);
 
@@ -67,7 +67,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         (n, c) => n + (c.discrepancies?.length ?? 0), 0,
       );
       // Only average scored comparisons — undefined means unreachable/unanalysed.
-      // Do NOT default to 100 for failed pages: that would hide real problems.
       const scoredComparisons = result.comparisons.filter(c => c.matchScore != null);
       const avgScore = scoredComparisons.length > 0
         ? Math.round(
@@ -85,14 +84,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const msg = err instanceof Error ? err.message : String(err);
       addLog(id, `Figma comparison failed: ${msg}`, 'error');
       // Only escalate to session-level error when the pipeline is not running
-      const sess = getSession(id);
+      const sess = getCachedSession(id);
       if (sess && !['exploring', 'analyzing', 'generating', 'running', 'fixing'].includes(sess.status)) {
         setError(id, msg);
       }
     } finally {
       setFigmaChecking(id, false);
       // Restore idle status only if we set it (i.e. pipeline was not active when we started)
-      const sess = getSession(id);
+      const sess = getCachedSession(id);
       if (sess && sess.status === ('figma-checking' as string)) {
         setStatus(id, 'idle');
       }

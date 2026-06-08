@@ -19,7 +19,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
   const scenario = session.scenarioResult;
@@ -42,7 +42,7 @@ export async function POST(
 
   const workspace = new Workspace({
     url: session.url,
-    rootDir: getSessionDir(id),
+    rootDir: getSessionDir(id, session.orgId),
   });
 
   setScenarioResult(id, { ...activeScenario, status: 'running', videos: [], testResult: null });

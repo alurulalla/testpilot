@@ -12,7 +12,6 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import type { ChatModel, ChatMessage } from './types';
 import type { Workspace } from './workspace';
-import { createAnthropicModel } from './anthropic-model';
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -954,12 +953,10 @@ export async function runGenerateSuite(options: RunGenerateSuiteOptions): Promis
 
   const effectiveStart = siteMap.start_url || startUrl!;
 
-  // Use provided chatModel or create one from the model string
-  const model = options.chatModel ?? await (async () => {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set');
-    return createAnthropicModel({ apiKey, model: options.model });
-  })();
+  // chatModel is required — callers must build it via createModelFromConfig() so
+  // that org-level API keys (OrgApiKey table) are respected.
+  if (!options.chatModel) throw new Error('runGenerateSuite: options.chatModel is required');
+  const model = options.chatModel;
 
   console.log('  Generating multi-file test suite...');
   await generateMultiFile({
