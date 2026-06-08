@@ -62,7 +62,7 @@ export function getMaskedAppSettings(): Omit<AppSettings, 'figmaToken'> & {
 } {
   const s = getAppSettings();
   const { figmaToken, ...rest } = s;
-  const figmaTokenSet = Boolean(figmaToken || process.env.FIGMA_TOKEN);
+  const figmaTokenSet = Boolean(figmaToken);
   if (!figmaToken) return { ...rest, figmaTokenSet };
   const masked =
     figmaToken.length > 4

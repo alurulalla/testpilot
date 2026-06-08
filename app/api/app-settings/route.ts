@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMaskedAppSettings, saveAppSettings } from '@/lib/app-settings-store';
-import { getMaxPages, getDeepCrawlMaxPages, getFigmaToken, getAutoSelfHeal } from '@/lib/config';
+import { getMaxPages, getDeepCrawlMaxPages, getAutoSelfHeal } from '@/lib/config';
 
 /** GET /api/app-settings — return current settings (figmaToken masked). */
 export async function GET() {
@@ -12,8 +12,6 @@ export async function GET() {
     figmaTokenSet:     masked.figmaTokenSet,
     figmaTokenMasked:  masked.figmaTokenMasked,
     autoSelfHeal:      masked.autoSelfHeal      ?? getAutoSelfHeal(),
-    // Also expose whether FIGMA_TOKEN comes from env
-    figmaTokenFromEnv: Boolean(!masked.figmaTokenMasked && getFigmaToken()),
   });
 }
 

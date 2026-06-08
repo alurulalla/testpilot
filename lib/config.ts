@@ -48,11 +48,6 @@ function readEnvLocal(): Record<string, string> {
   return result;
 }
 
-export function getAnthropicKey(): string | undefined {
-  // Check process.env first (set via shell or Docker), then fall back to .env.local
-  return process.env.ANTHROPIC_API_KEY || readEnvLocal().ANTHROPIC_API_KEY || undefined;
-}
-
 export function getMaxPages(): number {
   const stored = getAppSettings().maxPages;
   if (stored != null && stored > 0) return stored;
@@ -74,8 +69,13 @@ export function getDeepCrawlMaxPages(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 50;
 }
 
+/**
+ * Global app-settings Figma token (file-based, non-org). NOT read from env.
+ * AI pipelines use getOrgFigmaToken() (org DB) instead — this remains only for
+ * the global App Settings UI display.
+ */
 export function getFigmaToken(): string | undefined {
-  return getAppSettings().figmaToken || process.env.FIGMA_TOKEN || readEnvLocal().FIGMA_TOKEN || undefined;
+  return getAppSettings().figmaToken || undefined;
 }
 
 /**

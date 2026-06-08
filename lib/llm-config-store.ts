@@ -1,12 +1,11 @@
 /**
- * LLM config store — persists the user's chosen provider, model, and API key.
+ * LLM config store — persists the chosen provider & model (non-secret).
  *
  * Storage: <cwd>/.testpilot/llm-config.json
  *
- * Key resolution order:
- *  1. Value saved via the UI settings panel (JSON file)
- *  2. Well-known environment variables (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
- *  3. Default config (no key — model will fail at call-time with a helpful message)
+ * API keys are NOT stored here and are NEVER read from environment variables —
+ * they live in the per-organisation OrgApiKey table and are merged in by
+ * getOrgLlmConfig(). This file only holds the provider/model/baseUrl selection.
  *
  * The config is read fresh on every request so changes take effect
  * immediately without a server restart.
@@ -16,50 +15,25 @@ import path from 'path';
 import type { LlmConfig } from './pilot/model-factory';
 import { DEFAULT_LLM_CONFIG } from './pilot/model-factory';
 import { getOrgKeys } from './org-keys';
-import { getFigmaToken } from './config';
 
 const CONFIG_DIR = path.join(process.cwd(), '.testpilot');
 
 const CONFIG_FILE = path.join(CONFIG_DIR, 'llm-config.json');
 
-/**
- * Build a best-effort config from well-known environment variables.
- * Checked in order of preference; first match wins.
- */
-function buildConfigFromEnv(): LlmConfig {
-  const envMap: Array<[string, string, string]> = [
-    ['ANTHROPIC_API_KEY',   'anthropic',  'claude-sonnet-4-6'],
-    ['OPENAI_API_KEY',      'openai',     'gpt-4o'],
-    ['GOOGLE_API_KEY',      'gemini',     'gemini-2.0-flash'],
-    ['GROQ_API_KEY',        'groq',       'llama-3.3-70b-versatile'],
-    ['MISTRAL_API_KEY',     'mistral',    'mistral-large-latest'],
-    ['XAI_API_KEY',         'xai',        'grok-2-latest'],
-    ['OPENROUTER_API_KEY',  'openrouter', 'openai/gpt-4o'],
-  ];
-  for (const [envVar, provider, model] of envMap) {
-    const key = process.env[envVar];
-    if (key) return { provider, model, apiKey: key };
-  }
-  return { ...DEFAULT_LLM_CONFIG };
-}
-
-/** Read the stored LLM config, falling back to env vars then the default. */
+/** Read the stored provider/model selection, falling back to the default. */
 export function getLlmConfig(): LlmConfig {
   try {
-    if (!existsSync(CONFIG_FILE)) return buildConfigFromEnv();
+    if (!existsSync(CONFIG_FILE)) return { ...DEFAULT_LLM_CONFIG };
     const raw = readFileSync(CONFIG_FILE, 'utf8');
     const parsed = JSON.parse(raw) as Partial<LlmConfig>;
-    const envFallback = buildConfigFromEnv();
     return {
-      provider: parsed.provider ?? envFallback.provider,
-      model:    parsed.model    ?? envFallback.model,
-      // Prefer the explicitly saved key; fall back to env var so Vercel deployments
-      // automatically pick up keys set in the Vercel dashboard.
-      apiKey:   parsed.apiKey   || envFallback.apiKey,
+      provider: parsed.provider ?? DEFAULT_LLM_CONFIG.provider,
+      model:    parsed.model    ?? DEFAULT_LLM_CONFIG.model,
+      // apiKey intentionally omitted — keys come only from the org store.
       baseUrl:  parsed.baseUrl  ?? undefined,
     };
   } catch {
-    return buildConfigFromEnv();
+    return { ...DEFAULT_LLM_CONFIG };
   }
 }
 
@@ -108,12 +82,12 @@ const PROVIDER_ENV_VAR: Record<string, string> = {
 };
 
 /**
- * getLlmConfig() merged with org-level DB keys.
+ * Provider/model selection (from llm-config.json) merged with the org's API key.
  *
- * Key resolution order:
- *   1. Org DB key for the active provider (OrgApiKey table, decrypted)
- *   2. Key stored via the UI settings panel (llm-config.json)
- *   3. process.env / .env.local  (handled inside createModelFromConfig)
+ * The API key comes EXCLUSIVELY from the org-level OrgApiKey table — never from
+ * the config file and never from environment variables. If the org hasn't saved
+ * a key for the active provider, apiKey is undefined and the model call fails
+ * with a message pointing the user at Settings → AI → API Keys.
  *
  * Call this instead of getLlmConfig() in AI pipeline routes.
  */
@@ -122,17 +96,15 @@ export async function getOrgLlmConfig(orgId: string): Promise<LlmConfig> {
   const orgKeys = await getOrgKeys(orgId);
   const envVar = PROVIDER_ENV_VAR[base.provider];
   const orgKey = envVar ? orgKeys[envVar] : undefined;
-  // Org key takes precedence over the stored key (which may be from another provider)
-  if (orgKey) return { ...base, apiKey: orgKey };
-  return base;
+  return { ...base, apiKey: orgKey };
 }
 
 /**
- * getFigmaToken() with org-level DB key taking precedence over process.env.
+ * The org's Figma token from the OrgApiKey table. Never falls back to env.
  *
  * Call this instead of getFigmaToken() in AI pipeline routes.
  */
 export async function getOrgFigmaToken(orgId: string): Promise<string | undefined> {
   const orgKeys = await getOrgKeys(orgId);
-  return orgKeys['FIGMA_TOKEN'] || getFigmaToken();
+  return orgKeys['FIGMA_TOKEN'] || undefined;
 }

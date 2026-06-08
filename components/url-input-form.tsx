@@ -444,7 +444,7 @@ export function UrlInputForm() {
               disabled={loading}
             />
             <p className="mt-1.5 text-xs text-zinc-600 px-1">
-              Requires <code className="text-zinc-500">FIGMA_TOKEN</code> in <code className="text-zinc-500">.env.local</code>
+              Requires a Figma token in <code className="text-zinc-500">Settings → AI → API Keys</code>
             </p>
           </div>
         )}

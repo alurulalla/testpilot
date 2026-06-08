@@ -1018,8 +1018,8 @@ function PrepareContent() {
                     />
                   </div>
                   <p className="text-xs text-zinc-600">
-                    Requires <code className="text-zinc-500">FIGMA_TOKEN</code> in{' '}
-                    <code className="text-zinc-500">.env.local</code>
+                    Requires a Figma token in{' '}
+                    <code className="text-zinc-500">Settings → AI → API Keys</code>
                   </p>
                 </div>
               )}

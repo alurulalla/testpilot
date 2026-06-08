@@ -20,7 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const token = await getOrgFigmaToken(session.orgId);
   if (!isFigmaConfigured(token, session.figmaFileUrl)) {
     return NextResponse.json(
-      { error: 'Figma not configured — add FIGMA_TOKEN to .env.local and a Figma URL to this session' },
+      { error: 'Figma not configured — add a Figma token in Settings → AI → API Keys and a Figma URL to this session' },
       { status: 400 },
     );
   }

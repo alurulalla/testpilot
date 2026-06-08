@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
-import { getAnthropicKey } from '@/lib/config';
 
+/**
+ * Lightweight diagnostics. API keys are managed per-organisation in the
+ * OrgApiKey table and are intentionally NOT surfaced here.
+ */
 export async function GET() {
-  const key = getAnthropicKey();
   return NextResponse.json({
-    hasKey: !!key,
-    keyPrefix: key?.slice(0, 15) ?? 'NOT SET',
+    ok: true,
     cwd: process.cwd(),
+    nodeEnv: process.env.NODE_ENV,
   });
 }
