@@ -36,12 +36,31 @@ function createPrismaClient() {
   });
 }
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
+// ── Lazy singleton ────────────────────────────────────────────────────────────
+//
+// createPrismaClient() must NOT run at module-import time.
+// During `next build`, modules are imported to collect page data but
+// DATABASE_URL is not available (it's a runtime secret injected into the
+// container, never a build arg).  Calling new Pool() or PrismaClient() here
+// would throw and break the build.
+//
+// The Proxy below defers initialisation to the first actual DB call so the
+// module can be safely imported at build time.
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
-
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
+declare global {
+  // eslint-disable-next-line no-var
+  var __tp_prisma: PrismaClient | undefined;
 }
+
+function getClient(): PrismaClient {
+  if (!globalThis.__tp_prisma) {
+    globalThis.__tp_prisma = createPrismaClient();
+  }
+  return globalThis.__tp_prisma;
+}
+
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_target, prop: string | symbol) {
+    return (getClient() as unknown as Record<string | symbol, unknown>)[prop];
+  },
+});
