@@ -13,9 +13,13 @@
  * Callers should catch and return NextResponse.json({ error }, { status }).
  */
 import { cache } from 'react';
+import { cookies } from 'next/headers';
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/prisma';
 import type { Organization, OrgMember } from '@/lib/generated/prisma/client';
+
+/** Cookie holding the user's currently-active org id (for multi-org users). */
+export const ACTIVE_ORG_COOKIE = 'tp_org';
 
 export class AuthError extends Error {
   constructor(
@@ -27,11 +31,51 @@ export class AuthError extends Error {
   }
 }
 
+export type MemberWithOrg = OrgMember & { org: Organization };
+
 export interface AuthContext {
   clerkUserId: string;
-  member: OrgMember;
+  /** The membership row for the currently-active org. */
+  member: MemberWithOrg;
+  /** The currently-active org (resolved from the tp_org cookie, or the first one). */
   org: Organization;
+  /** Every active membership the user has — used to render the org switcher. */
+  memberships: MemberWithOrg[];
 }
+
+// ── Claim pending invites ───────────────────────────────────────────────────
+// When a user authenticates, activate any OrgMember rows that were created as
+// invites for their email but never claimed. This handles BOTH cases:
+//   • brand-new signups (also covered by the Clerk user.created webhook), and
+//   • existing users invited to an *additional* org — for whom Clerk fires no
+//     user.created event, so the webhook never runs.
+// Cached per request so the currentUser() round-trip happens at most once.
+
+const claimPendingInvites = cache(async (clerkUserId: string): Promise<void> => {
+  const user = await currentUser();
+  if (!user) return;
+
+  const emails = user.emailAddresses
+    .map(e => e.emailAddress.toLowerCase())
+    .filter(Boolean);
+  if (emails.length === 0) return;
+
+  const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || null;
+
+  await prisma.orgMember.updateMany({
+    where: {
+      email: { in: emails },
+      status: 'invited',
+      clerkUserId: null,
+    },
+    data: {
+      clerkUserId,
+      status: 'active',
+      joinedAt: new Date(),
+      ...(displayName ? { displayName } : {}),
+    },
+  });
+});
 
 // ── Any active member ─────────────────────────────────────────────────────────
 // Wrapped with React cache() so multiple Server Components on the same page
@@ -41,23 +85,34 @@ export const requireAuth: () => Promise<AuthContext> = cache(async function requ
   const { userId } = await auth();
   if (!userId) throw new AuthError(401, 'Not authenticated');
 
-  const member = await prisma.orgMember.findFirst({
+  // Activate any invites waiting for this user before we read memberships.
+  await claimPendingInvites(userId);
+
+  const memberships = (await prisma.orgMember.findMany({
     where: { clerkUserId: userId, status: 'active' },
     include: { org: true },
-  });
+    orderBy: { joinedAt: 'asc' },
+  })) as MemberWithOrg[];
 
-  if (!member) {
+  if (memberships.length === 0) {
     throw new AuthError(403, 'You are not a member of any active organisation. Contact your admin.');
   }
 
-  if ((member as OrgMember & { org: Organization }).org.licenseStatus !== 'active') {
+  // Only orgs with an active licence are selectable.
+  const usable = memberships.filter(m => m.org.licenseStatus === 'active');
+  if (usable.length === 0) {
     throw new AuthError(403, 'Your organisation licence is suspended. Contact your admin.');
   }
 
+  // Resolve the active org from the cookie, falling back to the first usable one.
+  const activeOrgId = (await cookies()).get(ACTIVE_ORG_COOKIE)?.value;
+  const current = usable.find(m => m.orgId === activeOrgId) ?? usable[0];
+
   return {
     clerkUserId: userId,
-    member,
-    org: (member as OrgMember & { org: Organization }).org,
+    member: current,
+    org: current.org,
+    memberships: usable,
   };
 });
 

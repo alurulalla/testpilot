@@ -11,14 +11,18 @@ export const dynamic = "force-dynamic";
 export default async function Dashboard() {
   let clerkUserId: string;
   let org;
+  let memberships;
   try {
-    ({ org, clerkUserId } = await requireAuth());
+    ({ org, clerkUserId, memberships } = await requireAuth());
   } catch (e) {
     if (e instanceof AuthError && e.status === 403) {
       try { await requireSuperAdmin(); redirect("/admin"); } catch {}
     }
     throw e;
   }
+
+  // Orgs the user belongs to — drives the org switcher in the nav.
+  const orgs = memberships.map(m => ({ id: m.org.id, name: m.org.name }));
 
   // Fetch sessions, org members, and current Clerk profile in parallel
   const [sessions, members, clerkUser] = await Promise.all([
@@ -45,7 +49,7 @@ export default async function Dashboard() {
 
   return (
     <div className="h-screen flex flex-col bg-zinc-950">
-      <DashboardNav />
+      <DashboardNav orgs={orgs} currentOrgId={org.id} />
       <DashboardShell sessions={sessions} membersMap={membersMap} />
     </div>
   );

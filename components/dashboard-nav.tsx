@@ -1,13 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Globe, Loader2, X } from 'lucide-react';
+import { Plus, Globe, Loader2, X, ChevronsUpDown, Check, Building2 } from 'lucide-react';
 import { Logo } from '@/components/logo';
 import { UserMenu } from '@/components/user-menu';
 import { Button } from '@/components/ui/button';
 
-export function DashboardNav() {
+interface OrgOption { id: string; name: string }
+
+interface DashboardNavProps {
+  orgs?: OrgOption[];
+  currentOrgId?: string;
+}
+
+export function DashboardNav({ orgs = [], currentOrgId }: DashboardNavProps) {
   const [open, setOpen]     = useState(false);
   const [url, setUrl]       = useState('');
   const [loading, setLoading] = useState(false);
@@ -32,7 +39,7 @@ export function DashboardNav() {
     <>
       <header className="border-b border-zinc-800 px-6 py-3 flex items-center gap-3">
         <Logo height={28} />
-        <span className="text-sm text-zinc-600 select-none">Sessions</span>
+        <OrgSwitcher orgs={orgs} currentOrgId={currentOrgId} />
         <div className="flex-1" />
         <Button size="sm" onClick={() => setOpen(true)}>
           <Plus className="h-3.5 w-3.5" />
@@ -96,5 +103,96 @@ export function DashboardNav() {
         </div>
       )}
     </>
+  );
+}
+
+// ── Org switcher ────────────────────────────────────────────────────────────
+
+function OrgSwitcher({ orgs, currentOrgId }: { orgs: OrgOption[]; currentOrgId?: string }) {
+  const [open, setOpen]       = useState(false);
+  const [switching, setSwitching] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+
+  const current = orgs.find(o => o.id === currentOrgId) ?? orgs[0];
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    function onClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [open]);
+
+  async function switchTo(orgId: string) {
+    if (orgId === current?.id) { setOpen(false); return; }
+    setSwitching(orgId);
+    try {
+      const res = await fetch('/api/auth/switch-org', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orgId }),
+      });
+      if (res.ok) {
+        setOpen(false);
+        router.refresh();
+      }
+    } finally {
+      setSwitching(null);
+    }
+  }
+
+  if (orgs.length === 0) return null;
+
+  // Single org — show the name as a static label, no dropdown.
+  if (orgs.length === 1) {
+    return (
+      <span className="flex items-center gap-1.5 text-sm text-zinc-400 select-none">
+        <Building2 className="h-3.5 w-3.5 text-zinc-600" />
+        {current?.name}
+      </span>
+    );
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+      >
+        <Building2 className="h-3.5 w-3.5 text-zinc-500" />
+        <span className="max-w-[160px] truncate">{current?.name}</span>
+        <ChevronsUpDown className="h-3.5 w-3.5 text-zinc-500" />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-1 w-60 z-50 rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl py-1.5">
+          <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">
+            Organisations
+          </p>
+          {orgs.map(o => {
+            const isCurrent = o.id === current?.id;
+            return (
+              <button
+                key={o.id}
+                onClick={() => switchTo(o.id)}
+                disabled={switching !== null}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                  isCurrent ? 'text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100'
+                } disabled:opacity-50`}
+              >
+                <Building2 className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+                <span className="flex-1 truncate">{o.name}</span>
+                {switching === o.id
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-500 shrink-0" />
+                  : isCurrent && <Check className="h-3.5 w-3.5 text-violet-400 shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
