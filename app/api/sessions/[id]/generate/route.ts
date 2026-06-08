@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, setStatus, setError, addLog, updateSession } from '@/lib/session-store';
+import { getSession, setStatus, setError, clearError, addLog, updateSession } from '@/lib/session-store';
 import { runGenerateSuite, Workspace } from '@/lib/pilot';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
 import { getOrgLlmConfig } from '@/lib/llm-config-store';
@@ -18,6 +18,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   setStatus(id, 'generating');
+  clearError(id); // drop any error from a previous run
   addLog(id, 'Generating test suite…', 'info');
 
   (async () => {

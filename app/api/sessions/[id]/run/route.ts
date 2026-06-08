@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, getCachedSession, setStatus, setTestResult, setTriageResult, setError, addLog } from '@/lib/session-store';
+import { getSession, getCachedSession, setStatus, setTestResult, setTriageResult, setError, clearError, addLog } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { runTestsAsync } from '@/lib/run-tests-async';
 import { triageFailures } from '@/lib/triage-failures';
@@ -21,6 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   setStatus(id, 'running');
   setTriageResult(id, null); // clear previous triage on each new run
+  clearError(id);            // drop any error from a previous run
   addLog(id, 'Running test suite…', 'info');
 
   (async () => {

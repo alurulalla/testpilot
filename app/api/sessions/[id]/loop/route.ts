@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getSession, getCachedSession, setStatus, setSiteMap, setTestResult, setFixResult,
-  setTriageResult, setFigmaResult, setFigmaChecking, setError,
+  setTriageResult, setFigmaResult, setFigmaChecking, setError, clearError,
   addLog, updateSession, isStopping, clearStopping, subscribe, unsubscribe,
 } from '@/lib/session-store';
 
@@ -70,6 +70,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   (async () => {
     clearStopping(id);
+    clearError(id); // drop any error from a previous (e.g. missing-key) run
 
     const stopped = (phase?: string): boolean => {
       if (!isStopping(id)) return false;

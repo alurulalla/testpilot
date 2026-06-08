@@ -263,6 +263,11 @@ export function setError(id: string, error: string): void {
   updateSession(id, { error, status: 'failed' });
 }
 
+/** Clear any error from a previous run — call when a fresh run starts. */
+export function clearError(id: string): void {
+  updateSession(id, { error: null });
+}
+
 export function setContextDoc(id: string, content: string | null, name: string | null): void {
   const patch: Partial<Session> = {};
   (patch as Record<string, unknown>)['contextDoc']     = content;
