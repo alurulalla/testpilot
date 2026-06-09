@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import { writeFileSync } from 'fs';
+import { snapshotTestFiles } from '@/lib/session-files';
 import {
   getSession, setStatus, addLog, updateSession,
 } from '@/lib/session-store';
@@ -141,6 +142,7 @@ export async function POST(
       }
 
       updateSession(id, { testFiles: workspace.testFiles() });
+      await snapshotTestFiles(id, workspace);
       addLog(id, 'Gap tests generated. Starting full test run…', 'success');
 
       // Trigger the run loop (reuse the existing loop endpoint)

@@ -1,0 +1,111 @@
+/**
+ * Durable test-suite persistence.
+ *
+ * The per-session workspace on disk (.testpilot/<org>/<session>/) is ephemeral —
+ * wiped on every redeploy/restart and not shared across replicas. These helpers
+ * make the *test files* durable by mirroring them into the SessionFile table:
+ *
+ *   • snapshotTestFiles()  — after generation/scenario/fix/import, copy the
+ *                            workspace's test files into the DB.
+ *   • restoreTestFiles()   — before a run, rebuild any missing files on disk
+ *                            from the DB (no-op when the disk already has them,
+ *                            so local dev is unaffected).
+ *
+ * Everything here is best-effort and wrapped so a failure can never break a
+ * working run — on error we simply fall back to whatever is already on disk.
+ */
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs';
+import path from 'path';
+import { prisma } from '@/lib/prisma';
+import type { Workspace } from '@/lib/pilot';
+
+/** Files in the workspace we treat as the durable "suite" (text only). */
+function collectSuiteFiles(workspace: Workspace): { rel: string; content: string }[] {
+  const out: { rel: string; content: string }[] = [];
+
+  // All spec files + fixtures under tests/
+  if (existsSync(workspace.testsDir)) {
+    for (const name of readdirSync(workspace.testsDir)) {
+      if (name.endsWith('.spec.ts') || name === 'fixtures.ts') {
+        try {
+          const full = path.join(workspace.testsDir, name);
+          out.push({ rel: path.relative(workspace.dir, full), content: readFileSync(full, 'utf8') });
+        } catch { /* skip unreadable */ }
+      }
+    }
+  }
+
+  // Small sidecar artifacts that generation relies on (best-effort).
+  for (const sidecar of ['features.json', 'selector-hints.json']) {
+    const full = path.join(workspace.dir, sidecar);
+    if (existsSync(full)) {
+      try { out.push({ rel: sidecar, content: readFileSync(full, 'utf8') }); } catch { /* skip */ }
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Mirror the workspace's current test files into the DB. Best-effort and
+ * fire-and-forget-safe; never throws.
+ */
+export async function snapshotTestFiles(sessionId: string, workspace: Workspace): Promise<void> {
+  try {
+    const files = collectSuiteFiles(workspace);
+    if (files.length === 0) return;
+    // Upsert each file. (Upsert-only — we don't delete rows here, so a transient
+    // empty disk can't wipe the durable copy.)
+    await Promise.all(files.map(f =>
+      prisma.sessionFile.upsert({
+        where:  { sessionId_path: { sessionId, path: f.rel } },
+        create: { sessionId, path: f.rel, content: f.content },
+        update: { content: f.content },
+      }),
+    ));
+  } catch {
+    // Non-fatal — the files still exist on disk for this process.
+  }
+}
+
+/**
+ * Rebuild missing workspace files from the DB. Only writes a file when it is
+ * absent on disk, so it never clobbers fresher local content. Returns the
+ * number of files restored.
+ */
+export async function restoreTestFiles(sessionId: string, workspace: Workspace): Promise<number> {
+  try {
+    const rows = await prisma.sessionFile.findMany({ where: { sessionId } });
+    if (rows.length === 0) return 0;
+    let restored = 0;
+    for (const row of rows) {
+      const full = path.join(workspace.dir, row.path);
+      if (existsSync(full)) continue; // disk wins — don't overwrite fresher content
+      try {
+        mkdirSync(path.dirname(full), { recursive: true });
+        writeFileSync(full, row.content, 'utf8');
+        restored++;
+      } catch { /* skip this file */ }
+    }
+    return restored;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Ensure the workspace exists on disk before a run: (re)create the scaffolding
+ * (config/package.json), link node_modules, and restore any test files that the
+ * DB has but the disk is missing (e.g. after a redeploy wiped the container).
+ */
+export async function ensureWorkspaceReady(sessionId: string, workspace: Workspace): Promise<number> {
+  try {
+    workspace.init();                       // recreate config/package.json (idempotent)
+    const restored = await restoreTestFiles(sessionId, workspace);
+    try { await workspace.installDeps(); } catch { /* node_modules link best-effort */ }
+    return restored;
+  } catch {
+    // Non-fatal — fall back to whatever is already on disk.
+    return 0;
+  }
+}

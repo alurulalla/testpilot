@@ -83,6 +83,7 @@ model Session {
   // Target site
   url             String
   figmaFileUrl    String?
+  figmaFrameMap   Json?    // Record<frameName, url> — user-confirmed frame→page mapping
 
   // Pipeline state
   status          String   @default("idle")
@@ -113,7 +114,26 @@ model Session {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  logs SessionLog[]
+  logs  SessionLog[]
+  files SessionFile[]
+}
+
+// ── Session files (durable copy of the test suite) ────────────────────────────
+// The workspace on disk is ephemeral (wiped on redeploy). These rows are the
+// source of truth for the generated test files so the suite survives deploys
+// and can be restored onto a fresh disk before running.
+
+model SessionFile {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  path      String   // path relative to the workspace dir, e.g. "tests/homepage.spec.ts"
+  content   String   // file contents (text)
+  updatedAt DateTime @updatedAt
+
+  @@unique([sessionId, path])
+  @@index([sessionId])
 }
 
 // ── Session logs (every log line, persisted) ──────────────────────────────────

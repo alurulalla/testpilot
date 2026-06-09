@@ -177,6 +177,10 @@ function PrepareContent() {
   // Figma
   const [figmaFileUrl, setFigmaFileUrl] = useState('');
   const [showFigma, setShowFigma] = useState(false);
+  const [figmaFrames, setFigmaFrames] = useState<{ name: string; width?: number; height?: number; suggestedPath: string }[]>([]);
+  const [figmaFrameMap, setFigmaFrameMap] = useState<Record<string, string>>({});
+  const [loadingFrames, setLoadingFrames] = useState(false);
+  const [framesError, setFramesError] = useState('');
 
   // Product Documentation
   const [docContent, setDocContent] = useState('');
@@ -384,14 +388,49 @@ function PrepareContent() {
   }
 
   // ── Launch session ────────────────────────────────────────────────────────
+  async function loadFigmaFrames() {
+    if (!figmaFileUrl.trim()) return;
+    setLoadingFrames(true);
+    setFramesError('');
+    try {
+      const res = await fetch('/api/figma/frames', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ figmaFileUrl: figmaFileUrl.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load frames');
+      const frames = (data.frames ?? []) as typeof figmaFrames;
+      setFigmaFrames(frames);
+      // Pre-fill the mapping with suggested URLs (origin + suggested path).
+      let origin = '';
+      try { origin = new URL(url).origin; } catch { /* ignore */ }
+      const initial: Record<string, string> = {};
+      for (const f of frames) {
+        initial[f.name] = f.suggestedPath ? origin + f.suggestedPath : '';
+      }
+      setFigmaFrameMap(initial);
+    } catch (err) {
+      setFramesError(err instanceof Error ? err.message : 'Failed to load frames');
+      setFigmaFrames([]);
+    } finally {
+      setLoadingFrames(false);
+    }
+  }
+
   async function launch() {
     if (!url || importUrlMismatch) return;
     setLaunching(true);
     setLaunchError('');
     if (fields.some(f => f.value)) await saveContext();
     try {
-      const body: Record<string, string> = { url };
+      const body: Record<string, unknown> = { url };
       if (figmaFileUrl.trim()) body.figmaFileUrl = figmaFileUrl.trim();
+      // Only send non-empty frame→page mappings.
+      const cleanedMap = Object.fromEntries(
+        Object.entries(figmaFrameMap).filter(([, v]) => v && v.trim()),
+      );
+      if (Object.keys(cleanedMap).length > 0) body.figmaFrameMap = cleanedMap;
       const res = await fetch('/api/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1023,6 +1062,50 @@ function PrepareContent() {
                     Requires a Figma token in{' '}
                     <code className="text-zinc-500">Settings → AI → API Keys</code>
                   </p>
+
+                  {/* Frame → page mapping */}
+                  {figmaFileUrl.trim() && (
+                    <div className="pt-2 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs text-zinc-400">
+                          Map each design frame to the page it should be compared against.
+                        </p>
+                        <Button
+                          type="button" size="sm" variant="secondary"
+                          onClick={loadFigmaFrames} disabled={loadingFrames}
+                        >
+                          {loadingFrames
+                            ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…</>
+                            : <>{figmaFrames.length > 0 ? 'Reload frames' : 'Load frames'}</>}
+                        </Button>
+                      </div>
+
+                      {framesError && <p className="text-xs text-red-400">{framesError}</p>}
+
+                      {figmaFrames.length > 0 && (
+                        <div className="space-y-2">
+                          {figmaFrames.map(f => (
+                            <div key={f.name} className="flex items-center gap-2">
+                              <span className="text-xs text-zinc-300 w-40 shrink-0 truncate" title={f.name}>
+                                {f.name}
+                                {f.width ? <span className="text-zinc-600"> · {f.width}px</span> : null}
+                              </span>
+                              <input
+                                type="text"
+                                value={figmaFrameMap[f.name] ?? ''}
+                                onChange={e => setFigmaFrameMap(m => ({ ...m, [f.name]: e.target.value }))}
+                                placeholder="https://your-app.com/page"
+                                className="flex-1 h-8 px-2.5 rounded-md bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-violet-500 text-xs font-mono"
+                              />
+                            </div>
+                          ))}
+                          <p className="text-[11px] text-zinc-600">
+                            Leave a field blank to let TestPilot guess that frame&apos;s page automatically.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

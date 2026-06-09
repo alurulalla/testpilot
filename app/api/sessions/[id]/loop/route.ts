@@ -25,6 +25,7 @@ import { compareCrawlToDocs } from '@/lib/compare-crawl-to-docs';
 import { runNavClickExplorer, runBroadClickExplorer } from '@/lib/pilot/nav-click-explorer';
 import { discoverSelectors } from '@/lib/pilot/discover-selectors';
 import { synthesizeFeatures } from '@/lib/synthesize-features';
+import { snapshotTestFiles } from '@/lib/session-files';
 import { writeFileSync, existsSync, readFileSync } from 'fs';
 import path from 'path';
 
@@ -158,6 +159,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           } as SiteMap);
         }
         updateSession(id, { testFiles: workspace.testFiles() });
+        await snapshotTestFiles(id, workspace);
         addLog(id, `${workspace.testFiles().length} imported test file(s) ready.`, 'success');
       } else {
 
@@ -248,6 +250,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             knownUrls,
             (line) => addLog(id, line, 'info'),
             chatModel,
+            figmaSession.figmaFrameMap,
           ).then(result => {
             setFigmaResult(id, result);
             const totalIssues = result.comparisons.reduce((n, c) => n + (c.discrepancies?.length ?? 0), 0);
@@ -466,6 +469,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
       const testFiles = workspace.testFiles();
       updateSession(id, { testFiles });
+      await snapshotTestFiles(id, workspace); // durable copy in DB (survives redeploy)
       addLog(id, `Generated ${testFiles.length} test file(s).`, 'success');
       if (stopped('generate')) return;
 
@@ -480,6 +484,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         if (reviewResult.fixed > 0) {
           addLog(id, `Review complete — corrected ${reviewResult.fixed} of ${reviewResult.reviewed} file(s).`, 'success');
           updateSession(id, { testFiles: workspace.testFiles() });
+          await snapshotTestFiles(id, workspace);
         } else {
           addLog(id, `Review complete — all ${reviewResult.reviewed} file(s) passed locator check.`, 'success');
         }
@@ -531,6 +536,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           }
           addLog(id, 'Syntax errors fixed — retrying tests…', 'success');
           updateSession(id, { testFiles: workspace.testFiles() });
+          await snapshotTestFiles(id, workspace);
           i -= 1;
           continue;
         }
@@ -589,6 +595,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             workspace, chatModel, (line) => addLog(id, line, 'info'), id, triage?.analyses,
           );
           setFixResult(id, { fixed: fixResult.fixed, filesChanged: fixResult.filesChanged });
+          if (fixResult.fixed) await snapshotTestFiles(id, workspace); // persist healed content
           addLog(
             id,
             fixResult.fixed ? `Fixed ${fixResult.filesChanged} file(s).` : 'No fixes applied.',

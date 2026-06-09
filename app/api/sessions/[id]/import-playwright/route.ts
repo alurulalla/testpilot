@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'fs';
 import path from 'path';
 import { getSession, setImportedProject, updateSession } from '@/lib/session-store';
 import { importPlaywrightProject } from '@/lib/import-playwright';
+import { snapshotTestFiles } from '@/lib/session-files';
 import { Workspace } from '@/lib/pilot';
 import { getSessionDir } from '@/lib/config';
 
@@ -81,6 +82,7 @@ export async function POST(
 
   // Expose the written test files in the session so the UI shows them
   updateSession(id, { testFiles: workspace.testFiles() });
+  await snapshotTestFiles(id, workspace);
 
   return NextResponse.json({
     ok:             true,

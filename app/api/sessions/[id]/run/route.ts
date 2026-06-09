@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, getCachedSession, setStatus, setTestResult, setTriageResult, setError, clearError, addLog } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { runTestsAsync } from '@/lib/run-tests-async';
+import { ensureWorkspaceReady } from '@/lib/session-files';
 import { triageFailures } from '@/lib/triage-failures';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
 import { getOrgLlmConfig } from '@/lib/llm-config-store';
@@ -30,6 +31,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         url: session.url,
         rootDir: getSessionDir(id, session.orgId),
       });
+
+      // Rebuild the workspace from the DB if the disk was wiped (e.g. redeploy),
+      // so "execute tests" works even on a fresh container.
+      const restored = await ensureWorkspaceReady(id, workspace);
+      if (restored > 0) addLog(id, `Restored ${restored} test file(s) from saved suite.`, 'info');
 
       const result = await runTestsAsync(workspace, (line) => addLog(id, line, 'info'), id, session.headedMode ?? false);
       setTestResult(id, result);

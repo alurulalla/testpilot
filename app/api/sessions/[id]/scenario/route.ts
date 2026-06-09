@@ -11,7 +11,8 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
-import { getSession, setScenarioResult, setTestResult, addLog } from '@/lib/session-store';
+import { getSession, setScenarioResult, setTestResult, addLog, updateSession } from '@/lib/session-store';
+import { snapshotTestFiles } from '@/lib/session-files';
 import { Workspace } from '@/lib/pilot';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
 import { getOrgLlmConfig } from '@/lib/llm-config-store';
@@ -115,6 +116,11 @@ export async function POST(
         model,
         siteMapPages,
       });
+
+      // Add the new scenario spec to the persistent suite so it joins the
+      // existing tests (instead of replacing the view) and survives redeploys.
+      updateSession(id, { testFiles: workspace.testFiles() });
+      await snapshotTestFiles(id, workspace);
 
       // The generated file is now part of the available list too
       const generatedEntry = {

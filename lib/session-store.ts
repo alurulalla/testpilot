@@ -32,6 +32,10 @@ declare global {
   var __tp_stopping: Set<string> | undefined;
   // eslint-disable-next-line no-var
   var __tp_processes: Map<string, ChildProcess> | undefined;
+  // eslint-disable-next-line no-var
+  var __tp_logbuf: Map<string, { message: string; level: string; createdAt: Date }[]> | undefined;
+  // eslint-disable-next-line no-var
+  var __tp_logtimer: ReturnType<typeof setTimeout> | undefined;
 }
 
 const sessions: Map<string, Session>    = (globalThis.__tp_sessions    ??= new Map());
@@ -40,6 +44,8 @@ const subscribers: Map<string, Set<ReadableStreamDefaultController>> =
 const stopping: Set<string>             = (globalThis.__tp_stopping    ??= new Set());
 const runningProcesses: Map<string, ChildProcess> =
                                           (globalThis.__tp_processes   ??= new Map());
+const logBuffer: Map<string, { message: string; level: string; createdAt: Date }[]> =
+                                          (globalThis.__tp_logbuf      ??= new Map());
 
 // ── DB ↔ Session conversion ───────────────────────────────────────────────────
 
@@ -54,6 +60,7 @@ function dbToSession(row: DbRow, logs: DbLog[] = []): Session {
     url:             row.url,
     status:          row.status as SessionStatus,
     figmaFileUrl:    row.figmaFileUrl  ?? null,
+    figmaFrameMap:   (row.figmaFrameMap ?? null) as Record<string, string> | null,
     figmaOnly:       row.figmaOnly,
     figmaChecking:   row.figmaChecking,
     iteration:       row.iteration,
@@ -87,7 +94,7 @@ function dbToSession(row: DbRow, logs: DbLog[] = []): Session {
 const JSON_FIELDS = [
   'siteMap', 'figmaResult', 'testFiles', 'testResult', 'fixResult',
   'triageResult', 'scenarioResult', 'importedProject', 'coverageAnalysis',
-  'userFlows',
+  'userFlows', 'figmaFrameMap',
 ] as const;
 
 const SCALAR_FIELDS = [
@@ -140,6 +147,7 @@ export async function createSession(
   figmaOnly = false,
   orgId: string,
   createdByUserId: string,
+  figmaFrameMap: Record<string, string> | null = null,
 ): Promise<Session> {
   const row = await prisma.session.create({
     data: {
@@ -149,6 +157,7 @@ export async function createSession(
       maxPages,
       headedMode,
       figmaFileUrl: figmaFileUrl ?? undefined,
+      figmaFrameMap: figmaFrameMap ?? undefined,
       figmaOnly,
       userFlows: [],
     },
@@ -229,6 +238,10 @@ export function updateSession(id: string, patch: Partial<Session>): Session | un
 
 export function setStatus(id: string, status: SessionStatus): void {
   updateSession(id, { status });
+  // Persist any buffered logs promptly when a run reaches a terminal state.
+  if (status === 'complete' || status === 'failed' || status === 'idle') {
+    void flushLogs();
+  }
 }
 
 export function setSiteMap(id: string, siteMap: SiteMap): void {
@@ -297,16 +310,52 @@ export function setCoverageAnalysis(id: string, coverageAnalysis: CoverageAnalys
 
 // ── Logging ───────────────────────────────────────────────────────────────────
 
+// Log persistence is BATCHED: instead of one INSERT per line (thousands per run),
+// lines are buffered in memory and flushed together via createMany. In-process
+// SSE clients still get each line instantly via notifySubscribers; cross-process
+// clients see them within one flush interval. Ordering is preserved because
+// createMany assigns autoincrement ids in array order (the SSE cursor uses id).
+const LOG_FLUSH_SIZE = 25;     // flush once this many lines are buffered (any session)
+const LOG_FLUSH_MS   = 1_500;  // …or after this long, whichever comes first
+
+async function flushLogs(): Promise<void> {
+  const rows: { sessionId: string; message: string; level: string; createdAt: Date }[] = [];
+  for (const [sid, buf] of logBuffer) {
+    if (buf.length === 0) continue;
+    for (const e of buf) rows.push({ sessionId: sid, ...e });
+    buf.length = 0;
+  }
+  if (rows.length === 0) return;
+  try { await prisma.sessionLog.createMany({ data: rows }); } catch { /* best-effort */ }
+}
+
+function scheduleLogFlush(): void {
+  if (globalThis.__tp_logtimer) return;
+  globalThis.__tp_logtimer = setTimeout(() => {
+    globalThis.__tp_logtimer = undefined;
+    void flushLogs();
+  }, LOG_FLUSH_MS);
+}
+
 export function addLog(id: string, msg: string, level: LogEntry['level'] = 'info'): void {
   const session = sessions.get(id);
   if (!session) return;
-  const entry: LogEntry = { ts: Date.now(), msg, level };
+  const ts = Date.now();
+  const entry: LogEntry = { ts, msg, level };
   session.logs.push(entry);
-  session.updatedAt = Date.now();
+  session.updatedAt = ts;
   sessions.set(id, session);
   notifySubscribers(id, { type: 'log', entry });
-  // Persist to DB so SSE heartbeats can stream logs via cursor to cross-process clients.
-  prisma.sessionLog.create({ data: { sessionId: id, message: msg, level } }).catch(() => {});
+
+  // Buffer for batched DB persistence.
+  let buf = logBuffer.get(id);
+  if (!buf) { buf = []; logBuffer.set(id, buf); }
+  buf.push({ message: msg, level, createdAt: new Date(ts) });
+
+  let pending = 0;
+  for (const b of logBuffer.values()) pending += b.length;
+  if (pending >= LOG_FLUSH_SIZE) void flushLogs();
+  else scheduleLogFlush();
 }
 
 // ── SSE pub/sub (runtime-only) ────────────────────────────────────────────────

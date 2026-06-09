@@ -19,6 +19,7 @@ import {
   unregisterProcess,
 } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
+import { ensureWorkspaceReady } from '@/lib/session-files';
 import type { TestResult } from '@/types/session';
 import { getSessionDir } from '@/lib/config';
 
@@ -40,14 +41,19 @@ export async function POST(
   if (!testFile) {
     return NextResponse.json({ error: 'testFile is required' }, { status: 400 });
   }
-  if (!existsSync(testFile)) {
-    return NextResponse.json({ error: 'Test file not found on disk' }, { status: 404 });
-  }
 
   const workspace = new Workspace({
     url: session.url,
     rootDir: getSessionDir(id, session.orgId),
   });
+
+  // Rebuild the suite from the DB if the disk was wiped (e.g. redeploy) so the
+  // requested file exists before we try to run it.
+  await ensureWorkspaceReady(id, workspace);
+
+  if (!existsSync(testFile)) {
+    return NextResponse.json({ error: 'Test file not found on disk' }, { status: 404 });
+  }
 
   setStatus(id, 'running');
   const fileName = path.basename(testFile);

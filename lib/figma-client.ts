@@ -56,6 +56,20 @@ interface FigmaNode {
   opacity?:             number;
 }
 
+// ── Viewport matching ─────────────────────────────────────────────────────────
+
+/**
+ * Choose the live-browser viewport width to match a Figma frame, the way a
+ * tester would resize their browser to the design's breakpoint. Clamped to a
+ * sane range so an oversized artboard or a tiny component frame doesn't produce
+ * a broken viewport.
+ */
+function frameViewportWidth(frame: FigmaNode): number {
+  const w = frame.absoluteBoundingBox?.width;
+  if (!w || !Number.isFinite(w)) return 1280; // sensible default
+  return Math.round(Math.min(1920, Math.max(360, w)));
+}
+
 // ── Colour helpers ───────────────────────────────────────────────────────────
 
 /** Convert Figma colour (0–1 floats) to CSS hex string. */
@@ -144,11 +158,15 @@ async function figmaFetch(
  *   - Wrong token pasted (starts with "figd-" for new tokens, "fig-" for legacy)
  */
 export async function validateFigmaToken(token: string): Promise<string | null> {
+  // Skip the /me round-trip if we validated this token recently (10 min) —
+  // avoids burning rate-limit quota re-checking the same token every run.
+  const lastOk = _tokenValidatedAt.get(token);
+  if (lastOk && Date.now() - lastOk < 10 * 60 * 1_000) return null;
   try {
     const res = await fetch('https://api.figma.com/v1/me', {
       headers: { 'X-Figma-Token': token },
     });
-    if (res.ok) return null; // token valid
+    if (res.ok) { _tokenValidatedAt.set(token, Date.now()); return null; } // token valid
     if (res.status === 403 || res.status === 401) {
       return 'Invalid token — make sure it has the "File content" (files:read) scope enabled.';
     }
@@ -167,10 +185,13 @@ export async function validateFigmaToken(token: string): Promise<string | null> 
 /** Brief pause between sequential Figma API calls to stay within rate limits. */
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-// ── In-session frame cache ───────────────────────────────────────────────────
-// Avoids re-fetching the same file structure multiple times within one process.
+// ── In-session caches ─────────────────────────────────────────────────────────
+// Avoid re-hitting the Figma API for the same data within one process.
 // Keyed by "{fileKey}:{token_first8}" so different tokens don't share entries.
 const _frameCache = new Map<string, { frames: FigmaNode[]; ts: number }>();
+const _nodeCache  = new Map<string, { node: FigmaNode | null; ts: number }>();
+// Tokens we've already validated (value = timestamp) so we don't spam /me.
+const _tokenValidatedAt = new Map<string, number>();
 const FRAME_CACHE_TTL_MS = 30 * 60 * 1_000; // 30 minutes
 
 /** Fetch all top-level FRAME nodes from every canvas page in the file. */
@@ -219,11 +240,15 @@ async function fetchTopLevelFrames(
   return frames;
 }
 
-/** Fetch the full deep node tree for a specific frame ID. */
+/** Fetch the full deep node tree for a specific frame ID (cached per process). */
 async function fetchFrameNodes(
   token: string, fileKey: string, nodeId: string,
   onLog?: (msg: string) => void,
 ): Promise<FigmaNode | null> {
+  const cacheKey = `${fileKey}:${nodeId}:${token.slice(0, 8)}`;
+  const cached = _nodeCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < FRAME_CACHE_TTL_MS) return cached.node;
+
   const res = await figmaFetch(
     `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}`,
     token, 3,
@@ -232,7 +257,9 @@ async function fetchFrameNodes(
   );
   if (!res.ok) return null;
   const data = await res.json() as { nodes: Record<string, { document: FigmaNode } | null> };
-  return data.nodes[nodeId]?.document ?? null;
+  const node = data.nodes[nodeId]?.document ?? null;
+  _nodeCache.set(cacheKey, { node, ts: Date.now() });
+  return node;
 }
 
 /** Request PNG export URLs for a list of node IDs. */
@@ -349,6 +376,8 @@ interface DomStyleEntry {
   selector:   string;
   tag:        string;
   role?:      string;
+  /** Landmark region this element sits in: header | nav | main | footer | body */
+  region:     string;
   text:       string;
   x: number;  y: number; w: number; h: number;
   fontSize:   string;
@@ -387,6 +416,14 @@ async function extractDomVisualSpec(page: Page): Promise<string> {
       return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
     }
 
+    function regionOf(el: Element): string {
+      if (el.closest('header,[role="banner"]')) return 'header';
+      if (el.closest('nav,[role="navigation"]')) return 'nav';
+      if (el.closest('footer,[role="contentinfo"]')) return 'footer';
+      if (el.closest('main,[role="main"]')) return 'main';
+      return 'body';
+    }
+
     function capture(el: Element, overrideTag?: string) {
       if (!isVisible(el)) return;
       const cs   = window.getComputedStyle(el);
@@ -398,6 +435,7 @@ async function extractDomVisualSpec(page: Page): Promise<string> {
         selector:     bestSelector(el),
         tag:          overrideTag ?? el.tagName.toLowerCase(),
         role:         el.getAttribute('role') ?? undefined,
+        region:       regionOf(el),
         text:         (el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 80),
         x: Math.round(rect.x),
         y: Math.round(rect.y),
@@ -447,12 +485,12 @@ async function extractDomVisualSpec(page: Page): Promise<string> {
 
   if (entries.length === 0) return '  (no elements extracted)';
 
-  return entries.map(e => {
+  const fmtEntry = (e: DomStyleEntry) => {
     const pos  = `${e.w}×${e.h} at (${e.x},${e.y})`;
     const font = `font-size:${e.fontSize} font-weight:${e.fontWeight} font-family:${e.fontFamily}`;
     const cols = `color:${e.color} bg:${e.bg}`;
     const radius = e.borderRadius !== '0px' ? ` border-radius:${e.borderRadius}` : '';
-    let line = `[${e.selector}] (${e.tag}) ${pos}  ${font}  ${cols}${radius}`;
+    let line = `  [${e.selector}] (${e.tag}) ${pos}  ${font}  ${cols}${radius}`;
     if (e.text) line += `  → "${e.text.slice(0, 60)}"`;
     if (e.isImg) {
       line += e.imgBroken ? '  ❌ BROKEN IMAGE' : '  ✅ image loaded';
@@ -460,7 +498,19 @@ async function extractDomVisualSpec(page: Page): Promise<string> {
       if (!e.imgAlt)   line += '  ⚠ no alt text';
     }
     return line;
-  }).join('\n');
+  };
+
+  // Group top-to-bottom by region so the comparison reads like a tester's scan.
+  const ORDER = ['header', 'nav', 'main', 'body', 'footer'];
+  const byRegion = new Map<string, DomStyleEntry[]>();
+  for (const e of entries) {
+    if (!byRegion.has(e.region)) byRegion.set(e.region, []);
+    byRegion.get(e.region)!.push(e);
+  }
+  const sections = ORDER.filter(r => byRegion.has(r)).map(r =>
+    `▼ REGION: ${r.toUpperCase()}\n${byRegion.get(r)!.map(fmtEntry).join('\n')}`,
+  );
+  return sections.join('\n\n');
 }
 
 // ── Image resizing helper ────────────────────────────────────────────────────
@@ -578,12 +628,13 @@ async function extractLivePageContent(page: Page): Promise<LivePageContent> {
 // ── LLM comparison ───────────────────────────────────────────────────────────
 
 const TESTER_SYSTEM_PROMPT =
-  'You are a senior QA tester doing a formal design-review of a web application.\n' +
+  'You are a senior QA tester doing a formal design-review of a web application against its Figma design.\n' +
   'You receive:\n' +
-  '  1. Screenshots — Figma design (first image) and live app (second image)\n' +
+  '  1. Screenshots — Figma design (first image) and live app (second image), captured at the SAME width\n' +
   '  2. Figma design spec — exact component properties extracted from the Figma node tree\n' +
-  '  3. Live DOM spec — computed CSS styles extracted from the live page\n\n' +
-  'Compare them like a real tester. Check every measurable property:\n' +
+  '  3. Live DOM spec — computed CSS styles, grouped by REGION (header, nav, main, body, footer)\n\n' +
+  'Work like a real tester: scan TOP-TO-BOTTOM, REGION BY REGION (header → nav → main → footer). ' +
+  'For each region compare the design against the live page and check every measurable property:\n' +
   '  • Typography: font-size, font-weight, font-family, line-height, color\n' +
   '  • Colors: background, border, text, icon colours\n' +
   '  • Spacing: padding, margin, border-radius\n' +
@@ -591,15 +642,19 @@ const TESTER_SYSTEM_PROMPT =
   '  • Content: missing labels, wrong button text, missing sections\n' +
   '  • Images:\n' +
   '      – UI images (logos, icons, illustrations): verify visual match — they must look identical\n' +
-  '      – Content images (product photos): check presence, size, object-fit — NOT actual content (Figma uses dummy images)\n' +
+  '      – Content images (product photos): check presence, size, object-fit — NOT actual content\n' +
   '      – Broken images: flag as high severity\n\n' +
+  'PLACEHOLDER RULE: Figma designs use placeholder text (lorem ipsum, "Body text", dummy labels) and ' +
+  'stock/dummy images. NEVER report a finding just because the live COPY or IMAGE CONTENT differs from a ' +
+  'placeholder — only flag placeholders for wrong STYLE (font, color, size) or missing/structural issues.\n\n' +
   'Severity guide:\n' +
-  '  high   — missing element, completely wrong colour, wrong font-weight on CTA, broken image\n' +
-  '  medium — font-size off by >2 px, wrong border-radius, border missing, wrong padding\n' +
+  '  high   — missing element/section, completely wrong colour, wrong font-weight on a CTA, broken image\n' +
+  '  medium — font-size off by >2 px, wrong border-radius, missing border, clearly wrong padding\n' +
   '  low    — position/size off by ≤4 px, very close colour shade, minor spacing\n\n' +
   'Return ONLY a valid JSON array — no prose, no markdown fences.\n' +
-  'Schema: [{ "severity": "high"|"medium"|"low", "element": string, "issue": string, "figmaValue"?: string, "liveValue"?: string }]\n' +
-  'Return [] if everything matches. Limit to the 15 most important findings.';
+  'Schema: [{ "region": "header"|"nav"|"main"|"footer"|"body", "severity": "high"|"medium"|"low", ' +
+  '"element": string, "issue": string, "figmaValue"?: string, "liveValue"?: string }]\n' +
+  'Return [] if everything matches. Report real, user-noticeable issues only — limit to the 15 most important.';
 
 async function compareWithLlm(
   frameName: string,
@@ -615,8 +670,13 @@ async function compareWithLlm(
   },
 ): Promise<FigmaDiscrepancy[]> {
 
+  // Mark obvious placeholder copy so the model checks style, not literal text.
+  const isPlaceholder = (s: string) =>
+    /lorem ipsum|dolor sit amet|body (copy|text)|placeholder|dummy|sample text|lipsum|consectetur/i.test(s);
   const fmt = (items: string[]) =>
-    items.length ? items.map(i => `• ${i}`).join('\n') : '(none)';
+    items.length
+      ? items.map(i => `• ${i}${isPlaceholder(i) ? '  (placeholder — check style only)' : ''}`).join('\n')
+      : '(none)';
 
   // ── Build text content ──────────────────────────────────────────────────
   const textSection =
@@ -768,13 +828,27 @@ async function generatePixelDiff(
   figmaPath: string, livePath: string, diffPath: string,
 ): Promise<string | null> {
   try {
-    const liveMeta = await sharp(livePath).metadata();
-    const w = liveMeta.width  ?? 1280;
-    const h = liveMeta.height ?? 800;
+    const [figMeta, liveMeta] = await Promise.all([
+      sharp(figmaPath).metadata(),
+      sharp(livePath).metadata(),
+    ]);
+    const figW = figMeta.width  ?? 0, figH = figMeta.height  ?? 0;
+    const liveW = liveMeta.width ?? 0, liveH = liveMeta.height ?? 0;
+    if (!figW || !figH || !liveW || !liveH) return null;
+
+    // Align by WIDTH, preserving each image's aspect ratio (no cover-crop / stretch).
+    // The frame and the live page are already captured at matched widths, so this
+    // keeps content lined up. We then compare over the overlapping height only —
+    // pages are often taller or shorter than the frame, and that's expected.
+    const w = Math.min(figW, liveW);
+    const scaledFigH  = Math.round(figH  * (w / figW));
+    const scaledLiveH = Math.round(liveH * (w / liveW));
+    const h = Math.min(scaledFigH, scaledLiveH);
+    if (w < 2 || h < 2) return null;
 
     const [figmaBuf, liveBuf] = await Promise.all([
-      sharp(figmaPath).resize(w, h, { fit: 'cover', position: 'top' }).raw().toBuffer(),
-      sharp(livePath).resize(w, h, { fit: 'cover', position: 'top' }).raw().toBuffer(),
+      sharp(figmaPath).resize(w, scaledFigH).extract({ left: 0, top: 0, width: w, height: h }).raw().toBuffer(),
+      sharp(livePath).resize(w, scaledLiveH).extract({ left: 0, top: 0, width: w, height: h }).raw().toBuffer(),
     ]);
 
     const figmaCh = (figmaBuf.length / (w * h)) | 0;
@@ -804,6 +878,20 @@ async function generatePixelDiff(
 
 // ── URL guessing ─────────────────────────────────────────────────────────────
 
+/** Common frame-name → path guesses, shared by guessUrl and suggestFramePath. */
+const WELL_KNOWN: Record<string, string> = {
+  home: '/', homepage: '/', landing: '/', index: '/', main: '/', page: '/',
+  login: '/login', 'log in': '/login', 'sign in': '/login', signin: '/login',
+  register: '/register', signup: '/register', 'sign up': '/register', 'create account': '/register',
+  dashboard: '/dashboard', overview: '/dashboard',
+  profile: '/profile', account: '/profile', 'my account': '/profile',
+  settings: '/settings', preferences: '/settings',
+  about: '/about', 'about us': '/about',
+  contact: '/contact', 'contact us': '/contact',
+  cart: '/cart', basket: '/cart', checkout: '/checkout',
+  inventory: '/inventory', products: '/inventory', shop: '/shop',
+};
+
 function cleanFrameName(name: string): string {
   return name
     .replace(/\b\d{3,4}w\b/gi, '')
@@ -813,6 +901,39 @@ function cleanFrameName(name: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
+}
+
+/**
+ * Suggest a URL path for a frame from its name ALONE (no crawl data) — used to
+ * pre-fill the frame→page mapping UI on the prepare page. Returns '' when there
+ * is no confident guess, so the user supplies it.
+ */
+function suggestFramePath(frameName: string): string {
+  const hint = frameName.match(/\((\/[^)]+)\)/)?.[1];
+  if (hint) return hint;
+  const cleaned = cleanFrameName(frameName);
+  if (WELL_KNOWN[cleaned]) return WELL_KNOWN[cleaned];
+  return '';
+}
+
+/**
+ * List the top-level frames in a Figma file with size + a suggested path.
+ * Used by the prepare-page mapping UI. Pure Figma API — no LLM tokens consumed.
+ */
+export async function listFigmaFrames(
+  token: string,
+  figmaFileUrl: string,
+): Promise<{ name: string; width?: number; height?: number; suggestedPath: string }[]> {
+  // No separate token validation here — fetchTopLevelFrames surfaces a clear
+  // error on a bad/rate-limited token, so we avoid an extra /me API call.
+  const fileKey = parseFigmaFileKey(figmaFileUrl);
+  const frames = await fetchTopLevelFrames(token, fileKey);
+  return frames.map(f => ({
+    name: f.name,
+    width:  f.absoluteBoundingBox?.width  ? Math.round(f.absoluteBoundingBox.width)  : undefined,
+    height: f.absoluteBoundingBox?.height ? Math.round(f.absoluteBoundingBox.height) : undefined,
+    suggestedPath: suggestFramePath(f.name),
+  }));
 }
 
 /**
@@ -870,18 +991,6 @@ function guessUrl(
   }
 
   // 4. Well-known names
-  const WELL_KNOWN: Record<string, string> = {
-    home: '/', homepage: '/', landing: '/', index: '/', main: '/', page: '/',
-    login: '/login', 'log in': '/login', 'sign in': '/login', signin: '/login',
-    register: '/register', signup: '/register', 'sign up': '/register', 'create account': '/register',
-    dashboard: '/dashboard', overview: '/dashboard',
-    profile: '/profile', account: '/profile', 'my account': '/profile',
-    settings: '/settings', preferences: '/settings',
-    about: '/about', 'about us': '/about',
-    contact: '/contact', 'contact us': '/contact',
-    cart: '/cart', basket: '/cart', checkout: '/checkout',
-    inventory: '/inventory', products: '/inventory', shop: '/shop',
-  };
   if (WELL_KNOWN[cleaned]) return { url: base + WELL_KNOWN[cleaned], confident: true };
 
   // 5. Have crawled URLs but no match → fall back to homepage rather than inventing a URL
@@ -918,6 +1027,7 @@ export async function runFigmaComparison(
   knownUrls:    string[],
   onProgress?:  (msg: string) => void,
   model?:       ChatModel,
+  frameMap?:    Record<string, string> | null,
 ): Promise<FigmaResult> {
   const log = (msg: string) => onProgress?.(msg);
 
@@ -969,7 +1079,12 @@ export async function runFigmaComparison(
 
   try {
     for (const { frame, figmaFile } of downloaded) {
-      const { url: targetUrl, confident } = guessUrl(frame.name, baseUrl, knownUrls);
+      // Prefer the user-confirmed frame→page mapping; fall back to heuristics.
+      const mapped = frameMap?.[frame.name]?.trim();
+      const { url: targetUrl, confident } = mapped
+        ? { url: mapped, confident: true }
+        : guessUrl(frame.name, baseUrl, knownUrls);
+      if (mapped) log(`  Using mapped URL for "${frame.name}": ${targetUrl}`);
       const safeName        = figmaFile.replace('.png', '');
       const screenshotFile  = `${safeName}-live.png`;
       const screenshotPath  = path.join(screenshotsDir, screenshotFile);
@@ -992,8 +1107,13 @@ export async function runFigmaComparison(
       let navigationFailed = false;
 
       try {
-        const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+        // Match the live viewport to the Figma frame's width — same as a tester
+        // resizing their browser to the design breakpoint. Height is generous;
+        // the fullPage screenshot captures everything below the fold anyway.
+        const vpWidth = frameViewportWidth(frame);
+        const context = await browser.newContext({ viewport: { width: vpWidth, height: 900 } });
         const page    = await context.newPage();
+        log(`  Matched viewport to frame width: ${vpWidth}px`);
 
         // Use domcontentloaded as fallback if networkidle times out
         try {
@@ -1008,9 +1128,11 @@ export async function runFigmaComparison(
           }
         }
 
-        await page.screenshot({ path: screenshotPath, fullPage: false });
+        // Full-page screenshot at the matched width → same "canvas" as the
+        // Figma frame, so the visual diff and vision comparison actually align.
+        await page.screenshot({ path: screenshotPath, fullPage: true });
         liveScreenshot = true;
-        log(`  ✓ Live screenshot captured`);
+        log(`  ✓ Live full-page screenshot captured`);
 
         // ── Pixel diff ─────────────────────────────────────────────────────
         log(`  Generating pixel diff…`);
@@ -1067,11 +1189,14 @@ export async function runFigmaComparison(
             if (captured > 0) log(`  ✓ Element screenshots captured for ${captured} discrepancy(ies)`);
           }
 
-          // Score: 100 minus weighted penalties
+          // Perceptual score: weight by how much a user would actually notice.
+          // High issues dominate; lows are capped so a pile of nitpicks can't
+          // tank an otherwise-faithful page.
           const high   = discrepancies.filter(d => d.severity === 'high').length;
           const medium = discrepancies.filter(d => d.severity === 'medium').length;
           const low    = discrepancies.filter(d => d.severity === 'low').length;
-          matchScore   = Math.max(0, 100 - high * 15 - medium * 8 - low * 3);
+          const lowPenalty = Math.min(low * 1.5, 12); // lows can subtract at most 12
+          matchScore   = Math.max(0, Math.round(100 - high * 12 - medium * 5 - lowPenalty));
         }
 
         await context.close();

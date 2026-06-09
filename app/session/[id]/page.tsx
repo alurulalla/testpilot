@@ -977,6 +977,7 @@ function TestFileCard({
 
 function CollapsibleVideo({ videoPath, src }: { videoPath: string; src: string }) {
   const [open, setOpen] = useState(false); // collapsed by default
+  const [missing, setMissing] = useState(false); // recording no longer on disk
   const label = videoPath.split('/').slice(-2).join('/');
 
   return (
@@ -997,8 +998,20 @@ function CollapsibleVideo({ videoPath, src }: { videoPath: string; src: string }
         }
       </button>
       {open && (
-        /* eslint-disable-next-line jsx-a11y/media-has-caption */
-        <video src={src} controls autoPlay className="w-full max-h-[480px] bg-black" />
+        missing ? (
+          <p className="px-3 py-4 text-xs text-zinc-500">
+            Recording not available — re-run this test to regenerate it.
+          </p>
+        ) : (
+          /* eslint-disable-next-line jsx-a11y/media-has-caption */
+          <video
+            src={src}
+            controls
+            autoPlay
+            onError={() => setMissing(true)}
+            className="w-full max-h-[480px] bg-black"
+          />
+        )
       )}
     </div>
   );

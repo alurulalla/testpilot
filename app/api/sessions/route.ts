@@ -19,8 +19,11 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const { org, clerkUserId } = await requireAuth();
-    const body = await req.json() as { url?: string; figmaFileUrl?: string; figmaOnly?: boolean };
-    const { url, figmaFileUrl, figmaOnly } = body;
+    const body = await req.json() as {
+      url?: string; figmaFileUrl?: string; figmaOnly?: boolean;
+      figmaFrameMap?: Record<string, string>;
+    };
+    const { url, figmaFileUrl, figmaOnly, figmaFrameMap } = body;
     if (!url) return NextResponse.json({ error: 'url is required' }, { status: 400 });
     const session = await createSession(
       url,
@@ -30,6 +33,7 @@ export async function POST(req: NextRequest) {
       figmaOnly ?? false,
       org.id,
       clerkUserId,
+      figmaFrameMap && Object.keys(figmaFrameMap).length > 0 ? figmaFrameMap : null,
     );
     return NextResponse.json(session, { status: 201 });
   } catch (err) {

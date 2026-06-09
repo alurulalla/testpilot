@@ -60,6 +60,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         knownUrls,
         (line) => addLog(id, line, 'info'),
         chatModel,
+        session.figmaFrameMap,
       );
 
       setFigmaResult(id, result);
