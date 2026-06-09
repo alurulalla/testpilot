@@ -37,13 +37,14 @@ export function DashboardNav({ orgs = [], currentOrgId }: DashboardNavProps) {
 
   return (
     <>
-      <header className="border-b border-zinc-800 px-6 py-3 flex items-center gap-3">
+      <header className="border-b border-zinc-800 px-4 sm:px-6 py-3 flex items-center gap-2 sm:gap-3">
         <Logo height={28} />
         <OrgSwitcher orgs={orgs} currentOrgId={currentOrgId} />
         <div className="flex-1" />
-        <Button size="sm" onClick={() => setOpen(true)}>
+        <Button size="sm" onClick={() => setOpen(true)} className="shrink-0">
           <Plus className="h-3.5 w-3.5" />
-          New Session
+          <span className="hidden sm:inline">New Session</span>
+          <span className="sm:hidden">New</span>
         </Button>
         <UserMenu />
       </header>

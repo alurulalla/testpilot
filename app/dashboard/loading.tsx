@@ -13,8 +13,8 @@ export default function DashboardLoading() {
       </header>
 
       <div className="flex flex-1 min-h-0">
-        {/* Sidebar skeleton */}
-        <aside className="w-56 lg:w-64 shrink-0 border-r border-zinc-800 flex flex-col">
+        {/* Sidebar skeleton — hidden on mobile (drawer) */}
+        <aside className="hidden md:flex w-64 shrink-0 border-r border-zinc-800 flex-col">
           <div className="px-3 py-2.5 border-b border-zinc-800">
             <div className="h-3 w-16 rounded bg-zinc-800 animate-pulse" />
           </div>
@@ -31,7 +31,7 @@ export default function DashboardLoading() {
 
         {/* Main content skeleton */}
         <main className="flex-1 min-w-0 overflow-hidden">
-          <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
             {/* Header skeleton */}
             <div className="space-y-2">
               <div className="h-6 w-64 rounded-lg bg-zinc-800 animate-pulse" />

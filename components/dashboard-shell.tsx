@@ -4,8 +4,8 @@ import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import {
   AlertCircle, ArrowRight, ChevronLeft, ChevronRight,
-  Clock, FileCode2, Globe, Layers3,
-  PanelLeftClose, PanelLeftOpen, User,
+  Clock, FileCode2, Globe, Layers3, Menu,
+  PanelLeftClose, PanelLeftOpen, User, X,
   Zap,
 } from 'lucide-react';
 import type { Session } from '@/types/session';
@@ -505,7 +505,14 @@ interface ShellProps {
 
 export function DashboardShell({ sessions, membersMap }: ShellProps) {
   const [selectedId, setSelectedId] = useState<string>(sessions[0]?.id ?? '');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(true); // desktop collapse
+  const [mobileOpen, setMobileOpen]   = useState(false); // mobile drawer
+
+  // Selecting a session also dismisses the mobile drawer so the detail is visible.
+  function selectSession(sid: string) {
+    setSelectedId(sid);
+    setMobileOpen(false);
+  }
 
   const selected = useMemo(
     () => sessions.find(s => s.id === selectedId) ?? sessions[0] ?? null,
@@ -534,20 +541,43 @@ export function DashboardShell({ sessions, membersMap }: ShellProps) {
   const finishedSessions = sessions.filter(s => !isActive(s.status));
 
   return (
-    <div className="flex flex-1 min-h-0">
+    <div className="flex flex-1 min-h-0 relative">
 
-      {/* ── Sidebar ── */}
-      <aside className={`shrink-0 border-r border-zinc-800 flex flex-col transition-all duration-200 ${
-        sidebarOpen ? 'w-56 lg:w-64' : 'w-12'
-      }`}>
+      {/* Mobile backdrop */}
+      {mobileOpen && (
+        <div
+          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 z-30 bg-black/60 md:hidden"
+        />
+      )}
+
+      {/* ── Sidebar — fixed drawer on mobile, inline collapsible column on desktop ── */}
+      <aside
+        className={`
+          flex flex-col border-r border-zinc-800 bg-zinc-950 z-40
+          fixed inset-y-0 left-0 w-64 transform transition-transform duration-200
+          ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
+          md:static md:translate-x-0 md:shrink-0 md:transition-[width]
+          ${sidebarOpen ? 'md:w-64' : 'md:w-12'}
+        `}
+      >
         {/* Sidebar header */}
         <div className="flex items-center justify-between px-3 py-2.5 border-b border-zinc-800 shrink-0">
-          {sidebarOpen && (
-            <span className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">Sessions</span>
+          {(sidebarOpen || mobileOpen) && (
+            <span className="text-xs font-semibold text-zinc-500 uppercase tracking-widest md:inline">Sessions</span>
           )}
+          {/* Mobile: close drawer */}
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="ml-auto p-1.5 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors md:hidden"
+            title="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          {/* Desktop: collapse/expand */}
           <button
             onClick={() => setSidebarOpen(o => !o)}
-            className="ml-auto p-1.5 rounded-md text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
+            className="ml-auto p-1.5 rounded-md text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 transition-colors hidden md:inline-flex"
             title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
           >
             {sidebarOpen
@@ -571,7 +601,7 @@ export function DashboardShell({ sessions, membersMap }: ShellProps) {
                     session={s}
                     initiator={membersMap[s.createdByUserId] ?? null}
                     selected={s.id === selectedId}
-                    onClick={() => setSelectedId(s.id)}
+                    onClick={() => selectSession(s.id)}
                   />
                 ))}
               </div>
@@ -589,7 +619,7 @@ export function DashboardShell({ sessions, membersMap }: ShellProps) {
                     session={s}
                     initiator={membersMap[s.createdByUserId] ?? null}
                     selected={s.id === selectedId}
-                    onClick={() => setSelectedId(s.id)}
+                    onClick={() => selectSession(s.id)}
                   />
                 ))}
               </div>
@@ -607,7 +637,7 @@ export function DashboardShell({ sessions, membersMap }: ShellProps) {
               return (
                 <button
                   key={s.id}
-                  onClick={() => setSelectedId(s.id)}
+                  onClick={() => selectSession(s.id)}
                   title={hostname(s.url)}
                   className={`h-2.5 w-2.5 rounded-full transition-all ${
                     isSelected ? 'ring-2 ring-violet-500 ring-offset-1 ring-offset-zinc-950' : ''
@@ -626,7 +656,19 @@ export function DashboardShell({ sessions, membersMap }: ShellProps) {
 
       {/* ── Main content ── */}
       <main className="flex-1 min-w-0 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-6 py-8">
+        {/* Mobile: button to open the sessions drawer */}
+        <div className="md:hidden flex items-center gap-2 px-4 py-2.5 border-b border-zinc-800 sticky top-0 bg-zinc-950/95 backdrop-blur z-20">
+          <button
+            onClick={() => setMobileOpen(true)}
+            className="flex items-center gap-1.5 text-sm font-medium text-zinc-300 hover:text-zinc-100"
+          >
+            <Menu className="h-4 w-4" />
+            Sessions
+            <span className="text-[11px] text-zinc-600">({sessions.length})</span>
+          </button>
+        </div>
+
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           {selected
             ? <SessionDetail session={selected} membersMap={membersMap} domainHistory={domainHistory} domainCreatedAts={domainCreatedAts} />
             : <EmptyState />
