@@ -101,7 +101,7 @@ export function UserMenu() {
           {/* Sign out */}
           <div className="border-t border-zinc-700 py-1">
             <button
-              onClick={() => signOut(() => router.push('/sign-in'))}
+              onClick={() => signOut({ redirectUrl: '/' })}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-700 hover:text-red-400 transition-colors text-left"
             >
               <LogOut className="h-3.5 w-3.5 shrink-0" />

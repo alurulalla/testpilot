@@ -1,6 +1,5 @@
 'use client';
 
-import Link from "next/link";
 import { Logo } from "@/components/logo";
 
 /** Rendered by Next.js when the Dashboard Server Component throws (e.g. DB error). */
@@ -27,12 +26,12 @@ export default function DashboardError({
           >
             Try again
           </button>
-          <Link
+          <a
             href="/sign-in"
             className="text-sm px-4 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-zinc-300 transition-colors"
           >
             Sign in again
-          </Link>
+          </a>
         </div>
       </section>
     </main>

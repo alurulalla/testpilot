@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Globe, Code2, Play, Wrench, ArrowRight, Zap, CheckCircle2 } from "lucide-react";
 import { Logo } from "@/components/logo";
 
@@ -43,18 +42,18 @@ export default function Home() {
       <header className="border-b border-zinc-800/60 px-6 py-4 flex items-center gap-4">
         <Logo height={30} />
         <div className="flex-1" />
-        <Link
+        <a
           href="/sign-in"
           className="text-sm text-zinc-400 hover:text-zinc-100 transition-colors px-3 py-1.5 rounded-lg hover:bg-zinc-800"
         >
           Sign in
-        </Link>
-        <Link
+        </a>
+        <a
           href="/sign-up"
           className="text-sm font-medium bg-violet-600 hover:bg-violet-500 text-white px-4 py-1.5 rounded-lg transition-colors"
         >
           Get Started
-        </Link>
+        </a>
       </header>
 
       {/* Hero */}
@@ -76,18 +75,18 @@ export default function Home() {
 
         {/* CTAs */}
         <div className="flex flex-col sm:flex-row items-center gap-4 mb-16">
-          <Link
+          <a
             href="/sign-up"
             className="flex items-center gap-2 px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition-colors shadow-lg shadow-violet-900/30"
           >
             Get Started Free <ArrowRight className="h-4 w-4" />
-          </Link>
-          <Link
+          </a>
+          <a
             href="/sign-in"
             className="flex items-center gap-2 px-6 py-3 rounded-xl border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-zinc-100 font-medium text-sm transition-colors"
           >
             Sign In
-          </Link>
+          </a>
         </div>
 
         {/* Bullet points */}
