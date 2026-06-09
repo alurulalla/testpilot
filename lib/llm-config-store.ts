@@ -1,72 +1,14 @@
 /**
- * LLM config store — persists the chosen provider & model (non-secret).
+ * LLM config store — resolves the provider/model/key the AI pipeline should use.
  *
- * Storage: <cwd>/.testpilot/llm-config.json
- *
- * API keys are NOT stored here and are NEVER read from environment variables —
- * they live in the per-organisation OrgApiKey table and are merged in by
- * getOrgLlmConfig(). This file only holds the provider/model/baseUrl selection.
- *
- * The config is read fresh on every request so changes take effect
- * immediately without a server restart.
+ * Provider & model are per-organisation (Organization.llmProvider/llmModel/…).
+ * API keys live in the per-organisation OrgApiKey table and are NEVER read from
+ * environment variables. Nothing here is global or env-sourced.
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import path from 'path';
 import type { LlmConfig } from './pilot/model-factory';
 import { DEFAULT_LLM_CONFIG } from './pilot/model-factory';
 import { getOrgKeys } from './org-keys';
-
-const CONFIG_DIR = path.join(process.cwd(), '.testpilot');
-
-const CONFIG_FILE = path.join(CONFIG_DIR, 'llm-config.json');
-
-/** Read the stored provider/model selection, falling back to the default. */
-export function getLlmConfig(): LlmConfig {
-  try {
-    if (!existsSync(CONFIG_FILE)) return { ...DEFAULT_LLM_CONFIG };
-    const raw = readFileSync(CONFIG_FILE, 'utf8');
-    const parsed = JSON.parse(raw) as Partial<LlmConfig>;
-    return {
-      provider: parsed.provider ?? DEFAULT_LLM_CONFIG.provider,
-      model:    parsed.model    ?? DEFAULT_LLM_CONFIG.model,
-      // apiKey intentionally omitted — keys come only from the org store.
-      baseUrl:  parsed.baseUrl  ?? undefined,
-    };
-  } catch {
-    return { ...DEFAULT_LLM_CONFIG };
-  }
-}
-
-/**
- * Persist an LLM config.
- * Silently no-ops if the filesystem is read-only (should not happen — we use
- * /tmp on Vercel — but kept as a safety net for unexpected environments).
- */
-export function saveLlmConfig(config: LlmConfig): void {
-  try {
-    mkdirSync(CONFIG_DIR, { recursive: true });
-    writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
-  } catch (err: unknown) {
-    const code = (err as NodeJS.ErrnoException).code;
-    // EROFS = read-only filesystem, EACCES = permission denied — not a bug, skip silently.
-    if (code === 'EROFS' || code === 'EACCES') return;
-    throw err;
-  }
-}
-
-/**
- * Return the stored config but with the apiKey masked for safe API responses.
- * The last 4 chars are shown so the user can identify which key is stored.
- */
-export function getMaskedLlmConfig(): LlmConfig & { apiKeyMasked?: string } {
-  const cfg = getLlmConfig();
-  const { apiKey, ...rest } = cfg;
-  if (!apiKey) return rest;
-  const masked = apiKey.length > 4
-    ? `${'*'.repeat(apiKey.length - 4)}${apiKey.slice(-4)}`
-    : '****';
-  return { ...rest, apiKey: undefined, apiKeyMasked: masked };
-}
+import { prisma } from './prisma';
 
 // ── Org-aware helpers ─────────────────────────────────────────────────────────
 
@@ -81,22 +23,57 @@ const PROVIDER_ENV_VAR: Record<string, string> = {
   openrouter: 'OPENROUTER_API_KEY',
 };
 
+/** Provider/model/baseUrl chosen by an organisation (no API key). */
+export interface OrgLlmSettings {
+  provider: string;
+  model: string;
+  baseUrl?: string;
+}
+
 /**
- * Provider/model selection (from llm-config.json) merged with the org's API key.
+ * Read an organisation's provider/model selection from the Organization row,
+ * falling back to the app default when the org hasn't chosen one yet.
+ */
+export async function getOrgLlmSettings(orgId: string): Promise<OrgLlmSettings> {
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { llmProvider: true, llmModel: true, llmBaseUrl: true },
+  });
+  return {
+    provider: org?.llmProvider ?? DEFAULT_LLM_CONFIG.provider,
+    model:    org?.llmModel    ?? DEFAULT_LLM_CONFIG.model,
+    baseUrl:  org?.llmBaseUrl  ?? undefined,
+  };
+}
+
+/** Persist an organisation's provider/model selection. */
+export async function saveOrgLlmSettings(orgId: string, s: OrgLlmSettings): Promise<void> {
+  await prisma.organization.update({
+    where: { id: orgId },
+    data: {
+      llmProvider: s.provider,
+      llmModel:    s.model,
+      llmBaseUrl:  s.baseUrl ?? null,
+    },
+  });
+}
+
+/**
+ * The org's provider/model selection merged with the org's API key.
  *
  * The API key comes EXCLUSIVELY from the org-level OrgApiKey table — never from
- * the config file and never from environment variables. If the org hasn't saved
+ * a config file and never from environment variables. If the org hasn't saved
  * a key for the active provider, apiKey is undefined and the model call fails
  * with a message pointing the user at Settings → AI → API Keys.
  *
- * Call this instead of getLlmConfig() in AI pipeline routes.
+ * Call this in AI pipeline routes.
  */
 export async function getOrgLlmConfig(orgId: string): Promise<LlmConfig> {
-  const base = getLlmConfig();
+  const settings = await getOrgLlmSettings(orgId);
   const orgKeys = await getOrgKeys(orgId);
-  const envVar = PROVIDER_ENV_VAR[base.provider];
+  const envVar = PROVIDER_ENV_VAR[settings.provider];
   const orgKey = envVar ? orgKeys[envVar] : undefined;
-  return { ...base, apiKey: orgKey };
+  return { ...settings, apiKey: orgKey };
 }
 
 /**

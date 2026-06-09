@@ -55,7 +55,7 @@ export function Logo({
         height={height}
         fill={PURPLE}
         aria-label="TestPilot"
-        className={className}
+        className={`block shrink-0 ${className}`}
       >
         <BrandPaths />
       </svg>
@@ -63,48 +63,46 @@ export function Logo({
   }
 
   // ── Full logo: icon + wordmark ──────────────────────────────────────────
-  // We embed the icon by scaling from its native 1103×976 viewBox into a
-  // region of 'height' pixels tall (width = iconW).  The wordmark sits to
-  // the right with a small gap.
+  // The icon and the wordmark are laid out with flexbox (items-center), which
+  // vertically centres them reliably across browsers — no fragile SVG
+  // baseline math. The icon is cropped to its tight content bounding box so
+  // the visible mark fills the full height and sits level with the text.
   //
-  // We use a fixed-height outer viewBox of 100 units; icon occupies
-  // 0..iconUnit_W × 0..100 where iconUnit_W = 100 * (1103/976).
-  const iconUnitW = Math.round(100 * (1103 / 976)); // ≈ 113
-  const gap       = 10;
-  const fontSize  = 72;        // units inside the 100-tall viewBox
-  const textX     = iconUnitW + gap;
-  // "TestPilot" width estimate at 72px bold sans-serif ≈ 9 chars × 0.57 × 72 ≈ 370
-  const totalW    = textX + 370;
+  // Content bbox of the three brand paths within the native 1103×976 artwork:
+  //   x: 268..835 (w 567)   y: 186..818 (h 632)
+  const MARK_VB = { x: 268, y: 186, w: 567, h: 632 };
+  const markW   = Math.round(height * (MARK_VB.w / MARK_VB.h));
 
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox={`0 0 ${totalW} 100`}
-      height={height}
-      fill="none"
+    <span
+      className={`inline-flex items-center shrink-0 ${className}`}
+      style={{ lineHeight: 1 }}
       aria-label="TestPilot"
-      className={className}
-      style={{ width: 'auto' }}
     >
-      {/* Icon — scale the 1103×976 artwork into a 100-unit-tall square area */}
-      <g transform={`scale(${100 / 976})`}>
-        <g fill={PURPLE}>
-          <BrandPaths />
-        </g>
-      </g>
-
-      {/* Wordmark */}
-      <text
-        x={textX}
-        y={50}
-        fontFamily="'Segoe UI','Inter','SF Pro Display',system-ui,sans-serif"
-        fontSize={fontSize}
-        fontWeight={800}
-        dominantBaseline="middle"
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox={`${MARK_VB.x} ${MARK_VB.y} ${MARK_VB.w} ${MARK_VB.h}`}
+        width={markW}
+        height={height}
+        fill={PURPLE}
+        className="block shrink-0"
+        aria-hidden="true"
       >
-        <tspan fill={testColor}>Test</tspan>
-        <tspan fill={PURPLE}>Pilot</tspan>
-      </text>
-    </svg>
+        <BrandPaths />
+      </svg>
+      <span
+        style={{
+          fontFamily: "'Segoe UI','Inter','SF Pro Display',system-ui,sans-serif",
+          fontSize:   Math.round(height * 0.62),
+          fontWeight: 800,
+          letterSpacing: '-0.01em',
+          marginLeft: Math.round(height * 0.2),
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <span style={{ color: testColor }}>Test</span>
+        <span style={{ color: PURPLE }}>Pilot</span>
+      </span>
+    </span>
   );
 }

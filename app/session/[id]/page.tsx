@@ -46,6 +46,7 @@ import { SiteMapViewer } from "@/components/site-map-viewer";
 import { StatsBar } from "@/components/stats-bar";
 import { Logo } from "@/components/logo";
 import { UserMenu } from "@/components/user-menu";
+import { ModelStatusBadge } from "@/components/model-status-badge";
 
 type PhaseState = "pending" | "running" | "done" | "failed";
 
@@ -1537,7 +1538,7 @@ export default function SessionPage() {
         >
           <ArrowLeft className="h-4 w-4" />
         </Link>
-        <Logo height={26} className="shrink-0" />
+        <Logo height={30} />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-zinc-100 truncate">
             {session.url}
@@ -1591,6 +1592,7 @@ export default function SessionPage() {
             polling
           </span>
         )}
+        <ModelStatusBadge />
         <UserMenu />
       </header>
 

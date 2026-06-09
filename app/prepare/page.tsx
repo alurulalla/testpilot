@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/logo';
 import { UserMenu } from '@/components/user-menu';
+import { ModelStatusBadge } from '@/components/model-status-badge';
 import type { ContextField } from '@/lib/url-context-store';
 import type { DetectedFormGroup, SignInPresenceInfo } from '@/lib/detect-form-fields';
 import type { Session, ImportedUseCase } from '@/types/session';
@@ -484,7 +485,7 @@ function PrepareContent() {
           <ArrowLeft className="h-4 w-4" />
         </button>
 
-        <Logo height={26} className="shrink-0" />
+        <Logo height={30} />
 
         {/* URL display / editor */}
         <div className="flex-1 min-w-0">
@@ -535,6 +536,7 @@ function PrepareContent() {
             : <Zap className="h-3.5 w-3.5" />}
           {launching ? 'Launching…' : 'Run TestPilot'}
         </Button>
+        <ModelStatusBadge />
         <UserMenu />
       </header>
 

@@ -24,6 +24,12 @@ model Organization {
   createdAt      DateTime @default(now())
   createdByAdmin String   // email of super admin who provisioned this org
 
+  // Per-org LLM selection (provider/model/baseUrl). API keys live in OrgApiKey.
+  // Null → fall back to the app default (DEFAULT_LLM_CONFIG).
+  llmProvider String?
+  llmModel    String?
+  llmBaseUrl  String?
+
   members  OrgMember[]
   apiKeys  OrgApiKey[]
   sessions Session[]

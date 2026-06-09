@@ -8,9 +8,10 @@
  *          { ok: false, error: string } on failure (auth error, bad model, etc.)
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getLlmConfig } from '@/lib/llm-config-store';
+import { getOrgLlmConfig } from '@/lib/llm-config-store';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
 import type { LlmConfig } from '@/lib/pilot/model-factory';
+import { requireAuth, authErrorResponse } from '@/lib/auth';
 
 /**
  * Strip API keys from error messages before sending to the client.
@@ -33,9 +34,16 @@ function sanitizeErrorMessage(msg: string, apiKey?: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  // Always use the stored API key — never accept it from the request body.
+  // Always use the org's stored API key — never accept it from the request body.
   // The UI sends only provider/model/baseUrl so the key is never transmitted.
-  const stored = getLlmConfig();
+  let stored: LlmConfig;
+  try {
+    const { org } = await requireAuth();
+    stored = await getOrgLlmConfig(org.id);
+  } catch (err) {
+    return authErrorResponse(err) ?? NextResponse.json({ error: 'Server error' }, { status: 500 });
+  }
+
   let config: LlmConfig;
   try {
     const body = await req.json().catch(() => null);

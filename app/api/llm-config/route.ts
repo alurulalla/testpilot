@@ -1,51 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getLlmConfig, saveLlmConfig, getMaskedLlmConfig } from '@/lib/llm-config-store';
-import type { LlmConfig } from '@/lib/pilot/model-factory';
+import { getOrgLlmSettings, saveOrgLlmSettings } from '@/lib/llm-config-store';
 import { getProvider } from '@/lib/pilot/providers';
+import { requireAuth, requireOrgAdmin, authErrorResponse } from '@/lib/auth';
 
-/** GET /api/llm-config — return current config (API key masked). */
+/** GET /api/llm-config — the current org's provider/model selection. */
 export async function GET() {
-  const cfg = getMaskedLlmConfig();
-  return NextResponse.json(cfg);
+  try {
+    const { org } = await requireAuth();
+    const settings = await getOrgLlmSettings(org.id);
+    return NextResponse.json(settings);
+  } catch (err) {
+    return authErrorResponse(err) ?? NextResponse.json({ error: 'Server error' }, { status: 500 });
+  }
 }
 
-/** POST /api/llm-config — save a new config. */
+/** POST /api/llm-config — save the org's provider/model selection (admin only). */
 export async function POST(req: NextRequest) {
-  let body: Partial<LlmConfig>;
+  let orgCtx: Awaited<ReturnType<typeof requireOrgAdmin>>;
+  try {
+    orgCtx = await requireOrgAdmin();
+  } catch (err) {
+    return authErrorResponse(err) ?? NextResponse.json({ error: 'Server error' }, { status: 500 });
+  }
+
+  let body: { provider?: string; model?: string; baseUrl?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const { provider, model, apiKey, baseUrl } = body;
-
+  const { provider, model, baseUrl } = body;
   if (!provider || typeof provider !== 'string') {
     return NextResponse.json({ error: 'provider is required' }, { status: 400 });
   }
   if (!model || typeof model !== 'string') {
     return NextResponse.json({ error: 'model is required' }, { status: 400 });
   }
-
-  const providerDef = getProvider(provider);
-  if (!providerDef) {
+  if (!getProvider(provider)) {
     return NextResponse.json({ error: `Unknown provider: ${provider}` }, { status: 400 });
   }
 
-  // Preserve the existing stored key if the client didn't send a new one
-  // (the UI sends an empty string when no key was typed)
-  const existing = getLlmConfig();
-  const resolvedKey = (apiKey && apiKey.trim())
-    ? apiKey.trim()
-    : existing.apiKey;
-
-  const newConfig: LlmConfig = {
+  await saveOrgLlmSettings(orgCtx.org.id, {
     provider,
     model,
-    apiKey:  resolvedKey,
     baseUrl: (baseUrl && baseUrl.trim()) ? baseUrl.trim() : undefined,
-  };
+  });
 
-  saveLlmConfig(newConfig);
   return NextResponse.json({ ok: true });
 }

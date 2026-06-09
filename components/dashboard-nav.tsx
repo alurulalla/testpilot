@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Plus, Globe, Loader2, X, ChevronsUpDown, Check, Building2 } from 'lucide-react';
 import { Logo } from '@/components/logo';
 import { UserMenu } from '@/components/user-menu';
+import { ModelStatusBadge } from '@/components/model-status-badge';
 import { Button } from '@/components/ui/button';
 
 interface OrgOption { id: string; name: string }
@@ -38,13 +39,13 @@ export function DashboardNav({ orgs = [], currentOrgId }: DashboardNavProps) {
   return (
     <>
       <header className="border-b border-zinc-800 px-4 sm:px-6 py-3 flex items-center gap-2 sm:gap-3">
-        <Logo height={28} />
+        <Logo height={30} />
         <OrgSwitcher orgs={orgs} currentOrgId={currentOrgId} />
         <div className="flex-1" />
+        <ModelStatusBadge />
         <Button size="sm" onClick={() => setOpen(true)} className="shrink-0">
           <Plus className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">New Session</span>
-          <span className="sm:hidden">New</span>
         </Button>
         <UserMenu />
       </header>
@@ -113,7 +114,6 @@ function OrgSwitcher({ orgs, currentOrgId }: { orgs: OrgOption[]; currentOrgId?:
   const [open, setOpen]       = useState(false);
   const [switching, setSwitching] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
-  const router = useRouter();
 
   const current = orgs.find(o => o.id === currentOrgId) ?? orgs[0];
 
@@ -138,7 +138,11 @@ function OrgSwitcher({ orgs, currentOrgId }: { orgs: OrgOption[]; currentOrgId?:
       });
       if (res.ok) {
         setOpen(false);
-        router.refresh();
+        // Full reload: every org-scoped surface (sessions, members, model badge,
+        // API keys) re-derives from the new tp_org cookie in one consistent pass.
+        // router.refresh() would only re-run server components, leaving client
+        // fetches like the model badge showing the previous org.
+        window.location.reload();
       }
     } finally {
       setSwitching(null);
@@ -150,22 +154,22 @@ function OrgSwitcher({ orgs, currentOrgId }: { orgs: OrgOption[]; currentOrgId?:
   // Single org — show the name as a static label, no dropdown.
   if (orgs.length === 1) {
     return (
-      <span className="flex items-center gap-1.5 text-sm text-zinc-400 select-none">
-        <Building2 className="h-3.5 w-3.5 text-zinc-600" />
-        {current?.name}
+      <span className="flex items-center gap-1.5 text-sm text-zinc-400 select-none min-w-0">
+        <Building2 className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
+        <span className="truncate max-w-[120px] sm:max-w-[200px]">{current?.name}</span>
       </span>
     );
   }
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative min-w-0">
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800 transition-colors min-w-0 max-w-full"
       >
-        <Building2 className="h-3.5 w-3.5 text-zinc-500" />
-        <span className="max-w-[160px] truncate">{current?.name}</span>
-        <ChevronsUpDown className="h-3.5 w-3.5 text-zinc-500" />
+        <Building2 className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
+        <span className="truncate max-w-[90px] sm:max-w-[160px]">{current?.name}</span>
+        <ChevronsUpDown className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
       </button>
 
       {open && (

@@ -139,6 +139,14 @@ export default function SettingsPage() {
 
   const isAdmin = currentMember?.role === 'ORG_ADMIN';
 
+  // ── Open the tab requested via ?tab=… (e.g. the model badge links to ?tab=ai)
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    if (t && ['members', 'ai', 'app', 'org'].includes(t)) {
+      setTab(t as 'members' | 'ai' | 'app' | 'org');
+    }
+  }, []);
+
   // ── Load org info ──────────────────────────────────────────────────────────
   useEffect(() => {
     fetch('/api/settings/org')
@@ -576,7 +584,8 @@ export default function SettingsPage() {
                         setModelBaseUrl(p.defaultBaseUrl ?? '');
                         setModelCustomModel('');
                       }}
-                      className="w-full h-9 px-3 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm"
+                      disabled={!isAdmin}
+                      className="w-full h-9 px-3 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       {PROVIDERS.map(p => (
                         <option key={p.id} value={p.id}>{p.name}{p.local ? ' (local)' : ''}</option>
@@ -597,7 +606,8 @@ export default function SettingsPage() {
                             setModelCustomModel('');
                           }
                         }}
-                        className="w-full h-9 px-3 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm"
+                        disabled={!isAdmin}
+                        className="w-full h-9 px-3 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         {prov.models.map(m => <option key={m} value={m}>{m}</option>)}
                         {prov.customModel && <option value="__custom__">Custom…</option>}
@@ -640,15 +650,21 @@ export default function SettingsPage() {
                   </div>
                 )}
 
-                <div className="flex items-center gap-3 pt-1">
-                  <Button size="sm" onClick={saveModelConfig} disabled={modelSaving}>
-                    {modelSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                    {modelSaving ? 'Saving…' : 'Save'}
-                  </Button>
-                  {modelMsg && (
-                    <span className={`text-xs ${modelMsg === 'Saved' ? 'text-emerald-400' : 'text-red-400'}`}>{modelMsg}</span>
-                  )}
-                </div>
+                {isAdmin ? (
+                  <div className="flex items-center gap-3 pt-1">
+                    <Button size="sm" onClick={saveModelConfig} disabled={modelSaving}>
+                      {modelSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                      {modelSaving ? 'Saving…' : 'Save'}
+                    </Button>
+                    {modelMsg && (
+                      <span className={`text-xs ${modelMsg === 'Saved' ? 'text-emerald-400' : 'text-red-400'}`}>{modelMsg}</span>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-zinc-600 pt-1">
+                    The provider &amp; model are managed by your organisation admin.
+                  </p>
+                )}
               </div>
 
               {/* API Keys — admin only */}

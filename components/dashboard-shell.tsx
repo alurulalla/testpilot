@@ -76,15 +76,15 @@ function DonutChart({ passed, failed, errors }: DonutProps) {
 
   return (
     <svg viewBox="0 0 104 104" className="w-24 h-24 shrink-0">
-      {/* Track — light in light mode, dark in dark mode */}
+      {/* Track — zinc-800 auto-inverts (subtle in both modes) */}
       <circle cx={cx} cy={cy} r={r} fill="none" strokeWidth={11}
-        className="stroke-zinc-200 dark:stroke-zinc-800" />
+        className="stroke-zinc-800" />
       {passed > 0 && arc('#10b981', pL, 0)}
       {failed > 0 && arc('#ef4444', fL, pL)}
       {errors > 0 && arc('#f59e0b', eL, pL + fL)}
-      {/* Centre label — dark in light mode, light in dark mode */}
+      {/* Centre label — zinc-100 auto-inverts: near-white (dark) / near-black (light) */}
       <text x={cx} y={cy - 4} textAnchor="middle" fontSize={17} fontWeight="bold"
-        className="fill-zinc-900 dark:fill-zinc-100">
+        className="fill-zinc-100">
         {passRate}%
       </text>
       <text x={cx} y={cy + 11} textAnchor="middle" fontSize={9}
@@ -423,7 +423,7 @@ function SessionDetail({ session: s, membersMap, domainHistory, domainCreatedAts
           <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
           <div className="min-w-0 space-y-1">
             <p className="text-sm font-semibold text-red-500">Session failed</p>
-            <p className="text-xs text-zinc-600 dark:text-zinc-300 font-mono leading-relaxed break-all">{s.error}</p>
+            <p className="text-xs text-zinc-300 font-mono leading-relaxed break-all">{s.error}</p>
           </div>
         </div>
       )}
