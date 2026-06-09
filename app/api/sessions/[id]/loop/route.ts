@@ -22,8 +22,9 @@ import { performPreLogin } from '@/lib/pre-login';
 import { runAuthenticatedSiteExplorer } from '@/lib/authenticated-site-explorer';
 import { writeContextMd } from '@/lib/build-context-md';
 import { compareCrawlToDocs } from '@/lib/compare-crawl-to-docs';
-import { runNavClickExplorer } from '@/lib/pilot/nav-click-explorer';
+import { runNavClickExplorer, runBroadClickExplorer } from '@/lib/pilot/nav-click-explorer';
 import { discoverSelectors } from '@/lib/pilot/discover-selectors';
+import { synthesizeFeatures } from '@/lib/synthesize-features';
 import { writeFileSync, existsSync, readFileSync } from 'fs';
 import path from 'path';
 
@@ -197,6 +198,40 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       addLog(id, `Found ${siteMap.total_pages} page(s).`, 'success');
       if (stopped('explore')) return;
 
+      // Phase 1.4: Broad click discovery (doc-free). When the plain link crawl
+      // found suspiciously few pages, the site is likely a button-driven SPA —
+      // click through nav/menu/tab elements to reveal pages that have no <a href>.
+      {
+        const thinThreshold = Math.max(3, Math.ceil(crawlMaxPages * 0.3));
+        if (siteMap.total_pages <= thinThreshold) {
+          addLog(id, `Phase 1.4: Only ${siteMap.total_pages} page(s) from links — trying button/menu navigation…`, 'info');
+          try {
+            const broad = await runBroadClickExplorer({
+              startUrl: exploreStartUrl,
+              authFile: authFile ?? undefined,
+              existingSiteMap: siteMap,
+              onProgress: (line) => addLog(id, line, 'info'),
+            });
+            if (broad.discoveredPages.length > 0) {
+              const merged: SiteMap = {
+                ...siteMap,
+                pages:       [...siteMap.pages, ...(broad.discoveredPages as unknown as SiteMap['pages'])],
+                total_pages: siteMap.total_pages + broad.discoveredPages.length,
+              };
+              siteMap = merged;
+              setSiteMap(id, merged as unknown as SiteMap);
+              workspace.writeSiteMap(merged);
+              addLog(id, `  ✓ Click discovery added ${broad.discoveredPages.length} page(s).`, 'success');
+            } else {
+              addLog(id, '  Phase 1.4: no additional pages found via clicking.', 'info');
+            }
+          } catch (e) {
+            addLog(id, `  Phase 1.4 error (non-fatal): ${e instanceof Error ? e.message : String(e)}`, 'info');
+          }
+          if (stopped('click discovery')) return;
+        }
+      }
+
       // Phase 1.8: Figma design verification — fire-and-forget in parallel.
       {
         const figmaSession = getCachedSession(id);
@@ -341,6 +376,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
 
       if (stopped('selector discovery')) return;
+
+      // Phase 1.9: Feature synthesis (ALWAYS) — turn the crawl into a structured
+      // list of user-facing features/flows. Merges with any user-defined flows.
+      // Output (features.json) is injected into generation as a coverage checklist.
+      addLog(id, 'Phase 1.9: Synthesizing features from crawl…', 'info');
+      try {
+        const sessForFeat = getCachedSession(id);
+        const docFeatureNames = (sessForFeat?.userFlows ?? []).map(f => f.title).filter(Boolean);
+        const features = await synthesizeFeatures({
+          siteMap: siteMap as unknown as Parameters<typeof synthesizeFeatures>[0]['siteMap'],
+          model: chatModel,
+          docFeatureNames,
+          onProgress: (line) => addLog(id, line, 'info'),
+        });
+        if (features.length > 0) {
+          workspace.writeFeatures(features);
+          addLog(id, `  ✓ Identified ${features.length} feature(s)/flow(s).`, 'success');
+        } else {
+          addLog(id, '  Phase 1.9: no features synthesized (crawl may be too thin).', 'info');
+        }
+      } catch (e) {
+        addLog(id, `  Phase 1.9 error (non-fatal): ${e instanceof Error ? e.message : String(e)}`, 'info');
+      }
+      if (stopped('feature synthesis')) return;
 
       // Phase 2: Generate
       setStatus(id, 'generating');

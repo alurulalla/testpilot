@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import type { ChatModel, ChatMessage } from './types';
 import type { Workspace } from './workspace';
+import { renderFeatureChecklist, type DiscoveredFeature } from '@/lib/synthesize-features';
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -122,6 +123,7 @@ interface LoginInfo {
   loginUrl: string;
   usernameSelector: string;
   submitButtonText: string;
+  usernameEnvVar: string;
   usernameValue: string;
   passwordEnvVar: string;
   passwordValue: string;
@@ -143,7 +145,7 @@ export async function login(page: Page): Promise<void> {
   await page.waitForLoadState('domcontentloaded');
   // Username — exact selector captured during form detection
   await page.locator(${JSON.stringify(loginInfo.usernameSelector)}).first().fill(
-    process.env.TESTPILOT_LOGIN_USERNAME ?? ${JSON.stringify(loginInfo.usernameValue)},
+    process.env.${loginInfo.usernameEnvVar} ?? ${JSON.stringify(loginInfo.usernameValue)},
   );
   // Password
   await page.locator('input[type="password"]').first().fill(
@@ -154,9 +156,10 @@ export async function login(page: Page): Promise<void> {
     .or(page.getByRole('button', { name: ${JSON.stringify(loginInfo.submitButtonText)} }))
     .first()
     .click();
-  // Wait for redirect away from login page
-  await page.waitForURL(url => !url.includes(new URL(LOGIN_URL).pathname), { timeout: 15_000 })
-    .catch(() => {}); // non-fatal: some SPAs don't change URL on login
+  // Wait for the post-login navigation/render to settle. Comparing URL shapes
+  // is fragile (the predicate receives a URL object), so just wait for the
+  // network to go idle — works for both full-page redirects and SPAs.
+  await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
 }
 `
     : '';
@@ -340,19 +343,17 @@ function pageRequiresAuth(elements: Record<string, unknown>, pageUrl?: string): 
   return false;
 }
 
-function buildPageTestPrompt(page: PageData, baseUrl: string, hasProductDoc: boolean): string {
-  // Interactives table: the definitive locator reference (role + exact name)
+function buildPageTestPrompt(
+  page: PageData,
+  baseUrl: string,
+  hasProductDoc: boolean,
+  featureChecklist = '',
+): string {
+  // Interactives table: the definitive locator reference (role + exact name).
+  // This is the single source of selectors we send — the accessibility tree is
+  // intentionally NOT included because it largely duplicates this table's
+  // role+name data at ~4x the token cost.
   const interactivesTable = formatInteractives(page.elements);
-
-  // Full accessibility tree — this is the most reliable selector source.
-  // Give it generous budget; it is YAML so compresses well.
-  const a11yTree = page.accessibility_tree
-    ? `\n── Accessibility tree (YAML snapshot) ──\n${
-        typeof page.accessibility_tree === 'string'
-          ? page.accessibility_tree.slice(0, 8_000)
-          : JSON.stringify(page.accessibility_tree, null, 2).slice(0, 8_000)
-      }\n`
-    : '';
 
   // Supporting element details (inputs, headings, forms — keep budget modest)
   const supportJson = JSON.stringify(
@@ -385,7 +386,7 @@ function buildPageTestPrompt(page: PageData, baseUrl: string, hasProductDoc: boo
   return (
     `⛔ CRITICAL — ANTI-HALLUCINATION RULE:\n` +
     `You MUST ONLY write tests for elements and text that appear in the INTERACTIVE ELEMENTS ` +
-    `table or accessibility tree below. IGNORE any knowledge of this site from your training ` +
+    `table below. IGNORE any knowledge of this site from your training ` +
     `data. DO NOT invent headings, link text, page sections, statistics, or any other content. ` +
     `If the crawl data shows limited content, write fewer tests — never fabricate expected values.\n\n` +
     (authRule ? authRule + '\n' : '') +
@@ -394,8 +395,8 @@ function buildPageTestPrompt(page: PageData, baseUrl: string, hasProductDoc: boo
     `Title: ${page.title}\n` +
     `Base URL: ${baseUrl}\n\n` +
     interactivesTable +
-    a11yTree +
-    `── Supporting element details ──\n${supportJson}\n\n` +
+    `── Supporting element details ──\n${supportJson}\n` +
+    featureChecklist + `\n\n` +
     `LOCATOR RULES (strictly enforced):\n` +
     `- LINK RULE: if a row shows  href="..."  ← prefer: locator(...)  → use that CSS locator\n` +
     `  Example:  link "Employees"  href="/Employee"  → page.locator('a[href="/Employee"]')\n` +
@@ -663,17 +664,35 @@ function readLoginInfo(workspaceDir: string): LoginInfo | undefined {
     const loginUrl = get('TESTPILOT_LOGIN_URL');
     if (!loginUrl) return undefined;
 
-    // Find the username env var name (TESTPILOT_LOGIN_USERNAME or similar)
-    const usernameLine = lines.find(l => /^TESTPILOT_.*USERNAME=/i.test(l));
-    const usernameValue = usernameLine ? usernameLine.split('=').slice(1).join('=').trim() : '';
-    const passwordLine  = lines.find(l => /^TESTPILOT_.*PASSWORD=/i.test(l));
-    const passwordEnvVar  = passwordLine ? passwordLine.split('=')[0] : 'TESTPILOT_LOGIN_PASSWORD';
-    const passwordValue   = passwordLine ? passwordLine.split('=').slice(1).join('=').trim() : '';
+    // Parse "KEY=value" lines into [key, value] pairs.
+    const pairs = lines
+      .map(l => {
+        const eq = l.indexOf('=');
+        return eq === -1 ? null : [l.slice(0, eq).trim(), l.slice(eq + 1).trim()] as const;
+      })
+      .filter((p): p is readonly [string, string] => p !== null);
+
+    // Find the username credential var. The field key varies by site
+    // (user_name → TESTPILOT_USER_NAME, username → TESTPILOT_USERNAME,
+    //  email → TESTPILOT_EMAIL, …), so match broadly on USER/EMAIL while
+    // excluding the helper vars (URL, SELECTOR, SUBMIT, PASSWORD).
+    const usernamePair = pairs.find(([k]) =>
+      /^TESTPILOT_/i.test(k) &&
+      !/SELECTOR|SUBMIT|URL|PASSWORD/i.test(k) &&
+      /USER|EMAIL|LOGIN_ID|ACCOUNT/i.test(k),
+    );
+    const usernameEnvVar = usernamePair?.[0] ?? 'TESTPILOT_USER_NAME';
+    const usernameValue  = usernamePair?.[1] ?? '';
+
+    const passwordPair = pairs.find(([k]) => /^TESTPILOT_.*PASSWORD/i.test(k));
+    const passwordEnvVar = passwordPair?.[0] ?? 'TESTPILOT_PASSWORD';
+    const passwordValue  = passwordPair?.[1] ?? '';
 
     return {
       loginUrl,
       usernameSelector: get('TESTPILOT_LOGIN_USERNAME_SELECTOR') || 'input[type="text"], input[type="email"]',
       submitButtonText: get('TESTPILOT_LOGIN_SUBMIT_TEXT') || 'Log in',
+      usernameEnvVar,
       usernameValue,
       passwordEnvVar,
       passwordValue,
@@ -717,6 +736,17 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
   const systemPrompt = buildSystemPrompt(contextMd);
   const writtenFiles: string[] = [fixturesPath];
 
+  // Discovered features (from the synthesis step) → injected as a coverage
+  // checklist so per-page generation is aware of the broader capabilities/flows.
+  let featureChecklist = '';
+  try {
+    const feats = workspace.readFeatures();
+    if (Array.isArray(feats) && feats.length > 0) {
+      featureChecklist = renderFeatureChecklist(feats as DiscoveredFeature[]);
+      console.log(`  Loaded ${feats.length} discovered feature(s) for coverage guidance`);
+    }
+  } catch { /* non-fatal — generate without the checklist */ }
+
   for (const page of pages) {
     const fileName = urlToFileName(page.url, baseUrl);
     const filePath = path.join(testsDir, `${fileName}.spec.ts`);
@@ -725,7 +755,7 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
     try {
       const messages: ChatMessage[] = [
         { role: 'system', content: systemPrompt },
-        { role: 'user',   content: buildPageTestPrompt(page, baseUrl, hasProductDoc) },
+        { role: 'user',   content: buildPageTestPrompt(page, baseUrl, hasProductDoc, featureChecklist) },
       ];
       const result  = await model.invoke(messages);
       const cleaned = extractTypeScript(result);

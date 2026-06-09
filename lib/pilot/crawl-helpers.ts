@@ -44,6 +44,30 @@ export function dedupeKey(url: string): string {
 }
 
 /**
+ * Normalise a URL into a path "pattern" by replacing variable-looking path
+ * segments (numeric ids, UUIDs, long hashes/slugs) with ":id".
+ *
+ *   /product/1234        → /product/:id
+ *   /users/abc-uuid/edit → /users/:id/edit
+ *   /blog/some-post-2024 → /blog/:id   (long slug segments collapse too)
+ *
+ * Used to detect templated routes so the crawler samples a few examples per
+ * pattern instead of exhausting the page budget on near-identical pages.
+ */
+export function pathPattern(url: string): string {
+  let pathname: string;
+  try { pathname = new URL(url).pathname; } catch { pathname = url; }
+  const segs = pathname.split('/').filter(Boolean).map(seg => {
+    if (/^\d+$/.test(seg)) return ':id';                                  // pure number
+    if (/^[0-9a-f]{8}-[0-9a-f-]{20,}$/i.test(seg)) return ':id';          // uuid
+    if (/^[0-9a-f]{16,}$/i.test(seg)) return ':id';                       // long hash
+    if (/\d/.test(seg) && seg.length > 12) return ':id';                  // long mixed slug
+    return seg.toLowerCase();
+  });
+  return '/' + segs.join('/');
+}
+
+/**
  * Resolve a link href against the current page URL.
  *
  * Rules:
@@ -198,8 +222,15 @@ export async function collectPageElements(page: Page): Promise<Record<string, un
 }
 
 export async function collectAccessibilityTree(page: Page): Promise<unknown> {
+  // First attempt — quick. If the page is still settling this can return null.
   try {
-    return await page.locator('body').ariaSnapshot({ timeout: 5000 }).catch(() => null) ?? null;
+    const first = await page.locator('body').ariaSnapshot({ timeout: 5000 }).catch(() => null);
+    if (first) return first;
+  } catch { /* fall through to retry */ }
+  // Retry once with a longer timeout — covers slow SPAs that hadn't finished
+  // rendering on the first attempt.
+  try {
+    return await page.locator('body').ariaSnapshot({ timeout: 8000 }).catch(() => null) ?? null;
   } catch {
     return null;
   }

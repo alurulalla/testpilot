@@ -22,6 +22,7 @@ import {
   collectAccessibilityTree,
   dedupeKey,
   sameOrigin,
+  resolveLink,
   PUSHSTATE_INTERCEPT_SCRIPT,
 } from './crawl-helpers';
 import type { PageInfo } from './types';
@@ -444,4 +445,102 @@ export async function runNavClickExplorer(
   }
 
   return { discoveredPages, foundFeatures, missedFeatures };
+}
+
+// ── Broad (doc-free) click discovery ──────────────────────────────────────────
+
+/**
+ * Buttons/links we must NOT click during automated discovery because they can
+ * mutate state, log the user out, or complete a transaction.
+ */
+const DESTRUCTIVE_RE =
+  /\b(delete|remove|logout|log\s?out|sign\s?out|deactivate|unsubscribe|pay|buy\s?now|purchase|place\s?order|confirm|submit|reset|clear\s?all|destroy|terminate)\b/i;
+
+export interface BroadClickExplorerOptions {
+  startUrl: string;
+  authFile?: string;
+  existingSiteMap: { pages: { url: string }[] };
+  /** Max elements to click (defaults to the module MAX_CLICKS cap). */
+  maxClicks?: number;
+  onProgress?: (msg: string) => void;
+}
+
+/**
+ * Doc-free SPA discovery: when the plain link-crawl looks thin, open the start
+ * page, collect navigational elements (nav/menu/tab/buttons), and click the
+ * non-destructive ones to reveal pages that have no crawlable <a href> (common
+ * in button-driven SPAs).
+ *
+ * Safety: skips anything matching DESTRUCTIVE_RE, never fills/submits forms, and
+ * each click starts from a fresh load of startUrl (via clickAndCapture) so an
+ * accidental state change can't poison subsequent clicks.
+ */
+export async function runBroadClickExplorer(
+  options: BroadClickExplorerOptions,
+): Promise<NavClickExplorerResult> {
+  const { startUrl, authFile, existingSiteMap, onProgress } = options;
+  const log = (msg: string) => onProgress?.(msg);
+  const maxClicks = Math.min(options.maxClicks ?? MAX_CLICKS, MAX_CLICKS);
+
+  const knownKeys = new Set(existingSiteMap.pages.map(p => dedupeKey(p.url)));
+  const discoveredPages: PageInfo[] = [];
+  const foundFeatures: string[] = [];
+
+  const browser = await launchBrowser();
+  try {
+    const ctx = await browser.newContext({
+      viewport: { width: 1280, height: 720 },
+      ignoreHTTPSErrors: true,
+      locale: 'en-US',
+      ...(authFile ? { storageState: authFile } : {}),
+    });
+    ctx.setDefaultNavigationTimeout(NAV_TIMEOUT);
+
+    // Collect candidate nav elements from the start page.
+    log(`  [broad-nav] collecting navigational elements from ${startUrl}…`);
+    const probe = await ctx.newPage();
+    let navItems: NavItem[] = [];
+    try {
+      await probe.goto(startUrl, { waitUntil: 'load', timeout: NAV_TIMEOUT });
+      await probe.waitForLoadState('networkidle', { timeout: IDLE_TIMEOUT }).catch(() => {});
+      navItems = await collectNavItems(probe);
+    } finally {
+      await probe.close().catch(() => {});
+    }
+
+    // Filter: drop destructive items and links that already point to known pages
+    // (those are covered by the crawl — only button-driven/unknown targets are worth clicking).
+    const candidates = navItems.filter(item => {
+      if (DESTRUCTIVE_RE.test(item.label)) return false;
+      if (item.href) {
+        const resolved = resolveLink(item.href, startUrl);
+        if (resolved && knownKeys.has(dedupeKey(resolved))) return false;
+      }
+      return true;
+    });
+
+    log(`  [broad-nav] ${candidates.length} non-destructive candidate(s) to try (cap ${maxClicks})`);
+
+    let clicks = 0;
+    for (const item of candidates) {
+      if (clicks >= maxClicks) {
+        log(`  [broad-nav] reached click cap (${maxClicks}) — stopping`);
+        break;
+      }
+      clicks++;
+      const newPage = await clickAndCapture(ctx, startUrl, item, knownKeys, startUrl, log);
+      if (newPage) {
+        knownKeys.add(dedupeKey(newPage.url));
+        discoveredPages.push(newPage);
+        foundFeatures.push(item.label);
+      }
+    }
+
+    await ctx.close().catch(() => {});
+  } finally {
+    await browser.close().catch(() => {});
+  }
+
+  log(`  [broad-nav] discovered ${discoveredPages.length} new page(s)`);
+  return { discoveredPages, foundFeatures, missedFeatures: [] };
 }
