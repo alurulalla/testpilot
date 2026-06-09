@@ -88,7 +88,8 @@ export interface FigmaComparison {
 
 export interface FigmaResult {
   comparisons: FigmaComparison[];
-  testFile: string; // relative path to generated figma-visual.spec.ts
+  /** Relative paths (from workspace dir) to the per-frame spec files in tests/figma/. */
+  testFiles: string[];
 }
 
 export interface PageInfo {

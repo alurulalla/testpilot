@@ -168,6 +168,24 @@ export async function createSession(
 }
 
 /**
+ * Permanently delete a session and its DB-cascaded children (logs, files).
+ * Also clears all in-memory/runtime state for it. Caller is responsible for
+ * disk-workspace cleanup and for ensuring the session isn't actively running.
+ */
+export async function deleteSession(id: string): Promise<void> {
+  sessions.delete(id);
+  subscribers.delete(id);
+  stopping.delete(id);
+  runningProcesses.delete(id);
+  logBuffer.delete(id);
+  try {
+    await prisma.session.delete({ where: { id } });
+  } catch {
+    // Already gone or never persisted — fine.
+  }
+}
+
+/**
  * Load a session — L1 cache first, then DB.
  * Populates the cache so subsequent synchronous getCachedSession() calls work.
  */

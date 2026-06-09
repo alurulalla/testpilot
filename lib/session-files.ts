@@ -23,16 +23,20 @@ import type { Workspace } from '@/lib/pilot';
 function collectSuiteFiles(workspace: Workspace): { rel: string; content: string }[] {
   const out: { rel: string; content: string }[] = [];
 
-  // All spec files + fixtures under tests/
+  // All spec files + fixtures under tests/ (recursing into subfolders like tests/figma/)
   if (existsSync(workspace.testsDir)) {
-    for (const name of readdirSync(workspace.testsDir)) {
-      if (name.endsWith('.spec.ts') || name === 'fixtures.ts') {
-        try {
-          const full = path.join(workspace.testsDir, name);
-          out.push({ rel: path.relative(workspace.dir, full), content: readFileSync(full, 'utf8') });
-        } catch { /* skip unreadable */ }
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) { walk(full); continue; }
+        if (e.name.endsWith('.spec.ts') || e.name === 'fixtures.ts') {
+          try {
+            out.push({ rel: path.relative(workspace.dir, full), content: readFileSync(full, 'utf8') });
+          } catch { /* skip unreadable */ }
+        }
       }
-    }
+    };
+    walk(workspace.testsDir);
   }
 
   // Small sidecar artifacts that generation relies on (best-effort).

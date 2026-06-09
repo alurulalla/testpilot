@@ -12,8 +12,9 @@ export default async function Dashboard() {
   let clerkUserId: string;
   let org;
   let memberships;
+  let member;
   try {
-    ({ org, clerkUserId, memberships } = await requireAuth());
+    ({ org, clerkUserId, memberships, member } = await requireAuth());
   } catch (e) {
     if (e instanceof AuthError && e.status === 403) {
       try { await requireSuperAdmin(); redirect("/admin"); } catch {}
@@ -50,7 +51,7 @@ export default async function Dashboard() {
   return (
     <div className="h-screen flex flex-col bg-zinc-950">
       <DashboardNav orgs={orgs} currentOrgId={org.id} />
-      <DashboardShell sessions={sessions} membersMap={membersMap} />
+      <DashboardShell sessions={sessions} membersMap={membersMap} isAdmin={member.role === 'ORG_ADMIN'} />
     </div>
   );
 }

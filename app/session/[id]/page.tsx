@@ -890,8 +890,10 @@ function TestFileCard({
 }) {
   const [open, setOpen] = useState(false);
   const [testNames, setTestNames] = useState<string[] | null>(null);
+  const [code, setCode] = useState<string | null>(null);
+  const [showCode, setShowCode] = useState(false);
 
-  // Lazily fetch and parse test names when the card is expanded
+  // Lazily fetch the file (test names + full source) when the card is expanded
   useEffect(() => {
     if (!open || testNames !== null) return;
     const relPath = testFile.includes('.testpilot')
@@ -900,8 +902,8 @@ function TestFileCard({
 
     fetch(`/api/sessions/${sessionId}/assets/tests/${relPath.replace(/^tests\//, '')}`)
       .then(r => r.text())
-      .then(content => setTestNames(extractTestNamesFromContent(content)))
-      .catch(() => setTestNames([]));
+      .then(content => { setTestNames(extractTestNamesFromContent(content)); setCode(content); })
+      .catch(() => { setTestNames([]); setCode(''); });
   }, [open, testNames, testFile, sessionId]);
 
   const fileName = testFile.split('/').pop() ?? testFile;
@@ -952,20 +954,41 @@ function TestFileCard({
         )}
       </div>
 
-      {/* Expandable test names */}
+      {/* Expandable test names + source code */}
       {open && (
-        <div className="px-4 pb-2.5 border-t border-zinc-800 pt-2 space-y-1">
+        <div className="px-4 pb-2.5 border-t border-zinc-800 pt-2 space-y-2">
           {testNames === null ? (
             <span className="text-xs text-zinc-600">Loading…</span>
-          ) : testNames.length === 0 ? (
-            <span className="text-xs text-zinc-600">No test() found in file</span>
           ) : (
-            testNames.map((name, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs text-zinc-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-zinc-600 shrink-0" />
-                {name}
-              </div>
-            ))
+            <>
+              {testNames.length === 0 ? (
+                <span className="text-xs text-zinc-600">No test() found in file</span>
+              ) : (
+                <div className="space-y-1">
+                  {testNames.map((name, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs text-zinc-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-zinc-600 shrink-0" />
+                      {name}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* View / hide the actual test code */}
+              <button
+                type="button"
+                onClick={() => setShowCode(v => !v)}
+                className="flex items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                <Code2 className="h-3 w-3" />
+                {showCode ? 'Hide code' : 'View code'}
+              </button>
+              {showCode && (
+                <pre className="max-h-80 overflow-auto rounded-md bg-zinc-950 border border-zinc-800 p-3 text-[11px] leading-relaxed text-zinc-300 font-mono whitespace-pre">
+                  {code ?? ''}
+                </pre>
+              )}
+            </>
           )}
         </div>
       )}
@@ -1821,7 +1844,7 @@ export default function SessionPage() {
                   >
                     {session.figmaChecking
                       ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking…</>
-                      : <><Layers className="h-3.5 w-3.5" /> Verify vs Figma</>
+                      : <><Layers className="h-3.5 w-3.5" /> Run Design Check</>
                     }
                   </Button>
                 )}
@@ -1832,10 +1855,22 @@ export default function SessionPage() {
                   const totalHigh   = session.figmaResult.comparisons.reduce((n, c) => n + (c.discrepancies ?? []).filter(d => d.severity === 'high').length, 0);
                   const totalMedium = session.figmaResult.comparisons.reduce((n, c) => n + (c.discrepancies ?? []).filter(d => d.severity === 'medium').length, 0);
                   const totalLow    = session.figmaResult.comparisons.reduce((n, c) => n + (c.discrepancies ?? []).filter(d => d.severity === 'low').length, 0);
+                  const scored = session.figmaResult.comparisons.filter(c => c.matchScore != null);
+                  const avgScore = scored.length > 0
+                    ? Math.round(scored.reduce((n, c) => n + (c.matchScore ?? 0), 0) / scored.length)
+                    : null;
                   return (
                     <div className="space-y-1">
                       <p className="text-xs text-zinc-400">
                         {session.figmaResult.comparisons.length} frame(s) checked
+                        {avgScore != null && (
+                          <span
+                            className={`ml-1.5 font-semibold ${avgScore >= 80 ? 'text-emerald-400' : avgScore >= 50 ? 'text-amber-400' : 'text-red-400'}`}
+                            title="Average design-match score across all frames (100 = pixel/property match)."
+                          >
+                            · {avgScore}/100 match
+                          </span>
+                        )}
                       </p>
                       {totalIssues === 0 ? (
                         <p className="text-xs text-emerald-400">✓ No issues found</p>
@@ -2030,13 +2065,23 @@ export default function SessionPage() {
                               <span className="text-sm font-medium text-zinc-200 flex-1 truncate">
                                 {c.frameName}
                               </span>
-                              {/* Severity summary — more intuitive than a raw score */}
+                              {/* Design-match score + severity summary */}
+                              {score != null && (
+                                <span
+                                  className={`text-xs font-semibold shrink-0 tabular-nums ${
+                                    score >= 80 ? 'text-emerald-400' : score >= 50 ? 'text-amber-400' : 'text-red-400'
+                                  }`}
+                                  title={`Design match: ${score}/100 — starts at 100, minus 12 per HIGH, 5 per MEDIUM, and up to 12 total for LOW issues.`}
+                                >
+                                  {score}/100 match
+                                </span>
+                              )}
                               {issues.length === 0 && score != null ? (
                                 <span className="text-xs font-semibold text-emerald-400 shrink-0">✓ Matches design</span>
                               ) : issues.length > 0 ? (
                                 <span
                                   className="flex items-center gap-1.5 shrink-0"
-                                  title={`Design match score: ${score ?? '–'}/100 (−15 per HIGH, −8 per MEDIUM, −3 per LOW issue)`}
+                                  title={`Design match: ${score ?? '–'}/100 (−12 per HIGH, −5 per MEDIUM, up to −12 for LOW)`}
                                 >
                                   {highCount > 0 && (
                                     <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">
@@ -2197,10 +2242,9 @@ export default function SessionPage() {
                         );
                       })}
                       <p className="text-xs text-zinc-600 px-1">
-                        Verification test file at{" "}
-                        <code className="text-zinc-500">{session.figmaResult.testFile}</code>
-                        {" "}— run with{" "}
-                        <code className="text-zinc-500">npx playwright test figma-verification.spec.ts</code>
+                        {(session.figmaResult.testFiles?.length ?? 0)} verification spec file(s) generated in{" "}
+                        <code className="text-zinc-500">tests/figma/</code>
+                        {" "}— they also appear in the generated tests list above, where you can view the code and run each one.
                       </p>
                     </div>
                   )}

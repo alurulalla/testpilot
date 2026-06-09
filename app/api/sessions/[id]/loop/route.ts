@@ -251,8 +251,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             (line) => addLog(id, line, 'info'),
             chatModel,
             figmaSession.figmaFrameMap,
-          ).then(result => {
+          ).then(async result => {
             setFigmaResult(id, result);
+            // Surface the per-frame figma specs in the main suite + persist them.
+            try {
+              updateSession(id, { testFiles: workspace.testFiles() });
+              await snapshotTestFiles(id, workspace);
+            } catch { /* non-fatal */ }
             const totalIssues = result.comparisons.reduce((n, c) => n + (c.discrepancies?.length ?? 0), 0);
             const scoredComparisons = result.comparisons.filter(c => c.matchScore != null);
             const avgScore = scoredComparisons.length > 0

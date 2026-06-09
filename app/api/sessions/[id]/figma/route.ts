@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, getCachedSession, setStatus, setFigmaResult, setFigmaChecking, setError, addLog, clearStopping } from '@/lib/session-store';
+import { getSession, getCachedSession, setStatus, setFigmaResult, setFigmaChecking, setError, addLog, clearStopping, updateSession } from '@/lib/session-store';
+import { snapshotTestFiles } from '@/lib/session-files';
 import { runFigmaComparison, isFigmaConfigured } from '@/lib/figma-client';
 import { getSessionDir } from '@/lib/config';
 import { Workspace, createModelFromConfig } from '@/lib/pilot';
@@ -64,6 +65,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       );
 
       setFigmaResult(id, result);
+      // Surface the per-frame figma specs in the main suite + persist them.
+      try {
+        updateSession(id, { testFiles: workspace.testFiles() });
+        await snapshotTestFiles(id, workspace);
+      } catch { /* non-fatal */ }
       const totalIssues = result.comparisons.reduce(
         (n, c) => n + (c.discrepancies?.length ?? 0), 0,
       );

@@ -213,8 +213,16 @@ export default defineConfig({
 
   testFiles(): string[] {
     if (!existsSync(this.testsDir)) return [];
-    return readdirSync(this.testsDir)
-      .filter(f => f.endsWith('.spec.ts'))
-      .map(f => path.join(this.testsDir, f));
+    // Recurse so spec files in subfolders (e.g. tests/figma/) are included.
+    const out: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) walk(full);
+        else if (e.name.endsWith('.spec.ts')) out.push(full);
+      }
+    };
+    walk(this.testsDir);
+    return out;
   }
 }

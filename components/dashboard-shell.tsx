@@ -2,10 +2,11 @@
 
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   AlertCircle, ArrowRight, ChevronLeft, ChevronRight,
-  Clock, FileCode2, Globe, Layers3, Menu,
-  PanelLeftClose, PanelLeftOpen, User, X,
+  Clock, FileCode2, Globe, Layers3, Loader2, Menu,
+  PanelLeftClose, PanelLeftOpen, Trash2, User, X,
   Zap,
 } from 'lucide-react';
 import type { Session } from '@/types/session';
@@ -215,14 +216,18 @@ interface SidebarItemProps {
   initiator: string | null;
   selected: boolean;
   onClick: () => void;
+  isAdmin: boolean;
+  deleting: boolean;
+  onDelete: () => void;
 }
 
-function SidebarItem({ session: s, initiator, selected, onClick }: SidebarItemProps) {
+function SidebarItem({ session: s, initiator, selected, onClick, isAdmin, deleting, onDelete }: SidebarItemProps) {
   const host = hostname(s.url);
   const path = shortPath(s.url);
   const stats = s.testResult?.stats;
   const total = stats ? stats.passed + stats.failed + (stats.errors ?? 0) : 0;
   const rate  = total > 0 ? Math.round(stats!.passed / total * 100) : null;
+  const running = isActive(s.status) || s.figmaChecking;
 
   function dot() {
     if (isActive(s.status)) return (
@@ -237,31 +242,58 @@ function SidebarItem({ session: s, initiator, selected, onClick }: SidebarItemPr
   }
 
   return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left flex items-start gap-2.5 px-3 py-2.5 rounded-lg transition-colors ${
+    <div
+      className={`group relative w-full flex items-start rounded-lg transition-colors ${
         selected ? 'bg-zinc-800 text-zinc-100' : 'hover:bg-zinc-800/60 text-zinc-400 hover:text-zinc-200'
       }`}
     >
-      {dot()}
-      <div className="flex-1 min-w-0 space-y-0.5">
-        <p className="text-xs font-medium truncate leading-tight">
-          {host}
-          {path && <span className="text-zinc-500 font-normal">{path}</span>}
-        </p>
-        <div className="flex items-center gap-1.5 text-[10px] text-zinc-600">
-          <span>{timeAgo(s.createdAt)}</span>
-          {rate !== null && (
-            <span className={`font-medium ${rate >= 80 ? 'text-emerald-600' : rate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
-              · {rate}%
-            </span>
+      <button
+        onClick={onClick}
+        className="flex-1 min-w-0 text-left flex items-start gap-2.5 px-3 py-2.5"
+      >
+        {dot()}
+        <div className="flex-1 min-w-0 space-y-0.5">
+          <p className="text-xs font-medium truncate leading-tight">
+            {host}
+            {path && <span className="text-zinc-500 font-normal">{path}</span>}
+          </p>
+          <div className="flex items-center gap-1.5 text-[10px] text-zinc-600">
+            <span>{timeAgo(s.createdAt)}</span>
+            {rate !== null && (
+              <span className={`font-medium ${rate >= 80 ? 'text-emerald-600' : rate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
+                · {rate}%
+              </span>
+            )}
+          </div>
+          {initiator && (
+            <p className="text-[10px] text-zinc-600 truncate">{initiator}</p>
           )}
         </div>
-        {initiator && (
-          <p className="text-[10px] text-zinc-600 truncate">{initiator}</p>
-        )}
-      </div>
-    </button>
+      </button>
+
+      {/* Admin delete — hidden for running sessions (can't delete those) */}
+      {isAdmin && (
+        running ? (
+          <span
+            className="shrink-0 mr-2 mt-2 text-zinc-700"
+            title="Running sessions can't be deleted — stop it first"
+          >
+            <Trash2 className="h-3.5 w-3.5 opacity-40" />
+          </span>
+        ) : (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            disabled={deleting}
+            title="Delete session"
+            className="shrink-0 mr-2 mt-2 p-1 rounded text-zinc-600 opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-500/10 transition disabled:opacity-100"
+          >
+            {deleting
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <Trash2 className="h-3.5 w-3.5" />}
+          </button>
+        )
+      )}
+    </div>
   );
 }
 
@@ -501,17 +533,50 @@ function EmptyState() {
 interface ShellProps {
   sessions: Session[];
   membersMap: Record<string, string>;
+  isAdmin?: boolean;
 }
 
-export function DashboardShell({ sessions, membersMap }: ShellProps) {
+export function DashboardShell({ sessions, membersMap, isAdmin = false }: ShellProps) {
+  const router = useRouter();
   const [selectedId, setSelectedId] = useState<string>(sessions[0]?.id ?? '');
   const [sidebarOpen, setSidebarOpen] = useState(true); // desktop collapse
   const [mobileOpen, setMobileOpen]   = useState(false); // mobile drawer
+  const [deletingId, setDeletingId]     = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Session | null>(null);
+  const [deleteError, setDeleteError]   = useState<string | null>(null);
 
   // Selecting a session also dismisses the mobile drawer so the detail is visible.
   function selectSession(sid: string) {
     setSelectedId(sid);
     setMobileOpen(false);
+  }
+
+  // Admin: open the confirm modal for a (non-running) session.
+  function requestDelete(s: Session) {
+    setDeleteError(null);
+    setPendingDelete(s);
+  }
+
+  // Run the actual delete once the user confirms in the modal.
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    const s = pendingDelete;
+    setDeletingId(s.id);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/sessions/${s.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setPendingDelete(null);
+        router.refresh(); // re-fetch the (now shorter) session list from the server
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setDeleteError(data.error ?? 'Could not delete this session.');
+      }
+    } catch {
+      setDeleteError('Could not delete this session.');
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   const selected = useMemo(
@@ -602,6 +667,9 @@ export function DashboardShell({ sessions, membersMap }: ShellProps) {
                     initiator={membersMap[s.createdByUserId] ?? null}
                     selected={s.id === selectedId}
                     onClick={() => selectSession(s.id)}
+                    isAdmin={isAdmin}
+                    deleting={deletingId === s.id}
+                    onDelete={() => requestDelete(s)}
                   />
                 ))}
               </div>
@@ -620,6 +688,9 @@ export function DashboardShell({ sessions, membersMap }: ShellProps) {
                     initiator={membersMap[s.createdByUserId] ?? null}
                     selected={s.id === selectedId}
                     onClick={() => selectSession(s.id)}
+                    isAdmin={isAdmin}
+                    deleting={deletingId === s.id}
+                    onDelete={() => requestDelete(s)}
                   />
                 ))}
               </div>
@@ -675,6 +746,57 @@ export function DashboardShell({ sessions, membersMap }: ShellProps) {
           }
         </div>
       </main>
+
+      {/* Delete-confirmation modal */}
+      {pendingDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => { if (!deletingId) setPendingDelete(null); }}
+        >
+          <div
+            className="w-full max-w-md bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl p-6 space-y-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="h-9 w-9 rounded-full bg-red-500/15 flex items-center justify-center shrink-0">
+                <Trash2 className="h-4 w-4 text-red-400" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-zinc-100">Delete this session?</h2>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  <span className="text-zinc-300 font-medium">{hostname(pendingDelete.url)}{shortPath(pendingDelete.url)}</span>
+                  {' '}— its tests, results, and recordings will be permanently removed. This can&apos;t be undone.
+                </p>
+              </div>
+            </div>
+
+            {deleteError && (
+              <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                {deleteError}
+              </p>
+            )}
+
+            <div className="flex gap-2 justify-end pt-1">
+              <button
+                onClick={() => setPendingDelete(null)}
+                disabled={!!deletingId}
+                className="px-3.5 py-2 rounded-lg text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={!!deletingId}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-500 transition-colors disabled:opacity-60"
+              >
+                {deletingId
+                  ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Deleting…</>
+                  : <><Trash2 className="h-3.5 w-3.5" /> Delete</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
