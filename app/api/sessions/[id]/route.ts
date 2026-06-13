@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import { rmSync } from 'fs';
 import { getSession, updateSession, deleteSession } from '@/lib/session-store';
 import { requireOrgAdmin, authErrorResponse } from '@/lib/auth';
@@ -9,19 +10,24 @@ const ACTIVE_STATUSES = ['exploring', 'analyzing', 'generating', 'running', 'fix
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json(session);
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const body = await req.json().catch(() => ({})) as { headedMode?: boolean };
   if (typeof body.headedMode === 'boolean') {
     updateSession(id, { headedMode: body.headedMode });
+    return NextResponse.json({ ...session, headedMode: body.headedMode });
   }
 
   return NextResponse.json(session);
@@ -41,7 +47,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return authErrorResponse(err) ?? NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   // Scope to the admin's own organisation.
   if (session.orgId !== org.id) {

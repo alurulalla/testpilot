@@ -3,6 +3,7 @@
  * then immediately trigger the full run → triage → fix loop.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import path from 'path';
 import { writeFileSync } from 'fs';
 import { snapshotTestFiles } from '@/lib/session-files';
@@ -74,7 +75,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   if (!session.coverageAnalysis) {
     return NextResponse.json({ error: 'Run coverage analysis first.' }, { status: 400 });
@@ -145,13 +148,17 @@ export async function POST(
       await snapshotTestFiles(id, workspace);
       addLog(id, 'Gap tests generated. Starting full test run…', 'success');
 
-      // Trigger the run loop (reuse the existing loop endpoint)
-      await fetch(`${process.env.NEXTAUTH_URL ?? 'http://localhost:3000'}/api/sessions/${id}/loop`, {
+      // Trigger the run loop (reuse the existing loop endpoint). Use the
+      // incoming request's own origin (works locally AND on Railway) and
+      // forward the caller's cookies so the loop route's auth check passes.
+      await fetch(`${req.nextUrl.origin}/api/sessions/${id}/loop`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: req.headers.get('cookie') ?? '',
+        },
         body: JSON.stringify({ maxIterations: 3 }),
       }).catch(() => {
-        // If the fetch fails (e.g. no NEXTAUTH_URL), just set idle
         setStatus(id, 'idle');
       });
     } catch (err) {

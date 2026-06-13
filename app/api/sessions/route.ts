@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSession, listSessions, findSessionsByUrl } from '@/lib/session-store';
 import { requireAuth, authErrorResponse } from '@/lib/auth';
-import { getMaxPages } from '@/lib/config';
+import { getOrgSettings } from '@/lib/org-settings';
 
 /** GET /api/sessions          → all sessions for the current org
  *  GET /api/sessions?url=...  → sessions matching that URL (origin) */
@@ -25,9 +25,10 @@ export async function POST(req: NextRequest) {
     };
     const { url, figmaFileUrl, figmaOnly, figmaFrameMap } = body;
     if (!url) return NextResponse.json({ error: 'url is required' }, { status: 400 });
+    const { maxPages } = await getOrgSettings(org.id);
     const session = await createSession(
       url,
-      getMaxPages(),
+      maxPages,
       false,
       figmaFileUrl ?? null,
       figmaOnly ?? false,

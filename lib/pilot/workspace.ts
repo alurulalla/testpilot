@@ -19,6 +19,78 @@ export interface WorkspaceConfig {
   url: string;
 }
 
+// ── Workspace file templates ──────────────────────────────────────────────────
+// Exported so the ZIP download can rebuild a runnable project from the DB
+// without touching the server's (ephemeral) disk.
+
+export function buildPlaywrightConfigContent(baseUrl: string): string {
+  return `import 'dotenv/config';
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './tests',
+  outputDir: './test-results',
+  timeout: 30_000,
+  expect: { timeout: 5_000 },
+  fullyParallel: false,
+  workers: 1,
+  retries: 0,
+  reporter: [['json', { outputFile: './reports/report.json' }]],
+  use: {
+    baseURL: ${JSON.stringify(baseUrl)},
+    screenshot: 'only-on-failure',
+    trace: 'retain-on-failure',
+    viewport: { width: 1280, height: 720 },
+  },
+  projects: [
+    {
+      name: 'chromium',
+      use: { browserName: 'chromium' },
+    },
+  ],
+});
+`;
+}
+
+export function buildWorkspacePackageJson(slug: string): string {
+  const pkg = {
+    name: `testpilot-tests-${slug}`,
+    version: '1.0.0',
+    private: true,
+    scripts: {
+      test: 'npx playwright test',
+      'test:headed': 'npx playwright test --headed',
+      'test:debug': 'npx playwright test --debug',
+    },
+    devDependencies: {
+      '@playwright/test': '^1.52.0',
+      dotenv: '^16.4.0',
+      typescript: '^5.7.0',
+    },
+  };
+  return JSON.stringify(pkg, null, 2) + '\n';
+}
+
+export function buildWorkspaceTsConfig(): string {
+  const tsconfig = {
+    compilerOptions: {
+      target: 'ES2022',
+      module: 'NodeNext',
+      moduleResolution: 'NodeNext',
+      strict: true,
+      noEmit: true,
+      skipLibCheck: true,
+      esModuleInterop: true,
+      resolveJsonModule: true,
+    },
+    include: ['tests/**/*.ts', 'playwright.config.ts'],
+  };
+  return JSON.stringify(tsconfig, null, 2) + '\n';
+}
+
+export const WORKSPACE_GITIGNORE =
+  'node_modules/\ntest-results/\nreports/\nplaywright-report/\nblob-report/\n.cache/\n.env\n';
+
 function urlToSlug(url: string): string {
   try {
     const parsed = new URL(url);
@@ -69,54 +141,15 @@ export class Workspace {
   }
 
   private writePackageJson(): void {
-    const pkg = {
-      name: `testpilot-tests-${this.slug}`,
-      version: '1.0.0',
-      private: true,
-      scripts: {
-        test: 'npx playwright test',
-        'test:headed': 'npx playwright test --headed',
-        'test:debug': 'npx playwright test --debug',
-      },
-      devDependencies: {
-        '@playwright/test': '^1.52.0',
-        typescript: '^5.7.0',
-      },
-    };
-    writeFileSync(
-      path.join(this.dir, 'package.json'),
-      JSON.stringify(pkg, null, 2) + '\n',
-      'utf8',
-    );
+    writeFileSync(path.join(this.dir, 'package.json'), buildWorkspacePackageJson(this.slug), 'utf8');
   }
 
   private writeTsConfig(): void {
-    const tsconfig = {
-      compilerOptions: {
-        target: 'ES2022',
-        module: 'NodeNext',
-        moduleResolution: 'NodeNext',
-        strict: true,
-        noEmit: true,
-        skipLibCheck: true,
-        esModuleInterop: true,
-        resolveJsonModule: true,
-      },
-      include: ['tests/**/*.ts', 'playwright.config.ts'],
-    };
-    writeFileSync(
-      path.join(this.dir, 'tsconfig.json'),
-      JSON.stringify(tsconfig, null, 2) + '\n',
-      'utf8',
-    );
+    writeFileSync(path.join(this.dir, 'tsconfig.json'), buildWorkspaceTsConfig(), 'utf8');
   }
 
   private writeGitIgnore(): void {
-    writeFileSync(
-      path.join(this.dir, '.gitignore'),
-      'node_modules/\ntest-results/\nreports/\nplaywright-report/\nblob-report/\n.cache/\n',
-      'utf8',
-    );
+    writeFileSync(path.join(this.dir, '.gitignore'), WORKSPACE_GITIGNORE, 'utf8');
   }
 
   async installDeps(): Promise<void> {
@@ -143,33 +176,7 @@ export class Workspace {
   }
 
   writePlaywrightConfig(): void {
-    const baseUrl = JSON.stringify(this.url);
-    const config = `import { defineConfig } from '@playwright/test';
-
-export default defineConfig({
-  testDir: './tests',
-  outputDir: './test-results',
-  timeout: 30_000,
-  expect: { timeout: 5_000 },
-  fullyParallel: false,
-  workers: 1,
-  retries: 0,
-  reporter: [['json', { outputFile: './reports/report.json' }]],
-  use: {
-    baseURL: ${baseUrl},
-    screenshot: 'only-on-failure',
-    trace: 'retain-on-failure',
-    viewport: { width: 1280, height: 720 },
-  },
-  projects: [
-    {
-      name: 'chromium',
-      use: { browserName: 'chromium' },
-    },
-  ],
-});
-`;
-    writeFileSync(this.configFile, config, 'utf8');
+    writeFileSync(this.configFile, buildPlaywrightConfigContent(this.url), 'utf8');
   }
 
   path(...segments: string[]): string {

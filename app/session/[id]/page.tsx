@@ -35,8 +35,12 @@ import {
   FileSpreadsheet,
   FileCode2,
   ZoomIn,
+  Trash2,
+  Plus,
+  XCircle,
+  KeyRound,
 } from "lucide-react";
-import type { ScenarioResult, AvailableTest, TriageResult, FailureVerdict, ImportedProject, CoverageAnalysis } from "@/types/session";
+import type { ScenarioResult, TriageResult, FailureVerdict, ImportedProject, CoverageAnalysis } from "@/types/session";
 import { Session } from "@/types/session";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +51,7 @@ import { StatsBar } from "@/components/stats-bar";
 import { Logo } from "@/components/logo";
 import { UserMenu } from "@/components/user-menu";
 import { ModelStatusBadge } from "@/components/model-status-badge";
+import { Paginator } from "@/components/paginator";
 
 type PhaseState = "pending" | "running" | "done" | "failed";
 
@@ -541,62 +546,9 @@ function ScenarioRunner({
           </div>
         )}
 
-        {/* Available tests list with Run button per file */}
-        {(scenario?.availableTests?.length ?? 0) > 0 && (
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
-              Available test files
-            </p>
-            {scenario!.availableTests.map((t: AvailableTest, i: number) => {
-              const isActive = t.testFile === scenario!.testFile;
-              return (
-                <div
-                  key={i}
-                  className={`border rounded-lg overflow-hidden ${
-                    isActive
-                      ? 'border-violet-500/50 bg-violet-500/5'
-                      : 'border-zinc-800 bg-zinc-900/50'
-                  }`}
-                >
-                  {/* File header row */}
-                  <div className="flex items-center gap-2 px-3 py-2">
-                    <Code2 className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
-                    <span className="flex-1 min-w-0 text-xs font-mono text-zinc-300 truncate">
-                      {t.fileName}
-                    </span>
-                    <span className="text-xs text-zinc-600 shrink-0 mr-2">
-                      {t.testNames.length} test{t.testNames.length !== 1 ? 's' : ''}
-                    </span>
-                    {isActive && (
-                      <span className="text-[10px] font-semibold text-violet-400 bg-violet-500/20 px-1.5 py-0.5 rounded mr-1">
-                        active
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => void onRunFile(t.testFile)}
-                      className="flex items-center gap-1 rounded bg-emerald-700 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-600 transition disabled:opacity-40 shrink-0"
-                    >
-                      <Play className="h-3 w-3" /> Run
-                    </button>
-                  </div>
-                  {/* Individual test names */}
-                  {t.testNames.length > 0 && (
-                    <div className="px-3 pb-2 space-y-0.5">
-                      {t.testNames.map((name: string, j: number) => (
-                        <div key={j} className="flex items-center gap-2 text-xs text-zinc-500">
-                          <span className="h-1 w-1 rounded-full bg-zinc-600 shrink-0" />
-                          {name}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {/* The generated test files are listed once, in the "Generated Tests"
+            section below, each with its own Run button. We intentionally do not
+            repeat that list here (it used to appear twice). */}
 
         {/* Collapsible test code — state managed internally */}
         {scenario?.testContent && (
@@ -642,19 +594,25 @@ function ScenarioRunner({
 // ── TriagePanel — failure classification results ──────────────────────────────
 
 const VERDICT_META: Record<FailureVerdict, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
-  app_bug:   { label: 'App Bug',    color: 'text-red-400',    bg: 'bg-red-500/10 border-red-500/30',    icon: <Bug        className="h-3 w-3" /> },
-  test_bug:  { label: 'Test Bug',   color: 'text-amber-400',  bg: 'bg-amber-500/10 border-amber-500/30', icon: <FlaskConical className="h-3 w-3" /> },
-  ambiguous: { label: 'Ambiguous',  color: 'text-zinc-400',   bg: 'bg-zinc-700/40 border-zinc-600/40',  icon: <HelpCircle  className="h-3 w-3" /> },
+  app_bug:     { label: 'App Bug',    color: 'text-red-400',     bg: 'bg-red-500/10 border-red-500/30',     icon: <Bug          className="h-3 w-3" /> },
+  test_bug:    { label: 'Test Bug',   color: 'text-amber-400',   bg: 'bg-amber-500/10 border-amber-500/30',  icon: <FlaskConical className="h-3 w-3" /> },
+  setup_error: { label: 'Setup',      color: 'text-sky-400',     bg: 'bg-sky-500/10 border-sky-500/30',      icon: <KeyRound     className="h-3 w-3" /> },
+  ambiguous:   { label: 'Ambiguous',  color: 'text-zinc-400',    bg: 'bg-zinc-700/40 border-zinc-600/40',    icon: <HelpCircle   className="h-3 w-3" /> },
 };
 
 function TriagePanel({ triage }: { triage: TriageResult }) {
   const [open, setOpen] = useState(false);
 
   const counts = [
-    triage.appBugCount   > 0 && { verdict: 'app_bug'   as FailureVerdict, count: triage.appBugCount },
-    triage.testBugCount  > 0 && { verdict: 'test_bug'  as FailureVerdict, count: triage.testBugCount },
-    triage.ambiguousCount > 0 && { verdict: 'ambiguous' as FailureVerdict, count: triage.ambiguousCount },
+    triage.appBugCount      > 0 && { verdict: 'app_bug'     as FailureVerdict, count: triage.appBugCount },
+    (triage.setupErrorCount ?? 0) > 0 && { verdict: 'setup_error' as FailureVerdict, count: triage.setupErrorCount },
+    triage.testBugCount     > 0 && { verdict: 'test_bug'    as FailureVerdict, count: triage.testBugCount },
+    triage.ambiguousCount   > 0 && { verdict: 'ambiguous'   as FailureVerdict, count: triage.ambiguousCount },
   ].filter(Boolean) as { verdict: FailureVerdict; count: number }[];
+
+  // Only surface clusters that represent a shared root cause (≥2 tests). Single
+  // failures are already listed individually below.
+  const clusters = (triage.clusters ?? []).filter(c => c.count >= 2);
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
@@ -684,39 +642,76 @@ function TriagePanel({ triage }: { triage: TriageResult }) {
           : <ChevronRight className="h-3.5 w-3.5 text-zinc-600 shrink-0" />}
       </button>
 
+      {/* Root-cause banner — the single most important takeaway */}
+      {(triage.setupErrorCount ?? 0) > 0 && (
+        <div className="px-4 py-2.5 flex items-start gap-2 bg-sky-500/10 border-t border-sky-500/30">
+          <KeyRound className="h-3.5 w-3.5 text-sky-400 shrink-0 mt-0.5" />
+          <p className="text-[11px] leading-relaxed text-sky-300">
+            {triage.dominantRootCause ?? `${triage.setupErrorCount} test(s) failed before reaching their assertions due to a login/setup error.`}
+            {' '}These can't pass — and won't be auto-healed — until you fix the credentials or login selectors.
+          </p>
+        </div>
+      )}
+
       {open && (
-        <div className="border-t border-zinc-800 divide-y divide-zinc-800/60">
+        <div className="border-t border-zinc-800">
+          {/* Root-cause clusters: report shared failures once, biggest first */}
+          {clusters.length > 0 && (
+            <div className="px-4 py-3 space-y-1.5 border-b border-zinc-800/60">
+              <p className="text-[10px] uppercase tracking-wide text-zinc-500 font-semibold">Root causes</p>
+              {clusters.map(c => {
+                const m = VERDICT_META[c.verdict];
+                return (
+                  <div key={c.id} className="flex items-start gap-2">
+                    <span className={`flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${m.color} ${m.bg}`}>
+                      {m.icon} {c.count}
+                    </span>
+                    <p className="text-[11px] text-zinc-400 min-w-0 flex-1">{c.summary}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {/* Legend */}
-          <div className="px-4 py-2 flex flex-wrap gap-3 text-[10px] text-zinc-500">
+          <div className="px-4 py-2 flex flex-wrap gap-3 text-[10px] text-zinc-500 border-b border-zinc-800/60">
             <span className="flex items-center gap-1 text-red-400"><Bug className="h-3 w-3" /> App Bug — real product gap</span>
             <span className="flex items-center gap-1 text-amber-400"><FlaskConical className="h-3 w-3" /> Test Bug — fix the test code</span>
+            <span className="flex items-center gap-1 text-sky-400"><KeyRound className="h-3 w-3" /> Setup — fix login/env</span>
             <span className="flex items-center gap-1 text-zinc-400"><HelpCircle className="h-3 w-3" /> Ambiguous — heal conservatively</span>
           </div>
 
-          {triage.analyses.map((a, i) => {
-            const m = VERDICT_META[a.verdict];
-            return (
-              <div key={i} className="px-4 py-2.5 flex items-start gap-3">
-                <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 mt-0.5 ${m.color} ${m.bg}`}>
-                  {m.icon} {m.label}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-medium text-zinc-200 truncate">{a.testName}</p>
-                  {a.file && (
-                    <p className="text-[10px] font-mono text-zinc-500 mt-0.5 truncate">
-                      📄 {a.file.split('/').pop()}
-                    </p>
-                  )}
-                  <p className="text-[11px] text-zinc-500 mt-0.5">{a.reasoning}</p>
-                  {a.verdict === 'app_bug' && (
-                    <p className="text-[10px] text-red-400/70 mt-0.5 italic">
-                      ↳ Will not be auto-healed — update the application instead.
-                    </p>
-                  )}
+          <div className="divide-y divide-zinc-800/60">
+            {triage.analyses.map((a, i) => {
+              const m = VERDICT_META[a.verdict];
+              return (
+                <div key={i} className="px-4 py-2.5 flex items-start gap-3">
+                  <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 mt-0.5 ${m.color} ${m.bg}`}>
+                    {m.icon} {m.label}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-zinc-200 truncate">{a.testName}</p>
+                    {a.file && (
+                      <p className="text-[10px] font-mono text-zinc-500 mt-0.5 truncate">
+                        📄 {a.file.split('/').pop()}
+                      </p>
+                    )}
+                    <p className="text-[11px] text-zinc-500 mt-0.5">{a.reasoning}</p>
+                    {a.verdict === 'app_bug' && (
+                      <p className="text-[10px] text-red-400/70 mt-0.5 italic">
+                        ↳ Will not be auto-healed — update the application instead.
+                      </p>
+                    )}
+                    {a.verdict === 'setup_error' && (
+                      <p className="text-[10px] text-sky-400/70 mt-0.5 italic">
+                        ↳ Not auto-healed — fix login/credentials/environment.
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -878,6 +873,7 @@ function TestFileCard({
   sessionId,
   isRunning,
   globalRunning,
+  cases,
   onRun,
   onStop,
 }: {
@@ -885,6 +881,7 @@ function TestFileCard({
   sessionId: string;
   isRunning: boolean;
   globalRunning: boolean;
+  cases?: Record<string, 'passed' | 'failed' | 'skipped'>;
   onRun: () => Promise<void>;
   onStop: () => Promise<void>;
 }) {
@@ -893,15 +890,28 @@ function TestFileCard({
   const [code, setCode] = useState<string | null>(null);
   const [showCode, setShowCode] = useState(false);
 
-  // Lazily fetch the file (test names + full source) when the card is expanded
+  // Per-file outcome derived from the latest run. Case keys look like
+  // "<file> › <title>"; match the file portion against this card's basename.
+  const baseName = testFile.split('/').pop() ?? testFile;
+  const fileCases = Object.entries(cases ?? {}).filter(([key]) => {
+    const filePart = key.split(' › ')[0] ?? '';
+    return filePart.split('/').pop() === baseName || filePart.endsWith(baseName);
+  });
+  const failedCount = fileCases.filter(([, v]) => v === 'failed').length;
+  const failedTitles = new Set(
+    fileCases.filter(([, v]) => v === 'failed').map(([k]) => k.split(' › ').slice(1).join(' › ')),
+  );
+
+  // Lazily fetch the file (test names + full source) when the card is expanded.
+  // Path is workspace-relative (tests/… incl. subdirs like tests/figma/…) and
+  // served from the durable DB copy, so it works on a cold container too.
   useEffect(() => {
     if (!open || testNames !== null) return;
-    const relPath = testFile.includes('.testpilot')
-      ? testFile.split('.testpilot/').pop()?.split('/').slice(1).join('/') ?? ''
-      : testFile.split('/tests/').pop() ?? '';
+    const afterTests = testFile.split('/tests/').pop() ?? testFile.split('/').pop() ?? '';
+    const rel = `tests/${afterTests}`;
 
-    fetch(`/api/sessions/${sessionId}/assets/tests/${relPath.replace(/^tests\//, '')}`)
-      .then(r => r.text())
+    fetch(`/api/sessions/${sessionId}/file?path=${encodeURIComponent(rel)}`)
+      .then(r => r.ok ? r.text() : '')
       .then(content => { setTestNames(extractTestNamesFromContent(content)); setCode(content); })
       .catch(() => { setTestNames([]); setCode(''); });
   }, [open, testNames, testFile, sessionId]);
@@ -927,6 +937,14 @@ function TestFileCard({
           <Code2 className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
           <span className="flex-1 text-xs font-mono text-zinc-300 truncate">{fileName}</span>
         </button>
+
+        {/* Failed badge — surfaced from the latest run, before Run/Stop */}
+        {failedCount > 0 && !isRunning && (
+          <span className="flex items-center gap-1 rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-red-400 border border-red-500/30 shrink-0">
+            <XCircle className="h-3 w-3" />
+            {failedCount} failed
+          </span>
+        )}
 
         {/* Status / Run / Stop */}
         {isRunning ? (
@@ -965,12 +983,18 @@ function TestFileCard({
                 <span className="text-xs text-zinc-600">No test() found in file</span>
               ) : (
                 <div className="space-y-1">
-                  {testNames.map((name, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs text-zinc-400">
-                      <span className="h-1.5 w-1.5 rounded-full bg-zinc-600 shrink-0" />
-                      {name}
-                    </div>
-                  ))}
+                  {testNames.map((name, i) => {
+                    const didFail = failedTitles.has(name);
+                    return (
+                      <div key={i} className={`flex items-center gap-2 text-xs ${didFail ? 'text-red-400' : 'text-zinc-400'}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${didFail ? 'bg-red-500' : 'bg-zinc-600'}`} />
+                        <span className="flex-1 min-w-0 truncate">{name}</span>
+                        {didFail && (
+                          <span className="text-[10px] font-semibold text-red-400 shrink-0">failed</span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -1035,6 +1059,161 @@ function CollapsibleVideo({ videoPath, src }: { videoPath: string; src: string }
             className="w-full max-h-[480px] bg-black"
           />
         )
+      )}
+    </div>
+  );
+}
+
+// ── ScenariosPanel — saved scenarios for this session + reusable prior ones ───
+
+interface ScenarioListItem {
+  id: string;
+  description: string;
+  testPath: string | null;
+  lastStatus: string | null;
+  createdAt: number;
+}
+
+function ScenariosPanel({
+  sessionId, refreshKey, onChange, onRunAdded,
+}: {
+  sessionId: string;
+  refreshKey: number;
+  onChange: () => void;
+  /** Run the just-added test alone; its result merges into the suite results. */
+  onRunAdded: (testFile: string) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const [current, setCurrent] = useState<ScenarioListItem[]>([]);
+  const [prior, setPrior] = useState<ScenarioListItem[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [confirmDel, setConfirmDel] = useState<ScenarioListItem | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/sessions/${sessionId}/scenarios`)
+      .then(r => r.ok ? r.json() : { current: [], prior: [] })
+      .then(d => { if (active) { setCurrent(d.current ?? []); setPrior(d.prior ?? []); } })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [sessionId, refreshKey]);
+
+  async function addPrior(s: ScenarioListItem) {
+    setBusy(s.id);
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/scenarios`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fromScenarioId: s.id }),
+      });
+      const data = await res.json().catch(() => ({})) as { testFile?: string };
+      onChange();
+      // Run only the test we just added; the run-file route merges its outcome
+      // into the existing suite results.
+      if (res.ok && data.testFile) onRunAdded(data.testFile);
+    } finally { setBusy(null); }
+  }
+
+  async function doDelete(s: ScenarioListItem, removeTest: boolean) {
+    setConfirmDel(null);
+    setBusy(s.id);
+    try {
+      await fetch(`/api/sessions/${sessionId}/scenarios?scenarioId=${s.id}&removeTest=${removeTest}`, {
+        method: 'DELETE',
+      });
+      onChange();
+    } finally { setBusy(null); }
+  }
+
+  if (current.length === 0 && prior.length === 0) return null;
+
+  const statusDot = (st: string | null) =>
+    st === 'failed' ? 'bg-red-500' : st === 'passed' ? 'bg-emerald-500' : 'bg-zinc-500';
+
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center gap-2 px-4 py-3 hover:bg-zinc-800/40 transition text-left"
+      >
+        <Sparkles className="h-4 w-4 text-violet-400 shrink-0" />
+        <span className="text-sm font-semibold text-zinc-100 flex-1">
+          Scenarios <span className="text-zinc-500 font-normal">({current.length})</span>
+        </span>
+        {open ? <ChevronDown className="h-4 w-4 text-zinc-600" /> : <ChevronRight className="h-4 w-4 text-zinc-600" />}
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-4 border-t border-zinc-800 pt-3">
+          {/* This session's scenarios */}
+          {current.length > 0 && (
+            <div className="space-y-1.5">
+              {current.map(s => (
+                <div key={s.id} className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2">
+                  <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${statusDot(s.lastStatus)}`} />
+                  <span className="flex-1 text-xs text-zinc-300 truncate" title={s.description}>{s.description}</span>
+                  {s.lastStatus === 'failed' && (
+                    <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 shrink-0">failed</span>
+                  )}
+                  <button
+                    onClick={() => setConfirmDel(s)}
+                    disabled={busy === s.id}
+                    title="Delete scenario"
+                    className="shrink-0 p-1 rounded text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition disabled:opacity-50"
+                  >
+                    {busy === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Reusable scenarios from previous runs of the same app */}
+          {prior.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[11px] text-zinc-500">
+                Previously tested for this app — add any back in one click (no regeneration):
+              </p>
+              {prior.map(s => (
+                <div key={s.id} className="flex items-center gap-2 rounded-lg border border-zinc-800/60 bg-zinc-900 px-3 py-2">
+                  <span className="flex-1 text-xs text-zinc-400 truncate" title={s.description}>{s.description}</span>
+                  <button
+                    onClick={() => void addPrior(s)}
+                    disabled={busy === s.id || !s.testPath}
+                    title={s.testPath ? 'Add this test to the current session' : 'No reusable test for this scenario'}
+                    className="shrink-0 flex items-center gap-1 rounded bg-violet-600/90 px-2 py-1 text-[11px] font-semibold text-white hover:bg-violet-500 transition disabled:opacity-40"
+                  >
+                    {busy === s.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />} Add
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Delete confirmation — ask whether to also remove the related test */}
+      {confirmDel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setConfirmDel(null)}>
+          <div className="w-full max-w-md bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <h2 className="text-base font-semibold text-zinc-100">Delete scenario?</h2>
+            <p className="text-xs text-zinc-400">
+              <span className="text-zinc-200">{confirmDel.description}</span>
+              {confirmDel.testPath ? ' — it has a generated test. Do you also want to remove that test from the suite?' : ''}
+            </p>
+            <div className="flex flex-wrap gap-2 justify-end pt-1">
+              <button onClick={() => setConfirmDel(null)} className="px-3 py-2 rounded-lg text-sm text-zinc-300 hover:bg-zinc-800 transition">Cancel</button>
+              {confirmDel.testPath && (
+                <button onClick={() => void doDelete(confirmDel, false)} className="px-3 py-2 rounded-lg text-sm font-medium text-zinc-200 border border-zinc-700 hover:bg-zinc-800 transition">
+                  Delete scenario, keep test
+                </button>
+              )}
+              <button onClick={() => void doDelete(confirmDel, !!confirmDel.testPath)} className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-500 transition">
+                {confirmDel.testPath ? 'Delete both' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1147,9 +1326,27 @@ export default function SessionPage() {
   const [sseConnected, setSseConnected] = useState(true);
   // Scenario runner
   const [scenarioInput, setScenarioInput] = useState('');
+  const [scenariosRefresh, setScenariosRefresh] = useState(0);
   const [scenarioLoading, setScenarioLoading] = useState(false);
   // Which specific test file is currently being run via the run-file endpoint
   const [runningFile, setRunningFile] = useState<string | null>(null);
+  const [testFilePage, setTestFilePage] = useState(0); // paginate the spec list
+  const TEST_FILE_PAGE_SIZE = 8;
+  // Run a single spec file alone; the run-file route merges its result into the
+  // suite results. Shared by the Generated Tests cards and the Scenarios panel.
+  const runSingleFile = useCallback(async (testFile: string) => {
+    setRunningFile(testFile); // optimistic — show the spinner instantly
+    try {
+      const res = await fetch(`/api/sessions/${id}/run-file`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ testFile }),
+      });
+      if (!res.ok) setRunningFile(null);
+    } catch {
+      setRunningFile(null);
+    }
+  }, [id]);
   // Image lightbox modal
   const [imageModal, setImageModal] = useState<{ src: string; alt: string; label: string } | null>(null);
   // All sections collapsed by default except Live Log (logs key not present = open)
@@ -1521,6 +1718,14 @@ export default function SessionPage() {
   // canFix: there are failures AND (no triage yet OR triage recommends healing)
   const canFix = !isRunning && hasFailures && (!triage || triage.selfHealRecommended);
   const hasLayers = !!session.figmaFileUrl;
+  // No "source of truth" = no doc, no Figma, no user-defined flows, no imported
+  // project. Tests are then inferred purely from the live app, so there's nothing
+  // to validate intended behavior against — warn the user.
+  const hasSourceOfTruth =
+    !!session.contextDocName ||
+    hasLayers ||
+    (session.userFlows?.length ?? 0) > 0 ||
+    !!session.importedProject;
   // Figma verification is independent of the pipeline — canLayers is true whenever
   // the session has a Figma URL, regardless of whether tests are running.
   const canLayers = hasLayers;
@@ -1727,6 +1932,19 @@ export default function SessionPage() {
                   <Code2 className="h-3.5 w-3.5" /> Generate
                 </Button>
               ) : null}
+
+              {/* No source of truth → tests are inferred from the live app only */}
+              {!hasSourceOfTruth && (testFiles.length > 0 || canGenerate) && (
+                <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                  <AlertCircle className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
+                  <p className="text-[11px] leading-relaxed text-amber-300">
+                    No documentation, Figma, flows, or imported tests were provided.
+                    Tests are inferred from the live app only — there's no source of
+                    truth to validate intended behavior. Upload a doc or define flows
+                    for more meaningful assertions.
+                  </p>
+                </div>
+              )}
             </PhaseCard>
 
             <PhaseCard
@@ -1778,6 +1996,11 @@ export default function SessionPage() {
                       <Bug className="h-2.5 w-2.5" /> {triage.appBugCount} app bug
                     </span>
                   )}
+                  {(triage.setupErrorCount ?? 0) > 0 && (
+                    <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border text-sky-400 bg-sky-500/10 border-sky-500/30">
+                      <KeyRound className="h-2.5 w-2.5" /> {triage.setupErrorCount} setup
+                    </span>
+                  )}
                   {triage.testBugCount > 0 && (
                     <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border text-amber-400 bg-amber-500/10 border-amber-500/30">
                       <FlaskConical className="h-2.5 w-2.5" /> {triage.testBugCount} test bug
@@ -1791,10 +2014,12 @@ export default function SessionPage() {
                 </div>
               )}
 
-              {/* Only app bugs — nothing to heal */}
+              {/* Nothing auto-healable — say why (setup/auth vs app gap) */}
               {triage && hasFailures && !triage.selfHealRecommended && (
-                <p className="text-[11px] text-red-400/80 mt-1">
-                  All failures are application gaps — fix the app, not the tests.
+                <p className={`text-[11px] mt-1 ${(triage.setupErrorCount ?? 0) > 0 ? 'text-sky-400/80' : 'text-red-400/80'}`}>
+                  {(triage.setupErrorCount ?? 0) > 0
+                    ? 'Failures are setup/auth or app issues — fix credentials/selectors and re-run; self-heal can’t help here.'
+                    : 'All failures are application gaps — fix the app, not the tests.'}
                 </p>
               )}
 
@@ -1903,7 +2128,7 @@ export default function SessionPage() {
               <div className="space-y-2">
                 <StatsBar
                   stats={session.testResult.stats}
-                  duration={session.testResult.duration}
+                  duration={session.testResult.duration * 1000}
                 />
                 {testFiles.length > 0 && (
                   <div className="flex gap-2 flex-wrap">
@@ -1956,12 +2181,15 @@ export default function SessionPage() {
               onSubmit={async () => {
                 if (!scenarioInput.trim()) return;
                 setScenarioLoading(true);
+                const desc = scenarioInput.trim();
                 await fetch(`/api/sessions/${id}/scenario`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ description: scenarioInput.trim() }),
+                  body: JSON.stringify({ description: desc }),
                 }).catch(() => {});
+                setScenarioInput(''); // clear the box so the next scenario starts fresh
                 setScenarioLoading(false);
+                setScenariosRefresh(n => n + 1); // refresh the scenarios list
               }}
               onRun={async () => {
                 await fetch(`/api/sessions/${id}/scenario/run`, { method: 'POST' }).catch(() => {});
@@ -1976,6 +2204,14 @@ export default function SessionPage() {
                   body: JSON.stringify({ testFile }),
                 }).catch(() => {});
               }}
+            />
+
+            {/* ── Saved scenarios (this session + reusable from past runs) ── */}
+            <ScenariosPanel
+              sessionId={id}
+              refreshKey={scenariosRefresh + (session.scenarioResult?.status === 'done' ? 1 : 0)}
+              onChange={() => setScenariosRefresh(n => n + 1)}
+              onRunAdded={runSingleFile}
             />
 
             {/* ── Scenario Recording ─────────────────────────────────────── */}
@@ -2307,21 +2543,17 @@ export default function SessionPage() {
                 </div>
                 {!collapsed["testfiles"] && (
                   <div className="space-y-2">
-                    {testFiles.map((f, i) => (
+                    {testFiles
+                      .slice(testFilePage * TEST_FILE_PAGE_SIZE, (testFilePage + 1) * TEST_FILE_PAGE_SIZE)
+                      .map((f) => (
                       <TestFileCard
-                        key={i}
+                        key={f}
                         testFile={f}
                         sessionId={session.id}
-                        isRunning={runningFile === f && session.status === 'running'}
-                        globalRunning={session.status === 'running'}
-                        onRun={async () => {
-                          setRunningFile(f);
-                          await fetch(`/api/sessions/${session.id}/run-file`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ testFile: f }),
-                          }).catch(() => {});
-                        }}
+                        isRunning={runningFile === f}
+                        cases={session.testResult?.cases}
+                        globalRunning={session.status === 'running' || runningFile !== null}
+                        onRun={() => runSingleFile(f)}
                         onStop={async () => {
                           await fetch(`/api/sessions/${session.id}/stop`, {
                             method: 'POST',
@@ -2330,6 +2562,7 @@ export default function SessionPage() {
                         }}
                       />
                     ))}
+                    <Paginator page={testFilePage} pageSize={TEST_FILE_PAGE_SIZE} total={testFiles.length} onPage={setTestFilePage} />
                   </div>
                 )}
               </div>

@@ -47,7 +47,7 @@ export async function createGeminiModel(
           ...(systemMessages.length > 0
             ? { systemInstruction: systemMessages.map(m => m.content).join('\n\n') }
             : {}),
-          temperature: 0.2,
+          temperature: invokeOptions?.temperature ?? 0.2,
           ...(invokeOptions?.maxTokens ? { maxOutputTokens: invokeOptions.maxTokens } : {}),
         },
       });

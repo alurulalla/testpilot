@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import { getSession, setStatus, addLog, markStopping, killProcess } from '@/lib/session-store';
 
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   markStopping(id);

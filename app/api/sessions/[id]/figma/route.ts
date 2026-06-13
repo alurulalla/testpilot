@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import { getSession, getCachedSession, setStatus, setFigmaResult, setFigmaChecking, setError, addLog, clearStopping, updateSession } from '@/lib/session-store';
 import { snapshotTestFiles } from '@/lib/session-files';
 import { runFigmaComparison, isFigmaConfigured } from '@/lib/figma-client';
@@ -11,7 +12,9 @@ import path from 'path';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   // Reject only if Figma is already in progress — the main pipeline can run in parallel
   if (session.figmaChecking) {

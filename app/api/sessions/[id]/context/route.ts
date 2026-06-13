@@ -7,6 +7,7 @@
  * from the documentation and creates UserFlow entries automatically.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { getSession, getCachedSession, setContextDoc, addUserFlow } from '@/lib/session-store';
@@ -79,7 +80,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json({
     content: session.contextDoc,
@@ -92,7 +95,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const contentType = req.headers.get('content-type') ?? '';
@@ -149,7 +154,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   setContextDoc(id, null, null);

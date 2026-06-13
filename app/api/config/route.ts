@@ -1,16 +1,22 @@
 import { NextResponse } from 'next/server';
-import { getAutoSelfHeal } from '@/lib/config';
+import { requireAuth, authErrorResponse } from '@/lib/auth';
+import { getOrgSettings } from '@/lib/org-settings';
 
 /**
  * GET /api/config
- * Returns server-side feature flags so the client can adapt its UI.
+ * Returns org-level feature flags so the client can adapt its UI.
  *
- * AUTO_SELF_HEAL (default: false)
+ * autoSelfHeal (default: false)
  *   false → self-healing must be triggered manually by the user
  *   true  → self-healing runs automatically after every failing test run
  */
 export async function GET() {
-  return NextResponse.json({
-    autoSelfHeal: getAutoSelfHeal(),
-  });
+  try {
+    const { org } = await requireAuth();
+    const { autoSelfHeal } = await getOrgSettings(org.id);
+    return NextResponse.json({ autoSelfHeal });
+  } catch (err) {
+    const r = authErrorResponse(err);
+    return r ?? NextResponse.json({ autoSelfHeal: false });
+  }
 }

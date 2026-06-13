@@ -36,6 +36,8 @@ declare global {
   var __tp_logbuf: Map<string, { message: string; level: string; createdAt: Date }[]> | undefined;
   // eslint-disable-next-line no-var
   var __tp_logtimer: ReturnType<typeof setTimeout> | undefined;
+  // eslint-disable-next-line no-var
+  var __tp_chunkseq: Map<string, number> | undefined;
 }
 
 const sessions: Map<string, Session>    = (globalThis.__tp_sessions    ??= new Map());
@@ -50,9 +52,8 @@ const logBuffer: Map<string, { message: string; level: string; createdAt: Date }
 // ── DB ↔ Session conversion ───────────────────────────────────────────────────
 
 type DbRow = Awaited<ReturnType<typeof prisma.session.findUniqueOrThrow>>;
-type DbLog = { id: bigint; message: string; level: string; createdAt: Date };
 
-function dbToSession(row: DbRow, logs: DbLog[] = []): Session {
+function dbToSession(row: DbRow, logs: LogEntry[] = []): Session {
   return {
     id:              row.id,
     orgId:           row.orgId,
@@ -79,11 +80,7 @@ function dbToSession(row: DbRow, logs: DbLog[] = []): Session {
     importedProject: (row.importedProject  ?? null) as ImportedProject   | null,
     coverageAnalysis:(row.coverageAnalysis ?? null) as CoverageAnalysis  | null,
     userFlows:       ((row.userFlows       as UserFlow[] | null) ?? []),
-    logs: logs.map(l => ({
-      ts:    l.createdAt.getTime(),
-      msg:   l.message,
-      level: l.level as LogEntry['level'],
-    })),
+    logs,
     createdAt: row.createdAt.getTime(),
     updatedAt: row.updatedAt.getTime(),
   };
@@ -172,16 +169,42 @@ export async function createSession(
  * Also clears all in-memory/runtime state for it. Caller is responsible for
  * disk-workspace cleanup and for ensuring the session isn't actively running.
  */
+function hostOfUrl(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
+}
+
 export async function deleteSession(id: string): Promise<void> {
+  // Capture org + url before removal so we can clean up app-scoped derived data.
+  const meta = sessions.get(id)
+    ?? await prisma.session.findUnique({ where: { id }, select: { orgId: true, url: true } }).catch(() => null);
+
   sessions.delete(id);
   subscribers.delete(id);
   stopping.delete(id);
   runningProcesses.delete(id);
   logBuffer.delete(id);
+  chunkSeq.delete(id);
   try {
     await prisma.session.delete({ where: { id } });
   } catch {
     // Already gone or never persisted — fine.
+  }
+
+  // TestCaseDescription rows are keyed by org+host (not FK'd to Session), so
+  // they don't cascade-delete. When the LAST session for an app is removed,
+  // purge them — otherwise deleting an app leaves stale data that resurfaces
+  // if the same URL is added again.
+  if (meta) {
+    try {
+      const host = hostOfUrl(meta.url);
+      const remaining = await prisma.session.findMany({ where: { orgId: meta.orgId }, select: { url: true } });
+      const stillHasApp = remaining.some(s => hostOfUrl(s.url) === host);
+      if (!stillHasApp) {
+        await prisma.testCaseDescription.deleteMany({ where: { orgId: meta.orgId, host } });
+      }
+    } catch {
+      // Best-effort cleanup — never block deletion on it.
+    }
   }
 }
 
@@ -193,14 +216,51 @@ export async function getSession(id: string): Promise<Session | undefined> {
   const cached = sessions.get(id);
   if (cached) return cached;
   // Cache miss (e.g. after server restart) — load from DB
-  const row = await prisma.session.findUnique({
-    where: { id },
-    include: { logs: { orderBy: { id: 'asc' } } },
-  });
+  const row = await prisma.session.findUnique({ where: { id } });
   if (!row) return undefined;
-  const session = dbToSession(row, row.logs);
+
+  // Logs live in chunks — flatten them back into the in-memory LogEntry list.
+  let logs: LogEntry[] = [];
+  try {
+    const chunks = await prisma.sessionLogChunk.findMany({
+      where: { sessionId: id },
+      orderBy: { seq: 'asc' },
+    });
+    logs = chunks.flatMap(c => (c.content as unknown as LogEntry[]) ?? []);
+  } catch { /* logs are non-critical — session still loads */ }
+
+  const session = dbToSession(row, logs);
+  normalizeInterrupted(session);
   sessions.set(id, session);
   return session;
+}
+
+// ── Stale-run recovery ────────────────────────────────────────────────────────
+// Pipelines run inside this process; they do not survive a restart/redeploy.
+// So if a session loads from the DB with an "active" status while absent from
+// the in-memory cache, the run it claims is provably dead — normalise it to
+// failed so re-runs and deletion work instead of being blocked forever.
+
+const RUNNING_STATUSES: SessionStatus[] = [
+  'exploring', 'analyzing', 'generating', 'running', 'fixing', 'figma-checking',
+];
+
+function normalizeInterrupted(session: Session): void {
+  const wasRunning = RUNNING_STATUSES.includes(session.status);
+  if (!wasRunning && !session.figmaChecking) return;
+
+  if (wasRunning) {
+    session.status = 'failed';
+    session.error = session.error
+      ?? 'Run interrupted — the server restarted while this session was running. Start a new run.';
+  }
+  session.figmaChecking = false;
+
+  // Persist the correction (fire-and-forget; safe to repeat).
+  prisma.session.update({
+    where: { id: session.id },
+    data: { status: session.status, error: session.error, figmaChecking: false },
+  }).catch(() => {});
 }
 
 /**
@@ -220,12 +280,61 @@ export function getCachedSession(id: string): Session | undefined {
  * and cause getSession() cache hits to incorrectly return empty log arrays.
  */
 export async function listSessions(orgId: string): Promise<Session[]> {
+  // NARROW select — list views must not drag the heavy JSON blobs (siteMap,
+  // figmaResult, contextDoc, …) for every session on every dashboard load.
+  // pagesCount stands in for siteMap.total_pages via a synthesised stub.
   const rows = await prisma.session.findMany({
     where: { orgId },
     orderBy: { createdAt: 'desc' },
-    // No `include: { logs }` — dashboard/list endpoints don't need log history.
+    select: {
+      id: true, orgId: true, createdByUserId: true, url: true,
+      status: true, figmaChecking: true, figmaFileUrl: true,
+      iteration: true, error: true, maxPages: true, headedMode: true,
+      figmaOnly: true, pagesCount: true,
+      testFiles: true, testResult: true,
+      createdAt: true, updatedAt: true,
+    },
   });
-  return rows.map(r => dbToSession(r)); // logs: [] — correct for list views
+  return rows.map(r => {
+    const session: Session = {
+      id:              r.id,
+      orgId:           r.orgId,
+      createdByUserId: r.createdByUserId,
+      url:             r.url,
+      status:          r.status as SessionStatus,
+      figmaFileUrl:    r.figmaFileUrl ?? null,
+      figmaFrameMap:   null,
+      figmaOnly:       r.figmaOnly,
+      figmaChecking:   r.figmaChecking,
+      iteration:       r.iteration,
+      error:           r.error ?? null,
+      maxPages:        r.maxPages,
+      headedMode:      r.headedMode,
+      contextDoc:      null,
+      contextDocName:  null,
+      // Stub carrying only the count — list UIs read siteMap?.total_pages.
+      siteMap: r.pagesCount > 0
+        ? { start_url: r.url, total_pages: r.pagesCount, pages: [] }
+        : null,
+      figmaResult:     null,
+      testFiles:       ((r.testFiles as string[] | null) ?? []),
+      testResult:      (r.testResult ?? null) as TestResult | null,
+      fixResult:       null,
+      triageResult:    null,
+      scenarioResult:  null,
+      importedProject: null,
+      coverageAnalysis: null,
+      userFlows:       [],
+      logs:            [],
+      createdAt: r.createdAt.getTime(),
+      updatedAt: r.updatedAt.getTime(),
+    };
+    // A session showing an active status that is NOT in this process's cache
+    // has no live run behind it (runs never survive restarts) — normalise it
+    // so the dashboard doesn't show phantom "running" sessions forever.
+    if (!sessions.has(session.id)) normalizeInterrupted(session);
+    return session;
+  });
 }
 
 /** Find sessions for a given URL origin, scoped to an organisation. */
@@ -264,6 +373,8 @@ export function setStatus(id: string, status: SessionStatus): void {
 
 export function setSiteMap(id: string, siteMap: SiteMap): void {
   updateSession(id, { siteMap });
+  // Denormalised page count so list views can show it without the siteMap blob.
+  dbWrite(id, { pagesCount: siteMap.total_pages ?? 0 });
 }
 
 export function setFigmaResult(id: string, figmaResult: FigmaResult): void {
@@ -336,15 +447,48 @@ export function setCoverageAnalysis(id: string, coverageAnalysis: CoverageAnalys
 const LOG_FLUSH_SIZE = 25;     // flush once this many lines are buffered (any session)
 const LOG_FLUSH_MS   = 1_500;  // …or after this long, whichever comes first
 
+const chunkSeq: Map<string, number> = (globalThis.__tp_chunkseq ??= new Map());
+/** Keep at most this many chunks per session (oldest pruned on flush). */
+const MAX_CHUNKS_PER_SESSION = 400;
+
+async function nextSeq(sessionId: string): Promise<number> {
+  const cached = chunkSeq.get(sessionId);
+  if (cached !== undefined) {
+    chunkSeq.set(sessionId, cached + 1);
+    return cached + 1;
+  }
+  // Cold start — find where the sequence left off.
+  let last = 0;
+  try {
+    const row = await prisma.sessionLogChunk.findFirst({
+      where: { sessionId },
+      orderBy: { seq: 'desc' },
+      select: { seq: true },
+    });
+    last = row?.seq ?? 0;
+  } catch { /* start from 0 */ }
+  chunkSeq.set(sessionId, last + 1);
+  return last + 1;
+}
+
 async function flushLogs(): Promise<void> {
-  const rows: { sessionId: string; message: string; level: string; createdAt: Date }[] = [];
   for (const [sid, buf] of logBuffer) {
     if (buf.length === 0) continue;
-    for (const e of buf) rows.push({ sessionId: sid, ...e });
+    const entries = buf.map(e => ({ ts: e.createdAt.getTime(), msg: e.message, level: e.level }));
     buf.length = 0;
+    try {
+      const seq = await nextSeq(sid);
+      await prisma.sessionLogChunk.create({
+        data: { sessionId: sid, seq, lineCount: entries.length, content: entries },
+      });
+      // Retention: opportunistically prune old chunks for this session.
+      if (seq > MAX_CHUNKS_PER_SESSION && seq % 20 === 0) {
+        await prisma.sessionLogChunk.deleteMany({
+          where: { sessionId: sid, seq: { lte: seq - MAX_CHUNKS_PER_SESSION } },
+        }).catch(() => {});
+      }
+    } catch { /* best-effort — entries stay in memory for live SSE */ }
   }
-  if (rows.length === 0) return;
-  try { await prisma.sessionLog.createMany({ data: rows }); } catch { /* best-effort */ }
 }
 
 function scheduleLogFlush(): void {
@@ -355,9 +499,17 @@ function scheduleLogFlush(): void {
   }, LOG_FLUSH_MS);
 }
 
+// ANSI escape sequences (cursor moves, line erases, colors) emitted by CLI
+// tools for live terminals — meaningless once persisted, so strip them.
+// Anchored on the ESC byte so plain text like "[chromium]" is never touched.
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\u001b\[[0-9;]*[A-Za-z]/g;
+
 export function addLog(id: string, msg: string, level: LogEntry['level'] = 'info'): void {
   const session = sessions.get(id);
   if (!session) return;
+  msg = msg.replace(ANSI_RE, '').replace(/\r/g, '').trim();
+  if (!msg) return; // nothing left after stripping control sequences
   const ts = Date.now();
   const entry: LogEntry = { ts, msg, level };
   session.logs.push(entry);

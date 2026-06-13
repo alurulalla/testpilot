@@ -2,6 +2,7 @@
  * DELETE /api/sessions/[id]/flows/[flowId]  — remove a specific user flow
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import path from 'path';
 import { getSession, removeUserFlow } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
@@ -14,7 +15,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; flowId: string }> },
 ) {
   const { id, flowId } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   removeUserFlow(id, flowId);

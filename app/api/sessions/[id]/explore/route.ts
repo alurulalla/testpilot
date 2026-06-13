@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import { getSession, setStatus, setSiteMap, setError, addLog } from '@/lib/session-store';
 import { runSiteExplorer, Workspace } from '@/lib/pilot';
 import { SiteMap } from '@/types/session';
@@ -8,7 +9,9 @@ import { getSessionDir } from '@/lib/config';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (['exploring','generating','running','fixing'].includes(session.status)) {
     return NextResponse.json({ error: 'Session already running' }, { status: 409 });

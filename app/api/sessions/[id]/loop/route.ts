@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import {
   getSession, getCachedSession, setStatus, setSiteMap, setTestResult, setFixResult,
   setTriageResult, setFigmaResult, setFigmaChecking, setError, clearError,
@@ -15,7 +16,8 @@ import { triageFailures } from '@/lib/triage-failures';
 import { SiteMap } from '@/types/session';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import { getUrlContext, saveUrlContext, contextToEnv, contextToPromptHint } from '@/lib/url-context-store';
-import { getSessionDir, getDeepCrawlMaxPages, getAutoSelfHeal } from '@/lib/config';
+import { getSessionDir } from '@/lib/config';
+import { getOrgSettings } from '@/lib/org-settings';
 import { runFigmaComparison, isFigmaConfigured } from '@/lib/figma-client';
 import { extractCredentialsFromDoc } from '@/lib/extract-credentials-from-doc';
 import { performPreLogin } from '@/lib/pre-login';
@@ -26,12 +28,16 @@ import { runNavClickExplorer, runBroadClickExplorer } from '@/lib/pilot/nav-clic
 import { discoverSelectors } from '@/lib/pilot/discover-selectors';
 import { synthesizeFeatures } from '@/lib/synthesize-features';
 import { snapshotTestFiles } from '@/lib/session-files';
+import { findPriorSuite, copySuiteInto, currentFeatureNames } from '@/lib/suite-reuse';
+import { recordTestRun, attachTriageToRun, attachFixToRun } from '@/lib/test-runs';
 import { writeFileSync, existsSync, readFileSync } from 'fs';
 import path from 'path';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (['exploring','generating','running','fixing'].includes(session.status)) {
     return NextResponse.json({ error: 'Session already running' }, { status: 409 });
@@ -166,7 +172,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // Phase 1: Explore
       setStatus(id, 'exploring');
       const isAuthenticatedCrawl = Boolean(authFile && existsSync(authFile));
-      const crawlMaxPages  = isAuthenticatedCrawl ? getDeepCrawlMaxPages() : maxPages;
+      const crawlMaxPages  = isAuthenticatedCrawl ? (await getOrgSettings(session.orgId)).deepCrawlMaxPages : maxPages;
       const crawlDepth     = isAuthenticatedCrawl ? 3 : 2;
 
       if (isAuthenticatedCrawl) {
@@ -454,28 +460,62 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         }
       }
 
-      const origLog = console.log;
-      console.log = (...args: unknown[]) => {
-        origLog(...args);
-        const msg = args.map(a => (typeof a === 'string' ? a : String(a))).join(' ');
-        addLog(id, msg, msg.toLowerCase().includes('fail') || msg.toLowerCase().includes('error') ? 'error' : 'info');
-      };
-      try {
-        await runGenerateSuite({
-          skipExplore: true,
-          depth: 2,
-          maxPages,
-          model: llmConfig.model,
-          chatModel,
-          workspace,
-        });
-      } finally {
-        console.log = origLog;
+      // ── Token saver: reuse a prior suite when the app hasn't gained features ──
+      // Only for pure crawl-driven sessions (no doc/flows/import — those change
+      // what we'd generate). If a previous session tested the same app and the
+      // crawl surfaced no NEW features, copy that suite instead of regenerating.
+      let reusedSuite = false;
+      if (!hasDoc && !hasFlows && !hasImported) {
+        const prior = await findPriorSuite(session.orgId, session.url, id);
+        if (prior) {
+          const current = currentFeatureNames(workspace);
+          const priorSet = new Set(prior.featureNames);
+          const newFeatures = current.filter(n => !priorSet.has(n));
+          if (current.length > 0 && prior.featureNames.length > 0 && newFeatures.length === 0) {
+            addLog(
+              id,
+              `♻ Reusing the existing suite for this app — no new features detected since the last run, ` +
+              `so ${prior.specCount} spec file(s) were copied instead of regenerating (0 tokens spent on generation).`,
+              'success',
+            );
+            await copySuiteInto(id, workspace, prior.files);
+            updateSession(id, { testFiles: workspace.testFiles() });
+            await snapshotTestFiles(id, workspace);
+            reusedSuite = true;
+          } else if (newFeatures.length > 0) {
+            addLog(
+              id,
+              `🔎 ${newFeatures.length} new feature(s) since the last suite (${newFeatures.slice(0, 5).join(', ')}${newFeatures.length > 5 ? '…' : ''}) — regenerating.`,
+              'info',
+            );
+          }
+        }
       }
-      const testFiles = workspace.testFiles();
-      updateSession(id, { testFiles });
-      await snapshotTestFiles(id, workspace); // durable copy in DB (survives redeploy)
-      addLog(id, `Generated ${testFiles.length} test file(s).`, 'success');
+
+      if (!reusedSuite) {
+        const origLog = console.log;
+        console.log = (...args: unknown[]) => {
+          origLog(...args);
+          const msg = args.map(a => (typeof a === 'string' ? a : String(a))).join(' ');
+          addLog(id, msg, msg.toLowerCase().includes('fail') || msg.toLowerCase().includes('error') ? 'error' : 'info');
+        };
+        try {
+          await runGenerateSuite({
+            skipExplore: true,
+            depth: 2,
+            maxPages,
+            model: llmConfig.model,
+            chatModel,
+            workspace,
+          });
+        } finally {
+          console.log = origLog;
+        }
+        const testFiles = workspace.testFiles();
+        updateSession(id, { testFiles });
+        await snapshotTestFiles(id, workspace); // durable copy in DB (survives redeploy)
+        addLog(id, `Generated ${testFiles.length} test file(s).`, 'success');
+      }
       if (stopped('generate')) return;
 
       // Phase 2.5: Review generated tests
@@ -511,6 +551,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         const headed = getCachedSession(id)?.headedMode ?? false;
         const result = await runTestsAsync(workspace, (line) => addLog(id, line, 'info'), id, headed);
         setTestResult(id, result);
+        const runId = await recordTestRun(id, result, { trigger: 'loop', iteration: i + 1 });
         if (stopped('test run')) return;
 
         const { passed, failed, total, errors } = result.stats;
@@ -565,6 +606,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
         if (triage) {
           setTriageResult(id, triage);
+          await attachTriageToRun(runId, triage);
+          if (triage.dominantRootCause) {
+            addLog(id, `▶ Root cause: ${triage.dominantRootCause}`, 'error');
+          }
+          if ((triage.setupErrorCount ?? 0) > 0) {
+            addLog(
+              id,
+              `⚠ ${triage.setupErrorCount} failure(s) are setup/auth errors — fix credentials or login selectors; tests can't pass until login works. Skipping self-heal for these.`,
+              'error',
+            );
+          }
           if (triage.appBugCount > 0) {
             addLog(
               id,
@@ -574,7 +626,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           }
         }
 
-        const autoSelfHeal = getAutoSelfHeal();
+        const autoSelfHeal = (await getOrgSettings(session.orgId)).autoSelfHeal;
 
         if (!autoSelfHeal) {
           addLog(
@@ -588,7 +640,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         }
 
         if (!triage?.selfHealRecommended) {
-          addLog(id, 'All remaining failures are application bugs. Stopping auto-heal loop.', 'info');
+          addLog(
+            id,
+            (triage?.setupErrorCount ?? 0) > 0
+              ? 'Remaining failures are setup/auth or app issues — not auto-healable. Fix credentials/selectors and re-run. Stopping auto-heal loop.'
+              : 'All remaining failures are application bugs. Stopping auto-heal loop.',
+            'info',
+          );
           break;
         }
 
@@ -600,6 +658,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             workspace, chatModel, (line) => addLog(id, line, 'info'), id, triage?.analyses,
           );
           setFixResult(id, { fixed: fixResult.fixed, filesChanged: fixResult.filesChanged });
+          await attachFixToRun(runId, { fixed: fixResult.fixed, filesChanged: fixResult.filesChanged });
           if (fixResult.fixed) await snapshotTestFiles(id, workspace); // persist healed content
           addLog(
             id,

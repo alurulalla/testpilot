@@ -3,6 +3,7 @@
  * POST /api/sessions/[id]/flows  — add a new flow
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { getSession, getCachedSession, addUserFlow } from '@/lib/session-store';
@@ -17,7 +18,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json({ flows: session.userFlows });
 }
@@ -27,7 +30,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const body = await req.json().catch(() => ({})) as {

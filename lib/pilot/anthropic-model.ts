@@ -67,9 +67,10 @@ export async function createAnthropicModel(
 
     async invoke(
       messages: ChatMessage[],
-      invokeOptions?: { maxTokens?: number },
+      invokeOptions?: { maxTokens?: number; temperature?: number },
     ): Promise<string> {
       const maxTokens = invokeOptions?.maxTokens ?? 16_384;
+      const temperature = invokeOptions?.temperature;
 
       const systemMessages    = messages.filter(m => m.role === 'system');
       const nonSystemMessages = messages.filter(m => m.role !== 'system');
@@ -105,6 +106,7 @@ export async function createAnthropicModel(
       const response = await client.messages.create({
         model: modelName,
         max_tokens: maxTokens,
+        ...(temperature !== undefined ? { temperature } : {}),
         ...(systemBlocks.length > 0 ? { system: systemBlocks } : {}),
         messages: builtMessages,
       });

@@ -10,14 +10,22 @@
  *  2b. If not found → generate a new focused test, run it with video recording.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import path from 'path';
-import { getSession, setScenarioResult, setTestResult, addLog, updateSession } from '@/lib/session-store';
-import { snapshotTestFiles } from '@/lib/session-files';
+import { getSession, getCachedSession, setScenarioResult, setTestResult, addLog, updateSession } from '@/lib/session-store';
+import { snapshotTestFiles, ensureWorkspaceReady } from '@/lib/session-files';
+import { recordTestRun, mergeTestResult } from '@/lib/test-runs';
+import { recordScenario } from '@/lib/scenarios';
+import { parsePlaywrightReport } from '@/lib/playwright-report';
 import { Workspace } from '@/lib/pilot';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
 import { getOrgLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
-import { findExistingTest, generateScenarioTest } from '@/lib/pilot/generate-scenario';
+import { findExistingTest, generateScenarioTest, findRelevantPages } from '@/lib/pilot/generate-scenario';
+import {
+  detectMultiStep, extractIntent, generateFlowTest,
+  refineScenarioTest, refinementKeepsAssertions,
+} from '@/lib/pilot/scenario-flow';
 import type { ScenarioResult } from '@/types/session';
 import { getSessionDir } from '@/lib/config';
 
@@ -27,7 +35,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
   const body = await req.json().catch(() => ({})) as { description?: string };
@@ -68,6 +78,10 @@ export async function POST(
       const model = withRateLimit(baseModel);
 
       // ── LLM-based search: does any existing test cover this scenario? ──────
+      // Rebuild the suite from the DB first (disk may be cold after a redeploy)
+      // so existing tests are FOUND instead of being regenerated (wasting tokens).
+      await ensureWorkspaceReady(id, workspace);
+
       const findResult = await findExistingTest(description, workspace, model);
 
       if (findResult.found) {
@@ -101,21 +115,50 @@ export async function POST(
         elements: p.elements,
       })) ?? [];
 
-      // Log which pages were matched before generation
-      if (siteMapPages.length > 0) {
-        const { findRelevantPages } = await import('@/lib/pilot/generate-scenario');
-        const top = findRelevantPages(description, siteMapPages, 1);
-        if (top.length > 0) {
-          addLog(id, `🎯 Most relevant page: ${top[0].url} — "${top[0].title}"`, 'info');
-        }
-      }
+      // ── Generation: intent-driven journey OR single-page check ────────────
+      let testFile: string;
+      let testContent: string;
+      let matchedTests: string[];
 
-      const genResult = await generateScenarioTest({
-        description,
-        workspace,
-        model,
-        siteMapPages,
-      });
+      const extractNames = (code: string): string[] => {
+        const names: string[] = [];
+        const re = /(?:test|it)\s*\(\s*['"`]([^'"`]+)['"`]/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(code)) !== null) names.push(m[1]);
+        return names;
+      };
+
+      const isJourney = detectMultiStep(description) && siteMapPages.length > 0;
+      let usedFlow = false;
+
+      if (isJourney) {
+        addLog(id, '🧭 Multi-step journey detected — extracting intent…', 'info');
+        const steps = await extractIntent(description, siteMapPages, model);
+        if (steps.length >= 2) {
+          addLog(id, `📋 Plan (${steps.length} steps):`, 'info');
+          steps.forEach((st, i) =>
+            addLog(id, `  ${i + 1}. ${st.action}  →  expect: ${st.expected}`, 'info'));
+          const code = await generateFlowTest({ description, steps, pages: siteMapPages, workspace, model });
+          const slug = description.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '').slice(0, 50) || 'flow';
+          testFile = path.join(workspace.testsDir, `scenario-${slug}.spec.ts`);
+          require('fs').writeFileSync(testFile, code, 'utf8');
+          testContent = code;
+          matchedTests = extractNames(code);
+          usedFlow = true;
+        } else {
+          addLog(id, '  Intent extraction returned no plan — using single-page generator.', 'info');
+          const gen = await generateScenarioTest({ description, workspace, model, siteMapPages });
+          testFile = gen.testFile; testContent = gen.testContent; matchedTests = gen.matchedTests;
+        }
+      } else {
+        if (siteMapPages.length > 0) {
+          const top = findRelevantPages(description, siteMapPages, 1);
+          if (top.length > 0) addLog(id, `🎯 Most relevant page: ${top[0].url} — "${top[0].title}"`, 'info');
+        }
+        const gen = await generateScenarioTest({ description, workspace, model, siteMapPages });
+        testFile = gen.testFile; testContent = gen.testContent; matchedTests = gen.matchedTests;
+      }
 
       // Add the new scenario spec to the persistent suite so it joins the
       // existing tests (instead of replacing the view) and survives redeploys.
@@ -124,50 +167,113 @@ export async function POST(
 
       // The generated file is now part of the available list too
       const generatedEntry = {
-        testFile: genResult.testFile,
-        fileName: genResult.testFile.split('/').pop() ?? genResult.testFile,
-        testNames: genResult.matchedTests,
+        testFile,
+        fileName: testFile.split('/').pop() ?? testFile,
+        testNames: matchedTests,
       };
       const updatedAvailable = [
-        ...findResult.allTests.filter(t => t.testFile !== genResult.testFile),
+        ...findResult.allTests.filter(t => t.testFile !== testFile),
         generatedEntry,
       ];
 
-      addLog(id, `📝 Generated test: ${generatedEntry.fileName}`, 'success');
+      addLog(id, `📝 Generated ${usedFlow ? 'journey' : ''} test: ${generatedEntry.fileName}`, 'success');
       setScenarioResult(id, {
         ...initial,
         status: 'running',
         wasFound: false,
-        testFile: genResult.testFile,
-        testContent: genResult.testContent,
-        matchedTests: genResult.matchedTests,
+        testFile,
+        testContent,
+        matchedTests,
         availableTests: updatedAvailable,
       });
 
-      // Run ONLY the generated scenario file
+      // ── Run with capped self-refinement ───────────────────────────────────
+      // On failure, the REAL run error is fed back to fix locators/waits ONLY —
+      // refinements that weaken assertions are mechanically rejected.
+      const MAX_REFINES = 3;
+      const fileName = testFile.split('/').pop() ?? testFile;
+
       addLog(id, `▶ Running scenario test…`, 'info');
-      const testResult = await runScenarioFile(workspace, genResult.testFile, id);
+      let testResult = await runScenarioFile(workspace, testFile, id);
+      await recordTestRun(id, testResult, { trigger: 'scenario', targetFile: fileName });
+
+      let attempt = 0;
+      while (testResult.stats.failed + testResult.stats.errors > 0 && attempt < MAX_REFINES) {
+        attempt++;
+        addLog(id, `🔧 Refine ${attempt}/${MAX_REFINES}: correcting from the real failure…`, 'info');
+        const grounding = findRelevantPages(description, siteMapPages, 3);
+        let refined: string;
+        try {
+          refined = await refineScenarioTest({
+            code: testContent,
+            errorOutput: testResult.output,
+            pages: grounding.length > 0 ? grounding : siteMapPages.slice(0, 3),
+            model,
+          });
+        } catch (refineErr) {
+          addLog(id, `  Refinement failed (${refineErr instanceof Error ? refineErr.message : 'error'}) — stopping.`, 'error');
+          break;
+        }
+        if (!refinementKeepsAssertions(testContent, refined)) {
+          addLog(id, '  ✋ Refinement rejected — it weakened assertions. Keeping the original test.', 'error');
+          break;
+        }
+        require('fs').writeFileSync(testFile, refined, 'utf8');
+        testContent = refined;
+        await snapshotTestFiles(id, workspace); // persists (and records previousContent)
+        setScenarioResult(id, {
+          ...initial,
+          status: 'running',
+          wasFound: false,
+          testFile,
+          testContent,
+          matchedTests: extractNames(refined),
+          availableTests: updatedAvailable,
+        });
+        addLog(id, `▶ Re-running (attempt ${attempt + 1})…`, 'info');
+        testResult = await runScenarioFile(workspace, testFile, id);
+        await recordTestRun(id, testResult, { trigger: 'scenario', targetFile: fileName });
+      }
 
       const { passed, failed, total } = testResult.stats;
+      const healthy = failed === 0 && testResult.stats.errors === 0;
       addLog(
         id,
-        `${passed}/${total} passed${failed > 0 ? `, ${failed} failed` : ' ✅'}`,
-        failed === 0 ? 'success' : 'error',
+        `${passed}/${total} passed${healthy ? ' ✅' : `, ${failed} failed`}` +
+        (attempt > 0 ? ` (after ${attempt} refinement${attempt !== 1 ? 's' : ''})` : ''),
+        healthy ? 'success' : 'error',
       );
+      if (!healthy) {
+        addLog(id, '⚠ Still failing after refinement — the app may not deliver this expectation (possible real bug). Check the recording.', 'error');
+      }
 
       setScenarioResult(id, {
         description,
         status: 'done',
         wasFound: false,
-        testFile: genResult.testFile,
-        testContent: genResult.testContent,
-        matchedTests: genResult.matchedTests,
+        testFile,
+        testContent,
+        matchedTests: extractNames(testContent),
         availableTests: updatedAvailable,
         videos: testResult.videos,
         testResult,
         error: null,
       });
-      setTestResult(id, testResult);
+      // Merge into the existing suite result so the scenario ADDS to the totals
+      // (old + new) rather than replacing what was already there.
+      const prevSuite = getCachedSession(id)?.testResult ?? null;
+      setTestResult(id, mergeTestResult(prevSuite, testResult, fileName));
+
+      // Persist the scenario so it's listed for this session and re-usable for
+      // the same target app in future sessions.
+      await recordScenario({
+        orgId: session.orgId,
+        sessionId: id,
+        url: session.url,
+        description,
+        testPath: require('path').relative(workspace.dir, testFile),
+        lastStatus: healthy ? 'passed' : 'failed',
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const isAuth = msg.includes('401') || msg.includes('authentication_error') ||
@@ -226,7 +332,7 @@ async function runScenarioFile(
     const proc = spawn(
       process.platform === 'win32' ? 'npx.cmd' : 'npx',
       args,
-      { cwd: workspace.dir, stdio: 'pipe', shell: process.platform === 'win32' },
+      { cwd: workspace.dir, stdio: 'pipe', shell: process.platform === 'win32', env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' } },
     );
 
     let output = '';
@@ -245,25 +351,7 @@ async function runScenarioFile(
       const duration = (Date.now() - start) / 1000;
 
       // Parse stats from JSON report
-      let stats = { total: 0, passed: 0, failed: 0, errors: 0 };
-      try {
-        if (fse(reportPath)) {
-          const report = JSON.parse(rf(reportPath, 'utf8')) as {
-            stats?: { expected?: number; unexpected?: number; skipped?: number };
-            errors?: unknown[];
-            suites?: unknown[];
-          };
-          if ((report.errors?.length ?? 0) > 0 && (report.suites?.length ?? 0) === 0) {
-            stats = { total: 0, passed: 0, failed: 0, errors: report.errors!.length };
-          } else {
-            const s = report.stats ?? {};
-            const passed = s.expected ?? 0;
-            const failed = s.unexpected ?? 0;
-            const skipped = s.skipped ?? 0;
-            stats = { total: passed + failed + skipped, passed, failed, errors: 0 };
-          }
-        }
-      } catch { stats = { total: 0, passed: 0, failed: 0, errors: 1 }; }
+      const { stats, cases } = parsePlaywrightReport(reportPath);
 
       // Collect videos
       const videos: string[] = [];
@@ -279,7 +367,7 @@ async function runScenarioFile(
       }
       if (fse(testResultsDir)) scanVideos(testResultsDir);
 
-      resolve({ code: code ?? 1, duration, stats, output, videos });
+      resolve({ code: code ?? 1, duration, stats, output, videos, cases });
     });
 
     proc.on('error', (err: Error) => {
@@ -298,7 +386,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   return NextResponse.json(session.scenarioResult ?? null);
 }

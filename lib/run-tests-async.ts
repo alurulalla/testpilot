@@ -2,7 +2,8 @@ import { spawn } from 'child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync, readdirSync } from 'fs';
 import path from 'path';
 import { Workspace } from '@/lib/pilot';
-import { TestResult, TestStats } from '@/types/session';
+import { TestResult } from '@/types/session';
+import { parsePlaywrightReport } from '@/lib/playwright-report';
 import { registerProcess, unregisterProcess } from '@/lib/session-store';
 // NOTE: patchPlaywrightConfigForAuth is intentionally NOT called here.
 // Generated spec files use manual login (loginAndGoto helpers). Adding a global
@@ -10,29 +11,6 @@ import { registerProcess, unregisterProcess } from '@/lib/session-store';
 // navigating to '/' redirects to /inventory.html before the login form appears,
 // breaking every test that tries to fill the login form. auth.json is used only
 // during exploration (authenticated-site-explorer), not for test execution.
-
-function parseStats(reportPath: string): TestStats {
-  if (!existsSync(reportPath)) {
-    return { total: 0, passed: 0, failed: 0, errors: 1 };
-  }
-  try {
-    const report = JSON.parse(readFileSync(reportPath, 'utf8')) as {
-      suites?: unknown[];
-      errors?: { message: string }[];
-      stats?: { expected?: number; unexpected?: number; skipped?: number; flaky?: number };
-    };
-    if ((report.errors?.length ?? 0) > 0 && (report.suites?.length ?? 0) === 0) {
-      return { total: 0, passed: 0, failed: 0, errors: report.errors!.length };
-    }
-    const s = report.stats ?? {};
-    const passed = s.expected ?? 0;
-    const failed = s.unexpected ?? 0;
-    const skipped = s.skipped ?? 0;
-    return { total: passed + failed + skipped, passed, failed, errors: 0 };
-  } catch {
-    return { total: 0, passed: 0, failed: 0, errors: 1 };
-  }
-}
 
 /**
  * Patch playwright.config.ts in the workspace to enable video recording.
@@ -114,7 +92,9 @@ export async function runTestsAsync(
       {
         cwd: workspace.dir,
         stdio: 'pipe',
-        env: { ...process.env },
+        // NO_COLOR/FORCE_COLOR=0: stop Playwright emitting ANSI control codes
+        // (cursor moves, line erases) that would be persisted as garbage in logs.
+        env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
       },
     );
 
@@ -141,9 +121,9 @@ export async function runTestsAsync(
     proc.on('close', (code) => {
       if (sessionId) unregisterProcess(sessionId);
       const duration = (Date.now() - start) / 1000;
-      const stats = parseStats(reportPath);
+      const { stats, cases } = parsePlaywrightReport(reportPath);
       const videos = collectVideos(workspace.dir);
-      resolve({ code: code ?? 1, duration, stats, output, videos });
+      resolve({ code: code ?? 1, duration, stats, output, videos, cases });
     });
 
     proc.on('error', (err) => {

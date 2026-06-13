@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import { getSession } from '@/lib/session-store';
 import { createReadStream, existsSync, statSync } from 'fs';
 import path from 'path';
@@ -15,7 +16,9 @@ export async function GET(
 ) {
   const { id, path: segments } = await params;
 
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const workspace = new Workspace({

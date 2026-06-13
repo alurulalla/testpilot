@@ -141,25 +141,50 @@ const LOGIN_URL = ${JSON.stringify(loginInfo.loginUrl)};
  * Uses the exact selectors captured when the login form was detected.
  */
 export async function login(page: Page): Promise<void> {
-  await page.goto(LOGIN_URL);
-  await page.waitForLoadState('domcontentloaded');
-  // Username — exact selector captured during form detection
-  await page.locator(${JSON.stringify(loginInfo.usernameSelector)}).first().fill(
-    process.env.${loginInfo.usernameEnvVar} ?? ${JSON.stringify(loginInfo.usernameValue)},
-  );
-  // Password
-  await page.locator('input[type="password"]').first().fill(
-    process.env.${loginInfo.passwordEnvVar} ?? ${JSON.stringify(loginInfo.passwordValue)},
-  );
-  // Submit button — exact text captured during form detection
+  const username = process.env.${loginInfo.usernameEnvVar} ?? ${JSON.stringify(loginInfo.usernameValue)};
+  const password = process.env.${loginInfo.passwordEnvVar} ?? ${JSON.stringify(loginInfo.passwordValue)};
+  if (!username || !password) {
+    throw new Error(
+      'login(): no credentials configured. Set ${loginInfo.usernameEnvVar} / ${loginInfo.passwordEnvVar} ' +
+      'in .env (or the environment) and re-run.',
+    );
+  }
+
+  await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
+
+  // Username field must be present — otherwise the selector/login URL is wrong
+  // and every downstream test would fail with a cryptic timeout.
+  const userField = page.locator(${JSON.stringify(loginInfo.usernameSelector)}).first();
+  try {
+    await userField.waitFor({ state: 'visible', timeout: 10_000 });
+  } catch {
+    throw new Error('login(): username field not found at ' + LOGIN_URL + ' — the login form may have changed.');
+  }
+  await userField.fill(username);
+  await page.locator('input[type="password"]').first().fill(password);
   await page.locator('button[type="submit"], input[type="submit"]')
     .or(page.getByRole('button', { name: ${JSON.stringify(loginInfo.submitButtonText)} }))
     .first()
     .click();
-  // Wait for the post-login navigation/render to settle. Comparing URL shapes
-  // is fragile (the predicate receives a URL object), so just wait for the
-  // network to go idle — works for both full-page redirects and SPAs.
+
   await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+
+  // Verify login actually succeeded: the password field should no longer be
+  // visible on the same login URL. If it is, credentials/selectors are wrong —
+  // fail LOUDLY here instead of letting tests fail with an opaque error later.
+  let loginPath = '';
+  try { loginPath = new URL(LOGIN_URL).pathname; } catch { /* ignore */ }
+  const stillOnLoginUrl = (() => {
+    try { return new URL(page.url()).pathname === loginPath; } catch { return false; }
+  })();
+  const passwordStillVisible = await page.locator('input[type="password"]').first()
+    .isVisible().catch(() => false);
+  if (stillOnLoginUrl && passwordStillVisible) {
+    throw new Error(
+      'login(): still on the login page after submitting — login did not succeed. ' +
+      'Check the credentials and the captured selectors.',
+    );
+  }
 }
 `
     : '';
@@ -722,6 +747,12 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
     console.log('  Product documentation detected — tests will be generated against the documented features.');
   } else if (contextMd) {
     console.log('  Context detected — credentials will be included in test prompts.');
+  } else {
+    console.log(
+      '  ⚠ No product documentation provided — generating tests purely from the crawled live app. ' +
+      'There is no source of truth, so tests assert what the app currently DOES (not what it SHOULD do). ' +
+      'Upload a spec/doc for stronger, intent-based coverage.',
+    );
   }
 
   // Warn when crawl is too shallow for reliable feature test generation
@@ -757,15 +788,20 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
         { role: 'system', content: systemPrompt },
         { role: 'user',   content: buildPageTestPrompt(page, baseUrl, hasProductDoc, featureChecklist) },
       ];
-      const result  = await model.invoke(messages);
+      const result  = await model.invoke(messages, { temperature: 0.2 });
       const cleaned = extractTypeScript(result);
 
-      if (cleaned.includes('test(') || cleaned.includes('test.describe(')) {
+      const looksLikeTest = cleaned.includes('test(') || cleaned.includes('test.describe(');
+      const hasAssertion  = cleaned.includes('expect(');
+      if (looksLikeTest && hasAssertion) {
         writeFileSync(filePath, sanitizeImports(cleaned), 'utf8');
         writtenFiles.push(filePath);
         console.log(`  Wrote ${filePath}`);
+      } else if (looksLikeTest && !hasAssertion) {
+        // A test with no expect() verifies nothing — skip it rather than pad the
+        // suite with green-but-meaningless specs.
+        console.log(`  Skipped ${fileName} — generated test had no expect() assertions (nothing to verify).`);
       } else {
-        // Log the first 200 chars of the raw response so the user can see what the model returned
         const preview = result.slice(0, 200).replace(/\n/g, ' ');
         console.log(`  Skipped ${fileName} — output didn't look like a test file. Model returned: "${preview}"`);
       }
@@ -858,9 +894,9 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
           const featureResult = await model.invoke([
             { role: 'system', content: featureSystemPrompt },
             { role: 'user',   content: featureUserPrompt },
-          ]);
+          ], { temperature: 0.2 });
           const featureCleaned = extractTypeScript(featureResult);
-          if (featureCleaned.includes('test(') || featureCleaned.includes('test.describe(')) {
+          if ((featureCleaned.includes('test(') || featureCleaned.includes('test.describe(')) && featureCleaned.includes('expect(')) {
             writeFileSync(featureSpecPath, sanitizeImports(featureCleaned), 'utf8');
             writtenFiles.unshift(featureSpecPath);
             console.log(`  Wrote ${slug}.spec.ts`);
@@ -908,9 +944,9 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
         const flowResult  = await model.invoke([
           { role: 'system', content: flowSystemPrompt },
           { role: 'user',   content: flowUserPrompt },
-        ]);
+        ], { temperature: 0.2 });
         const flowCleaned = extractTypeScript(flowResult);
-        if (flowCleaned.includes('test(') || flowCleaned.includes('test.describe(')) {
+        if ((flowCleaned.includes('test(') || flowCleaned.includes('test.describe(')) && flowCleaned.includes('expect(')) {
           writeFileSync(flowSpecPath, sanitizeImports(flowCleaned), 'utf8');
           // Put user-flows near the front so it runs before per-feature specs
           writtenFiles.unshift(flowSpecPath);

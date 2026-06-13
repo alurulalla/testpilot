@@ -1,19 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import { getSession, getCachedSession, setStatus, setTestResult, setTriageResult, setError, clearError, addLog } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { runTestsAsync } from '@/lib/run-tests-async';
 import { ensureWorkspaceReady } from '@/lib/session-files';
+import { recordTestRun, attachTriageToRun } from '@/lib/test-runs';
 import { triageFailures } from '@/lib/triage-failures';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
 import { getOrgLlmConfig } from '@/lib/llm-config-store';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import path from 'path';
-import { getSessionDir, getAutoSelfHeal } from '@/lib/config';
+import { getSessionDir } from '@/lib/config';
+import { getOrgSettings } from '@/lib/org-settings';
 
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (session.testFiles.length === 0) return NextResponse.json({ error: 'No tests to run' }, { status: 400 });
   if (['exploring','generating','running','fixing'].includes(session.status)) {
@@ -39,6 +44,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       const result = await runTestsAsync(workspace, (line) => addLog(id, line, 'info'), id, session.headedMode ?? false);
       setTestResult(id, result);
+      const runId = await recordTestRun(id, result, { trigger: 'manual' });
       setStatus(id, 'idle');
 
       const { passed, failed, total, errors } = result.stats;
@@ -65,6 +71,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             (line) => addLog(id, line, 'info'),
           );
           setTriageResult(id, triage);
+          await attachTriageToRun(runId, triage);
 
           if (triage.appBugCount > 0) {
             addLog(
@@ -74,7 +81,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             );
           }
           if (triage.testBugCount + triage.ambiguousCount > 0) {
-            const autoHeal = getAutoSelfHeal();
+            const autoHeal = (await getOrgSettings(session.orgId)).autoSelfHeal;
             addLog(
               id,
               `🔧 ${triage.testBugCount + triage.ambiguousCount} failure(s) are test-code issues.` +

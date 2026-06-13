@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import {
   getSession, getCachedSession, setStatus, setFixResult, setTestResult, setTriageResult,
   setError, addLog, clearStopping,
@@ -16,7 +17,9 @@ import { getSessionDir } from '@/lib/config';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (!session.testResult) return NextResponse.json({ error: 'Run tests first' }, { status: 400 });
   if (['exploring','generating','running','fixing'].includes(session.status)) {

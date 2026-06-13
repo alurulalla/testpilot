@@ -1,22 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getMaskedAppSettings, saveAppSettings } from '@/lib/app-settings-store';
-import { getMaxPages, getDeepCrawlMaxPages, getAutoSelfHeal } from '@/lib/config';
+import { requireAuth, requireOrgAdmin, authErrorResponse } from '@/lib/auth';
+import { getOrgSettings, saveOrgSettings, type OrgSettingsPatch } from '@/lib/org-settings';
 
-/** GET /api/app-settings — return current settings (figmaToken masked). */
+/** GET /api/app-settings — the current org's settings (DB-backed). */
 export async function GET() {
-  const masked = getMaskedAppSettings();
-  // Merge with effective defaults so the UI shows current live values
-  return NextResponse.json({
-    maxPages:          masked.maxPages          ?? getMaxPages(),
-    deepCrawlMaxPages: masked.deepCrawlMaxPages ?? getDeepCrawlMaxPages(),
-    figmaTokenSet:     masked.figmaTokenSet,
-    figmaTokenMasked:  masked.figmaTokenMasked,
-    autoSelfHeal:      masked.autoSelfHeal      ?? getAutoSelfHeal(),
-  });
+  try {
+    const { org } = await requireAuth();
+    const settings = await getOrgSettings(org.id);
+    return NextResponse.json(settings);
+  } catch (err) {
+    return authErrorResponse(err) ?? NextResponse.json({ error: 'Server error' }, { status: 500 });
+  }
 }
 
-/** POST /api/app-settings — save updated settings. */
+/** POST /api/app-settings — save settings for the org (admin only). */
 export async function POST(req: NextRequest) {
+  let orgId: string;
+  try {
+    ({ org: { id: orgId } } = await requireOrgAdmin());
+  } catch (err) {
+    return authErrorResponse(err) ?? NextResponse.json({ error: 'Server error' }, { status: 500 });
+  }
+
   let body: Record<string, unknown>;
   try {
     body = await req.json();
@@ -24,14 +29,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const update: Parameters<typeof saveAppSettings>[0] = {};
+  const patch: OrgSettingsPatch = {};
 
   if ('maxPages' in body) {
     const v = Number(body.maxPages);
     if (!Number.isFinite(v) || v < 1) {
       return NextResponse.json({ error: 'maxPages must be a positive integer' }, { status: 400 });
     }
-    update.maxPages = Math.floor(v);
+    patch.maxPages = Math.floor(v);
   }
 
   if ('deepCrawlMaxPages' in body) {
@@ -39,18 +44,13 @@ export async function POST(req: NextRequest) {
     if (!Number.isFinite(v) || v < 1) {
       return NextResponse.json({ error: 'deepCrawlMaxPages must be a positive integer' }, { status: 400 });
     }
-    update.deepCrawlMaxPages = Math.floor(v);
-  }
-
-  if ('figmaToken' in body) {
-    // Empty string means "clear the stored token"
-    update.figmaToken = typeof body.figmaToken === 'string' ? body.figmaToken.trim() || undefined : undefined;
+    patch.deepCrawlMaxPages = Math.floor(v);
   }
 
   if ('autoSelfHeal' in body) {
-    update.autoSelfHeal = Boolean(body.autoSelfHeal);
+    patch.autoSelfHeal = Boolean(body.autoSelfHeal);
   }
 
-  saveAppSettings(update);
+  await saveOrgSettings(orgId, patch);
   return NextResponse.json({ ok: true });
 }

@@ -5,6 +5,7 @@
  * documentation. Returns suggested flows for the user to approve.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import { getSession } from '@/lib/session-store';
 import { createModelFromConfig } from '@/lib/pilot/model-factory';
 import { getOrgLlmConfig } from '@/lib/llm-config-store';
@@ -16,7 +17,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (!session.contextDoc) {
     return NextResponse.json({ error: 'No documentation uploaded yet' }, { status: 400 });

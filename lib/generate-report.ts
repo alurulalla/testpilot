@@ -64,6 +64,7 @@ export interface ReportData {
     testBugCount:    number;
     appBugCount:     number;
     ambiguousCount:  number;
+    setupErrorCount: number;
     analyses:        FailureAnalysis[];
   } | null;
   contextDocName: string | null;
@@ -89,10 +90,11 @@ export function buildReportData(session: Session): ReportData {
     testFiles:     session.testFiles.map(f => f.split('/').pop() ?? f),
     iterations:    session.iteration,
     triage:        session.triageResult ? {
-      testBugCount:   session.triageResult.testBugCount,
-      appBugCount:    session.triageResult.appBugCount,
-      ambiguousCount: session.triageResult.ambiguousCount,
-      analyses:       session.triageResult.analyses,
+      testBugCount:    session.triageResult.testBugCount,
+      appBugCount:     session.triageResult.appBugCount,
+      ambiguousCount:  session.triageResult.ambiguousCount,
+      setupErrorCount: session.triageResult.setupErrorCount ?? 0,
+      analyses:        session.triageResult.analyses,
     } : null,
     contextDocName: session.contextDocName,
     rawOutput:      session.testResult?.output ?? '',
@@ -124,10 +126,12 @@ export function generateHtmlReport(d: ReportData): string {
       const badgeColor =
         a.verdict === 'app_bug'  ? warnColor
         : a.verdict === 'test_bug' ? infoColor
-        : '#6b7280';
+        : a.verdict === 'setup_error' ? '#38bdf8'
+        : '#a1a1aa';
       const badgeLabel =
         a.verdict === 'app_bug'  ? '⚠ App Bug'
         : a.verdict === 'test_bug' ? '🔧 Test Bug'
+        : a.verdict === 'setup_error' ? '🔑 Setup'
         : '❓ Ambiguous';
       return `
         <tr>
@@ -148,7 +152,7 @@ export function generateHtmlReport(d: ReportData): string {
         <td style="padding:9px 12px;border-bottom:1px solid #27272a;font-size:12px;font-family:monospace;color:#e4e4e7">${statusIcon} ${escHtml(f.file)}</td>
         <td style="padding:9px 12px;border-bottom:1px solid #27272a;font-size:12px;color:#a1a1aa;text-align:center">${f.total}</td>
         <td style="padding:9px 12px;border-bottom:1px solid #27272a;font-size:12px;color:${passColor};text-align:center">${f.passed}</td>
-        <td style="padding:9px 12px;border-bottom:1px solid #27272a;font-size:12px;color:${f.failed > 0 ? failColor : '#6b7280'};text-align:center">${f.failed}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #27272a;font-size:12px;color:${f.failed > 0 ? failColor : '#a1a1aa'};text-align:center">${f.failed}</td>
         <td style="padding:9px 12px;border-bottom:1px solid #27272a;font-size:12px;color:${infoColor};text-align:center">${filePct}%</td>
       </tr>`;
   }).join('');
@@ -161,10 +165,13 @@ export function generateHtmlReport(d: ReportData): string {
 <title>QA Test Report — ${escHtml(d.url)}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{background:#09090b;color:#e4e4e7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.5}
-  a{color:#8b5cf6;text-decoration:none}
+  body{background:#09090b;color:#e4e4e7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.5;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact}
+  a{color:#a78bfa;text-decoration:none}
+  /* Print the report EXACTLY as designed (dark, high-contrast). Previously the
+     background was flipped to white while inline light-grey text stayed, making
+     PDFs/printouts unreadable. */
   @media print{
-    body{background:#fff;color:#111}
     .no-print{display:none}
     .page-break{page-break-before:always}
     table{page-break-inside:auto}
@@ -184,14 +191,14 @@ export function generateHtmlReport(d: ReportData): string {
         <div style="font-size:20px;font-weight:700;color:#f4f4f5">Automated Test Execution Report</div>
       </div>
       <div style="margin-left:auto;text-align:right">
-        <div style="font-size:11px;color:#71717a">Generated</div>
+        <div style="font-size:11px;color:#a1a1aa">Generated</div>
         <div style="font-size:13px;color:#a1a1aa">${fmtDate(d.generatedAt)}</div>
       </div>
     </div>
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <span style="background:#27272a;border:1px solid #3f3f46;border-radius:6px;padding:4px 12px;font-size:12px;font-family:monospace;color:#a1a1aa">${escHtml(d.url)}</span>
-      <span style="background:#27272a;border:1px solid #3f3f46;border-radius:6px;padding:4px 12px;font-size:12px;font-family:monospace;color:#71717a">ID: ${d.sessionId.slice(0, 8)}</span>
+      <span style="background:#27272a;border:1px solid #3f3f46;border-radius:6px;padding:4px 12px;font-size:12px;font-family:monospace;color:#a1a1aa">ID: ${d.sessionId.slice(0, 8)}</span>
       ${d.contextDocName ? `<span style="background:#1c1917;border:1px solid #44403c;border-radius:6px;padding:4px 12px;font-size:12px;color:#a8a29e">📄 ${escHtml(d.contextDocName)}</span>` : ''}
     </div>
   </div>
@@ -213,7 +220,7 @@ export function generateHtmlReport(d: ReportData): string {
           stroke-linecap="round"
           transform="rotate(-90 50 50)"/>
         <text x="50" y="46" text-anchor="middle" fill="#f4f4f5" font-size="16" font-weight="700" font-family="sans-serif">${d.stats.passRate.toFixed(0)}%</text>
-        <text x="50" y="60" text-anchor="middle" fill="#71717a" font-size="9" font-family="sans-serif">PASS RATE</text>
+        <text x="50" y="60" text-anchor="middle" fill="#a1a1aa" font-size="9" font-family="sans-serif">PASS RATE</text>
       </svg>
       <div style="margin-top:4px;font-size:13px;font-weight:700;color:${statusColor};letter-spacing:.05em">${d.status}</div>
     </div>
@@ -247,11 +254,11 @@ ${fileStats.length > 0 ? `
     <table style="width:100%;border-collapse:collapse">
       <thead>
         <tr style="background:#1f1f23">
-          <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.06em">File</th>
-          <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.06em">Total</th>
-          <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.06em">Passed</th>
-          <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.06em">Failed</th>
-          <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.06em">Pass Rate</th>
+          <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:#a1a1aa;text-transform:uppercase;letter-spacing:.06em">File</th>
+          <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:600;color:#a1a1aa;text-transform:uppercase;letter-spacing:.06em">Total</th>
+          <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:600;color:#a1a1aa;text-transform:uppercase;letter-spacing:.06em">Passed</th>
+          <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:600;color:#a1a1aa;text-transform:uppercase;letter-spacing:.06em">Failed</th>
+          <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:600;color:#a1a1aa;text-transform:uppercase;letter-spacing:.06em">Pass Rate</th>
         </tr>
       </thead>
       <tbody>${fileRows}</tbody>
@@ -271,17 +278,18 @@ ${d.triage && d.triage.analyses.length > 0 ? `
   <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
     ${triageChip('🔧 Test Bugs', d.triage.testBugCount, infoColor, 'Fixable test code issues — wrong selector, incorrect URL, timing')}
     ${triageChip('⚠ App Bugs', d.triage.appBugCount, warnColor, 'Real defects found in the application under test')}
-    ${triageChip('❓ Ambiguous', d.triage.ambiguousCount, '#6b7280', 'Root cause unclear — needs manual review')}
+    ${d.triage.setupErrorCount > 0 ? triageChip('🔑 Setup', d.triage.setupErrorCount, '#38bdf8', 'Login/auth/environment failures — fix credentials or selectors') : ''}
+    ${triageChip('❓ Ambiguous', d.triage.ambiguousCount, '#a1a1aa', 'Root cause unclear — needs manual review')}
   </div>
 
   <div style="background:#18181b;border:1px solid #27272a;border-radius:10px;overflow:hidden">
     <table style="width:100%;border-collapse:collapse">
       <thead>
         <tr style="background:#1f1f23">
-          <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.06em">Test Name</th>
-          <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.06em">File</th>
-          <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.06em">Verdict</th>
-          <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.06em">Error</th>
+          <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:#a1a1aa;text-transform:uppercase;letter-spacing:.06em">Test Name</th>
+          <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:#a1a1aa;text-transform:uppercase;letter-spacing:.06em">File</th>
+          <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:#a1a1aa;text-transform:uppercase;letter-spacing:.06em">Verdict</th>
+          <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:#a1a1aa;text-transform:uppercase;letter-spacing:.06em">Error</th>
         </tr>
       </thead>
       <tbody>${failureRows}</tbody>
@@ -331,7 +339,7 @@ ${d.triage && d.triage.analyses.length > 0 ? `
 ${d.rawOutput ? `
 <div style="max-width:900px;margin:0 auto 40px;padding:0 48px" class="no-print">
   <details>
-    <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#71717a;padding:8px 0;list-style:none;display:flex;align-items:center;gap:6px">
+    <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#a1a1aa;padding:8px 0;list-style:none;display:flex;align-items:center;gap:6px">
       <span style="color:#3f3f46">▶</span> Raw Test Output
     </summary>
     <pre style="margin-top:10px;background:#09090b;border:1px solid #27272a;border-radius:8px;padding:16px;font-size:11px;color:#a1a1aa;font-family:monospace;overflow-x:auto;white-space:pre-wrap;max-height:400px;overflow-y:auto">${escHtml(d.rawOutput.slice(0, 20_000))}${d.rawOutput.length > 20_000 ? '\n\n[truncated…]' : ''}</pre>
@@ -353,14 +361,14 @@ function metricCard(label: string, value: string | number, color: string): strin
   return `
     <div style="background:#09090b;border:1px solid #27272a;border-radius:8px;padding:14px 16px;text-align:center">
       <div style="font-size:26px;font-weight:800;color:${color};line-height:1">${value}</div>
-      <div style="font-size:10px;color:#71717a;margin-top:4px;text-transform:uppercase;letter-spacing:.06em">${label}</div>
+      <div style="font-size:10px;color:#a1a1aa;margin-top:4px;text-transform:uppercase;letter-spacing:.06em">${label}</div>
     </div>`;
 }
 
 function metaChip(label: string, value: string): string {
   return `
     <div style="background:#18181b;border:1px solid #27272a;border-radius:7px;padding:6px 12px;display:flex;gap:8px;align-items:center">
-      <span style="font-size:12px;color:#71717a">${label}</span>
+      <span style="font-size:12px;color:#a1a1aa">${label}</span>
       <span style="font-size:12px;font-weight:600;color:#e4e4e7">${value}</span>
     </div>`;
 }
@@ -376,7 +384,7 @@ function triageChip(label: string, count: number, color: string, desc: string): 
 function qualityRow(label: string, value: string, color: string, desc: string): string {
   return `
     <div>
-      <div style="font-size:11px;color:#71717a;margin-bottom:4px">${label}</div>
+      <div style="font-size:11px;color:#a1a1aa;margin-bottom:4px">${label}</div>
       <div style="font-size:18px;font-weight:700;color:${color}">${value}</div>
       <div style="font-size:11px;color:#52525b;margin-top:2px">${desc}</div>
     </div>`;
@@ -470,6 +478,7 @@ export function generateMarkdownReport(d: ReportData): string {
     lines.push(`|---|---|`);
     lines.push(`| 🔧 Test Bugs (fixable test code issues) | ${d.triage.testBugCount} |`);
     lines.push(`| ⚠ App Bugs (real application defects) | ${d.triage.appBugCount} |`);
+    lines.push(`| 🔑 Setup/Auth Errors | ${d.triage.setupErrorCount} |`);
     lines.push(`| ❓ Ambiguous | ${d.triage.ambiguousCount} |`);
     lines.push(``);
 
@@ -480,6 +489,7 @@ export function generateMarkdownReport(d: ReportData): string {
         const verdict =
           a.verdict === 'app_bug'  ? '⚠ App Bug'
           : a.verdict === 'test_bug' ? '🔧 Test Bug'
+          : a.verdict === 'setup_error' ? '🔑 Setup'
           : '❓ Ambiguous';
         lines.push(`#### ${i + 1}. ${a.testName}`);
         lines.push(``);
@@ -542,9 +552,10 @@ export function generateJsonReport(d: ReportData): string {
       passRate: parseFloat(d.stats.passRate.toFixed(2)),
     },
     triage: d.triage ? {
-      testBugCount:   d.triage.testBugCount,
-      appBugCount:    d.triage.appBugCount,
-      ambiguousCount: d.triage.ambiguousCount,
+      testBugCount:    d.triage.testBugCount,
+      appBugCount:     d.triage.appBugCount,
+      ambiguousCount:  d.triage.ambiguousCount,
+      setupErrorCount: d.triage.setupErrorCount,
       failures:       d.triage.analyses.map(a => ({
         testName: a.testName,
         file:     a.file.split('/').pop(),

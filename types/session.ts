@@ -23,6 +23,8 @@ export interface TestResult {
   output: string;
   /** Relative paths (from workspace dir) to recorded .webm video files */
   videos: string[];
+  /** Per-test outcomes: "<file> › <title>" → passed | failed | skipped */
+  cases?: Record<string, 'passed' | 'failed' | 'skipped'>;
 }
 
 export interface FixResult {
@@ -32,14 +34,23 @@ export interface FixResult {
 
 // ── Failure triage ────────────────────────────────────────────────────────────
 
-/** Root-cause verdict for a single failing test */
-export type FailureVerdict = 'test_bug' | 'app_bug' | 'ambiguous';
+/**
+ * Root-cause verdict for a single failing test.
+ * - test_bug    → selector broken, wrong URL, timing issue — fix the test
+ * - app_bug     → test matches the docs but the app doesn't deliver — real issue, don't hide it
+ * - setup_error → login/auth/env/fixture failure — the test never got to run its
+ *                 assertions. NOT the test's fault and NOT an app bug; healing the
+ *                 test body won't help. Fix credentials/selectors/config.
+ * - ambiguous   → can't tell; heal conservatively
+ */
+export type FailureVerdict = 'test_bug' | 'app_bug' | 'setup_error' | 'ambiguous';
+
+/** How a verdict was reached — a cheap deterministic rule, or the LLM. */
+export type TriageSource = 'rule' | 'llm';
 
 /**
- * Per-test classification produced by the triage LLM call.
- * - test_bug  → selector broken, wrong URL, timing issue — fix the test
- * - app_bug   → test matches the docs but the app doesn't deliver — real issue, don't hide it
- * - ambiguous → can't tell; heal conservatively
+ * Per-test classification. Produced first by a deterministic rule engine; only
+ * the genuinely unclear ones are escalated to the LLM.
  */
 export interface FailureAnalysis {
   testName: string;
@@ -47,6 +58,30 @@ export interface FailureAnalysis {
   error: string;
   verdict: FailureVerdict;
   reasoning: string;
+  /** How confident the classifier is. */
+  confidence?: 'high' | 'medium' | 'low';
+  /** Whether a rule or the LLM produced this verdict. */
+  source?: TriageSource;
+  /** Id of the root-cause cluster this failure belongs to (if any). */
+  clusterId?: string;
+}
+
+/**
+ * A group of failures that share one root cause (same error signature). Lets the
+ * UI report "38 tests blocked: not logged in" instead of 38 separate cards.
+ */
+export interface TriageCluster {
+  id: string;
+  /** Normalized error signature the cluster is keyed on. */
+  signature: string;
+  verdict: FailureVerdict;
+  count: number;
+  /** Human summary of the shared root cause. */
+  summary: string;
+  /** Test titles in this cluster. */
+  testNames: string[];
+  /** File the cluster is concentrated in, when it is single-file. */
+  file?: string;
 }
 
 export interface TriageResult {
@@ -54,8 +89,14 @@ export interface TriageResult {
   testBugCount: number;
   appBugCount: number;
   ambiguousCount: number;
+  /** Login/auth/env/fixture failures — surfaced to the user, never auto-healed. */
+  setupErrorCount: number;
+  /** Root-cause groups (largest first). */
+  clusters: TriageCluster[];
   /** true when there are test_bug or ambiguous failures worth auto-healing */
   selfHealRecommended: boolean;
+  /** Set when one root cause (usually a setup/login failure) dominates the run. */
+  dominantRootCause?: string;
   triageAt: number;
 }
 

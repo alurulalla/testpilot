@@ -7,11 +7,13 @@
  * so the existing /stop route can kill it. Updates session.testResult when done.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import path from 'path';
 import { spawn } from 'child_process';
 import { existsSync, readFileSync, mkdirSync, readdirSync } from 'fs';
 import {
   getSession,
+  getCachedSession,
   setStatus,
   setTestResult,
   addLog,
@@ -20,6 +22,8 @@ import {
 } from '@/lib/session-store';
 import { Workspace } from '@/lib/pilot';
 import { ensureWorkspaceReady } from '@/lib/session-files';
+import { recordTestRun, mergeTestResult } from '@/lib/test-runs';
+import { parsePlaywrightReport } from '@/lib/playwright-report';
 import type { TestResult } from '@/types/session';
 import { getSessionDir } from '@/lib/config';
 
@@ -29,7 +33,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
   if (['exploring', 'generating', 'running', 'fixing'].includes(session.status)) {
@@ -71,7 +77,7 @@ export async function POST(
       const proc = spawn(
         process.platform === 'win32' ? 'npx.cmd' : 'npx',
         ['playwright', 'test', relFile, '--config', 'playwright.config.ts'],
-        { cwd: workspace.dir, stdio: 'pipe', shell: process.platform === 'win32' },
+        { cwd: workspace.dir, stdio: 'pipe', shell: process.platform === 'win32', env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' } },
       );
 
       registerProcess(id, proc);
@@ -92,26 +98,7 @@ export async function POST(
         unregisterProcess(id);
         const duration = (Date.now() - start) / 1000;
 
-        let stats = { total: 0, passed: 0, failed: 0, errors: 0 };
-        try {
-          if (existsSync(reportPath)) {
-            const r = JSON.parse(readFileSync(reportPath, 'utf8')) as {
-              stats?: { expected?: number; unexpected?: number; skipped?: number };
-              errors?: unknown[]; suites?: unknown[];
-            };
-            if ((r.errors?.length ?? 0) > 0 && (r.suites?.length ?? 0) === 0) {
-              stats = { total: 0, passed: 0, failed: 0, errors: r.errors!.length };
-            } else {
-              const s = r.stats ?? {};
-              stats = {
-                total: (s.expected ?? 0) + (s.unexpected ?? 0) + (s.skipped ?? 0),
-                passed: s.expected ?? 0,
-                failed: s.unexpected ?? 0,
-                errors: 0,
-              };
-            }
-          }
-        } catch { stats = { total: 0, passed: 0, failed: 0, errors: 1 }; }
+        const { stats, cases } = parsePlaywrightReport(reportPath);
 
         // Collect .webm recordings
         const videos: string[] = [];
@@ -126,7 +113,7 @@ export async function POST(
         };
         scan(path.join(workspace.dir, 'test-results'));
 
-        resolve({ code: code ?? 1, duration, stats, output, videos });
+        resolve({ code: code ?? 1, duration, stats, output, videos, cases });
       });
 
       proc.on('error', (err: Error) => {
@@ -147,7 +134,11 @@ export async function POST(
       `${fileName}: ${passed}/${total} passed${failed > 0 ? `, ${failed} failed` : ' ✅'}`,
       failed === 0 ? 'success' : 'error',
     );
-    setTestResult(id, result);
+    // Merge into the existing suite result so totals are cumulative (old + new),
+    // not clobbered by the single file that just ran.
+    const prevResult = getCachedSession(id)?.testResult ?? null;
+    setTestResult(id, mergeTestResult(prevResult, result, fileName));
+    await recordTestRun(id, result, { trigger: 'single-file', targetFile: fileName });
     setStatus(id, 'idle');
   })();
 

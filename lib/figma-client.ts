@@ -824,9 +824,46 @@ async function captureDiscrepancyScreenshots(
  * Matching pixels → dimmed live screenshot.
  * Different pixels → bright red highlight.
  */
+/**
+ * Mean SSIM (Structural Similarity Index) over 8×8 blocks — the standard
+ * perceptual image-similarity metric. Returns 0–1 (1 = identical). Far more
+ * faithful to "how similar do these look" than a raw pixel-diff ratio, because
+ * it compares local luminance/contrast/structure rather than exact pixels.
+ */
+function meanSsim(grayA: Float64Array, grayB: Float64Array, w: number, h: number): number {
+  const C1 = (0.01 * 255) ** 2; // 6.5025
+  const C2 = (0.03 * 255) ** 2; // 58.5225
+  const B = 8;
+  let total = 0, blocks = 0;
+  for (let by = 0; by + B <= h; by += B) {
+    for (let bx = 0; bx + B <= w; bx += B) {
+      let sumA = 0, sumB = 0;
+      for (let y = 0; y < B; y++) {
+        const row = (by + y) * w + bx;
+        for (let x = 0; x < B; x++) { sumA += grayA[row + x]; sumB += grayB[row + x]; }
+      }
+      const n = B * B;
+      const muA = sumA / n, muB = sumB / n;
+      let varA = 0, varB = 0, cov = 0;
+      for (let y = 0; y < B; y++) {
+        const row = (by + y) * w + bx;
+        for (let x = 0; x < B; x++) {
+          const da = grayA[row + x] - muA, db = grayB[row + x] - muB;
+          varA += da * da; varB += db * db; cov += da * db;
+        }
+      }
+      varA /= n - 1; varB /= n - 1; cov /= n - 1;
+      const ssim = ((2 * muA * muB + C1) * (2 * cov + C2)) /
+                   ((muA * muA + muB * muB + C1) * (varA + varB + C2));
+      total += ssim; blocks++;
+    }
+  }
+  return blocks > 0 ? total / blocks : 0;
+}
+
 async function generatePixelDiff(
   figmaPath: string, livePath: string, diffPath: string,
-): Promise<string | null> {
+): Promise<{ diffPath: string; ssim: number } | null> {
   try {
     const [figMeta, liveMeta] = await Promise.all([
       sharp(figmaPath).metadata(),
@@ -855,12 +892,17 @@ async function generatePixelDiff(
     const liveCh  = (liveBuf.length  / (w * h)) | 0;
     const pixels  = w * h;
     const diffRgba = Buffer.alloc(pixels * 4);
+    // Grayscale (luma) buffers feed the SSIM score.
+    const grayFig = new Float64Array(pixels);
+    const grayLive = new Float64Array(pixels);
 
     for (let i = 0; i < pixels; i++) {
       const fi = i * figmaCh;
       const li = i * liveCh;
       const fr = figmaBuf[fi] ?? 0; const fg = figmaBuf[fi+1] ?? 0; const fb = figmaBuf[fi+2] ?? 0;
       const lr = liveBuf[li]  ?? 0; const lg = liveBuf[li+1]  ?? 0; const lb = liveBuf[li+2]  ?? 0;
+      grayFig[i]  = 0.299 * fr + 0.587 * fg + 0.114 * fb;
+      grayLive[i] = 0.299 * lr + 0.587 * lg + 0.114 * lb;
       const dist = Math.sqrt((fr-lr)**2 + (fg-lg)**2 + (fb-lb)**2);
       const di = i * 4;
       if (dist > 30) {
@@ -872,7 +914,8 @@ async function generatePixelDiff(
       }
     }
     await sharp(diffRgba, { raw: { width: w, height: h, channels: 4 } }).png().toFile(diffPath);
-    return diffPath;
+    const ssim = meanSsim(grayFig, grayLive, w, h);
+    return { diffPath, ssim };
   } catch { return null; }
 }
 
@@ -1139,7 +1182,11 @@ export async function runFigmaComparison(
         const diffResult = await generatePixelDiff(figmaFullPath, screenshotPath, diffFullPath);
         if (diffResult) {
           diffImagePath = path.relative(workspaceDir, diffFullPath);
-          log(`  ✓ Pixel diff saved`);
+          // Standard perceptual similarity (mean SSIM, 0–100) is the headline
+          // match score. The LLM discrepancies below are the explanatory detail,
+          // not the score.
+          matchScore = Math.round(Math.max(0, Math.min(1, diffResult.ssim)) * 100);
+          log(`  ✓ Pixel diff saved · SSIM match ${matchScore}/100`);
         }
 
         if (model) {
@@ -1189,14 +1236,16 @@ export async function runFigmaComparison(
             if (captured > 0) log(`  ✓ Element screenshots captured for ${captured} discrepancy(ies)`);
           }
 
-          // Perceptual score: weight by how much a user would actually notice.
-          // High issues dominate; lows are capped so a pile of nitpicks can't
-          // tank an otherwise-faithful page.
-          const high   = discrepancies.filter(d => d.severity === 'high').length;
-          const medium = discrepancies.filter(d => d.severity === 'medium').length;
-          const low    = discrepancies.filter(d => d.severity === 'low').length;
-          const lowPenalty = Math.min(low * 1.5, 12); // lows can subtract at most 12
-          matchScore   = Math.max(0, Math.round(100 - high * 12 - medium * 5 - lowPenalty));
+          // matchScore comes from SSIM (set above). If the pixel diff couldn't
+          // run (e.g. an image was missing) fall back to the issue-weighted
+          // heuristic so the score isn't left blank.
+          if (matchScore == null) {
+            const high   = discrepancies.filter(d => d.severity === 'high').length;
+            const medium = discrepancies.filter(d => d.severity === 'medium').length;
+            const low    = discrepancies.filter(d => d.severity === 'low').length;
+            const lowPenalty = Math.min(low * 1.5, 12);
+            matchScore   = Math.max(0, Math.round(100 - high * 12 - medium * 5 - lowPenalty));
+          }
         }
 
         await context.close();

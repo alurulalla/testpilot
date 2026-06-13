@@ -31,6 +31,12 @@ export interface InvokeOptions {
    * Defaults: generation 16 384, review/fix 8 192, triage 4 096.
    */
   maxTokens?: number;
+  /**
+   * Sampling temperature (0–1). Lower = more deterministic/repeatable output.
+   * Left undefined → provider default (Anthropic 1.0). Test GENERATION passes a
+   * low value so the same app yields a consistent suite run to run.
+   */
+  temperature?: number;
 }
 
 /** Minimal chat-completion surface — provider-agnostic. */

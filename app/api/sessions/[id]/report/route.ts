@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import { getSession } from '@/lib/session-store';
 import { launchBrowser } from '@/lib/browser';
 import {
@@ -15,7 +16,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   }

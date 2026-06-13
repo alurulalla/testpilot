@@ -4,6 +4,8 @@
  * Auto-fixes the failing scenario test, then re-runs it.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
+import { ensureWorkspaceReady } from '@/lib/session-files';
 import path from 'path';
 import { spawn } from 'child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
@@ -22,7 +24,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
   const scenario = session.scenarioResult;
@@ -37,6 +41,9 @@ export async function POST(
     url: session.url,
     rootDir: getSessionDir(id, session.orgId),
   });
+
+  // Restore suite files from the DB if the disk was wiped (e.g. redeploy).
+  await ensureWorkspaceReady(id, workspace);
 
   setScenarioResult(id, { ...scenario, status: 'generating', error: null });
   addLog(id, `🔧 Auto-fixing scenario test: "${scenario.description}"`, 'info');

@@ -4,6 +4,7 @@ import { Workspace } from '@/lib/pilot';
 import type { ChatModel } from '@/lib/pilot';
 import { isStopping } from '@/lib/session-store';
 import type { FailureAnalysis } from '@/types/session';
+import { extractTestError, NO_ERROR_DETAIL } from '@/lib/playwright-report';
 
 // Robustly extract TypeScript code from an LLM response that may contain
 // prose, analysis text, or markdown fences mixed with the actual code.
@@ -33,6 +34,91 @@ function extractTypeScript(response: string): string | null {
   return null;
 }
 
+// ── Surgical test-block location ────────────────────────────────────────────
+// Whole-file rewrites regress passing tests: the LLM can't reliably reproduce
+// large unchanged blocks verbatim. So we locate ONLY the failing `test(...)`
+// calls and splice in corrected versions, leaving every other byte untouched.
+
+/**
+ * Given the index of the '(' that opens a call, return the index just past the
+ * matching ')'. Skips strings, template literals (incl. `${}`), and comments so
+ * parens inside them don't throw off the count.
+ */
+function endOfCall(s: string, openIdx: number): number {
+  let paren = 0;
+  let mode: 'code' | 'sq' | 'dq' | 'tpl' | 'line' | 'block' = 'code';
+  const tplBrace: number[] = []; // brace depth saved on entering each `${`
+  let brace = 0;
+  for (let i = openIdx; i < s.length; i++) {
+    const c = s[i], n = s[i + 1];
+    switch (mode) {
+      case 'sq': if (c === '\\') i++; else if (c === "'") mode = 'code'; continue;
+      case 'dq': if (c === '\\') i++; else if (c === '"') mode = 'code'; continue;
+      case 'line': if (c === '\n') mode = 'code'; continue;
+      case 'block': if (c === '*' && n === '/') { i++; mode = 'code'; } continue;
+      case 'tpl':
+        if (c === '\\') { i++; continue; }
+        if (c === '`') { mode = 'code'; continue; }
+        if (c === '$' && n === '{') { tplBrace.push(brace); brace++; i++; mode = 'code'; }
+        continue;
+    }
+    // code mode
+    if (c === '/' && n === '/') { mode = 'line'; i++; continue; }
+    if (c === '/' && n === '*') { mode = 'block'; i++; continue; }
+    if (c === "'") { mode = 'sq'; continue; }
+    if (c === '"') { mode = 'dq'; continue; }
+    if (c === '`') { mode = 'tpl'; continue; }
+    if (c === '{') { brace++; continue; }
+    if (c === '}') {
+      if (tplBrace.length && brace - 1 === tplBrace[tplBrace.length - 1]) {
+        tplBrace.pop(); brace--; mode = 'tpl'; continue; // closes a `${...}`
+      }
+      brace--; continue;
+    }
+    if (c === '(') { paren++; continue; }
+    if (c === ')') { paren--; if (paren === 0) return i + 1; }
+  }
+  return s.length;
+}
+
+/** Locate a `test('title', …)` / `test.only(…)` / `it(…)` block by its title. */
+function locateTestBlock(content: string, title: string): { start: number; end: number } | null {
+  for (const q of ["'", '"', '`']) {
+    const needle = `${q}${title}${q}`;
+    let idx = content.indexOf(needle);
+    while (idx !== -1) {
+      let p = idx - 1;
+      while (p >= 0 && /\s/.test(content[p])) p--;
+      if (content[p] === '(') {
+        let e = p - 1;
+        while (e >= 0 && /\s/.test(content[e])) e--;
+        let b = e;
+        while (b >= 0 && /[\w.$]/.test(content[b])) b--;
+        const ident = content.slice(b + 1, e + 1);
+        if (/^(test|it)(\.(only|skip|fixme|fail))?$/.test(ident)) {
+          const start = b + 1;
+          const callEnd = endOfCall(content, p);
+          let f = callEnd;
+          while (f < content.length && /\s/.test(content[f])) f++;
+          return { start, end: content[f] === ';' ? f + 1 : callEnd };
+        }
+      }
+      idx = content.indexOf(needle, idx + 1);
+    }
+  }
+  return null;
+}
+
+/** A replacement block is usable only if it's a single, balanced test() call. */
+function isValidBlock(code: string): boolean {
+  const t = code.trim();
+  if (!/^(test|it)(\.(only|skip|fixme|fail))?\s*\(/.test(t)) return false;
+  const open = t.indexOf('(');
+  const end = endOfCall(t, open);
+  // The call must consume essentially the whole block (allow a trailing ;).
+  return end >= t.length - 2;
+}
+
 interface SpecFailure {
   title: string;
   error: string;
@@ -45,7 +131,7 @@ interface FileFailures {
 
 function collectFailures(suite: {
   file?: string;
-  specs?: { title: string; tests?: { ok: boolean; results?: { error?: { message?: string; value?: string } }[] }[] }[];
+  specs?: { title: string; tests?: { ok: boolean; results?: Parameters<typeof extractTestError>[0] }[] }[];
   suites?: typeof suite[];
 }, parentFile?: string): FileFailures[] {
   const file = suite.file ?? parentFile ?? '';
@@ -54,11 +140,10 @@ function collectFailures(suite: {
   for (const spec of suite.specs ?? []) {
     for (const test of spec.tests ?? []) {
       if (!test.ok) {
-        const res = test.results?.[0];
-        const msg = res?.error?.message ?? res?.error?.value ?? 'Unknown error';
-        // Strip ANSI codes and truncate
-        const clean = msg.replace(/\x1b\[[0-9;]*m/g, '').slice(0, 400);
-        result.failures.push({ title: spec.title, error: clean });
+        result.failures.push({
+          title: spec.title,
+          error: (extractTestError(test.results) || NO_ERROR_DETAIL).slice(0, 600),
+        });
       }
     }
   }
@@ -253,8 +338,11 @@ export async function fixTestsPerFile(
     return { fixed: false, filesChanged: 0, skippedAppBugs: 0 };
   }
 
-  // When triage is available, separate healable failures from real app bugs
+  // When triage is available, separate healable failures (test_bug / ambiguous)
+  // from ones healing can't fix: app_bug (real product gap) and setup_error
+  // (login/auth/env — fixing the test body won't help; surfaced to the user).
   let skippedAppBugs = 0;
+  let skippedSetup = 0;
   const healableFiles = withFailures.map(({ file, failures }) => {
     if (!triageAnalyses || triageAnalyses.length === 0) return { file, failures };
 
@@ -266,6 +354,10 @@ export async function fixTestsPerFile(
         skippedAppBugs++;
         return false; // skip — real product gap, not a test code issue
       }
+      if (analysis?.verdict === 'setup_error') {
+        skippedSetup++;
+        return false; // skip — login/auth/env issue, not fixable by editing the test
+      }
       return true;
     });
     return { file, failures: healable };
@@ -274,9 +366,12 @@ export async function fixTestsPerFile(
   if (skippedAppBugs > 0) {
     onProgress?.(`⚠ Skipping ${skippedAppBugs} app bug(s) — these reflect real application gaps, not test code issues.`);
   }
+  if (skippedSetup > 0) {
+    onProgress?.(`⚠ Skipping ${skippedSetup} setup/auth error(s) — fix credentials or login selectors; healing the test body won't help.`);
+  }
 
   if (healableFiles.length === 0) {
-    onProgress?.('All failures are application bugs. Nothing to auto-heal.');
+    onProgress?.('No healable test-code issues — remaining failures are app bugs or setup/auth errors.');
     return { fixed: false, filesChanged: 0, skippedAppBugs };
   }
 
@@ -295,45 +390,18 @@ export async function fixTestsPerFile(
     }
 
     const content = readFileSync(fullPath, 'utf8');
-    const failureSummary = failures
-      .slice(0, 20) // cap at 20 failures per file to keep prompt small
-      .map(f => `• ${f.title}\n  ${f.error}`)
-      .join('\n\n');
-
     onProgress?.(`Fixing ${file} (${failures.length} failure(s))…`);
 
     try {
-      const result = await model.invoke(
-        [
-          {
-            role: 'system',
-            content:
-              'You are a Playwright test engineer. Output ONLY valid TypeScript. ' +
-              'Your response must start with an import statement. ' +
-              'No explanations, no analysis, no markdown fences, no prose. ' +
-              'Just the raw TypeScript file content, nothing else.',
-          },
-          {
-            role: 'user',
-            content:
-              `Rewrite this Playwright test file fixing the listed failures. ` +
-              `Keep all passing tests unchanged. Fix failing ones by correcting ` +
-              `expected values, selectors, or removing unfixable tests.\n\n` +
-              `FILE: ${file}\n${content}\n\n` +
-              `FAILURES:\n${failureSummary}\n\n` +
-              `Output the complete fixed TypeScript file starting with the import line.`,
-          },
-        ],
-        { maxTokens: 8_192 },
-      );
-
-      const code = extractTypeScript(result);
-      if (code) {
-        writeFileSync(fullPath, code, 'utf8');
+      const updated = await healFileSurgically(content, file, failures, model, onProgress);
+      if (updated && updated !== content) {
+        writeFileSync(fullPath, updated, 'utf8');
         filesChanged++;
         onProgress?.(`  ✓ Fixed ${file}`);
+      } else if (!updated) {
+        onProgress?.(`  ⚠ Skipped ${file} — could not produce a safe fix`);
       } else {
-        onProgress?.(`  ⚠ Skipped ${file} — could not extract TypeScript from response`);
+        onProgress?.(`  • No change applied to ${file}`);
       }
     } catch (err) {
       onProgress?.(`  ✗ Failed to fix ${file}: ${err instanceof Error ? err.message : String(err)}`);
@@ -341,4 +409,113 @@ export async function fixTestsPerFile(
   }
 
   return { fixed: filesChanged > 0, filesChanged, skippedAppBugs };
+}
+
+/**
+ * Heal a single file WITHOUT rewriting it: fix only the failing `test(...)`
+ * blocks and splice them back into the original content. Passing tests are
+ * never sent to the model and never modified, so they can't regress.
+ *
+ * Falls back to a full-file rewrite only when not a single failing block can be
+ * located (e.g. unusual formatting) — there's nothing to protect in that case.
+ */
+async function healFileSurgically(
+  content: string,
+  file: string,
+  failures: { title: string; error: string }[],
+  model: ChatModel,
+  onProgress?: (line: string) => void,
+): Promise<string | null> {
+  const located = failures
+    .slice(0, 20)
+    .map(f => ({ ...f, loc: locateTestBlock(content, f.title) }))
+    .filter((f): f is typeof f & { loc: { start: number; end: number } } => !!f.loc);
+
+  // Couldn't find any failing block → fall back to the old whole-file rewrite.
+  if (located.length === 0) {
+    onProgress?.(`  ⚠ ${file}: could not locate failing test blocks — rewriting whole file.`);
+    return rewriteWholeFile(content, file, failures, model);
+  }
+
+  const blocks = located.map((f, i) =>
+    `### ${i + 1}. "${f.title}"\nError: ${f.error}\nCurrent block:\n${content.slice(f.loc.start, f.loc.end)}`,
+  ).join('\n\n');
+
+  const raw = await model.invoke(
+    [
+      {
+        role: 'system',
+        content: 'You are a Playwright engineer. Respond with ONLY valid JSON — no markdown, no prose.',
+      },
+      {
+        role: 'user',
+        content:
+          `Below is a Playwright test file FOR REFERENCE ONLY — do not rewrite it:\n\n` +
+          `\`\`\`typescript\n${content.slice(0, 6000)}\n\`\`\`\n\n` +
+          `Fix ONLY the failing tests listed below. For each, return the COMPLETE corrected ` +
+          `test(...) block (from "test(" through its closing "});"), keeping the exact same test ` +
+          `title. Correct selectors, expected values, or waits. Do NOT touch any other test.\n\n` +
+          `${blocks}\n\n` +
+          `Respond with ONLY JSON:\n` +
+          `{"fixes":[{"title":"<exact title>","code":"<full corrected test(...) block>"}]}`,
+      },
+    ],
+    { maxTokens: 8_192 },
+  );
+
+  let parsed: { fixes?: { title: string; code: string }[] };
+  try {
+    parsed = JSON.parse(raw.replace(/```(?:json)?\n?/g, '').trim());
+  } catch {
+    onProgress?.(`  ⚠ ${file}: fix response was not valid JSON — leaving file unchanged.`);
+    return content;
+  }
+
+  let out = content;
+  let applied = 0;
+  for (const fix of parsed.fixes ?? []) {
+    if (!fix?.title || !fix?.code || !isValidBlock(fix.code)) continue;
+    // Re-locate in the (possibly already spliced) content so indices stay valid.
+    const loc = locateTestBlock(out, fix.title);
+    if (!loc) continue;
+    out = out.slice(0, loc.start) + fix.code.trim() + out.slice(loc.end);
+    applied++;
+  }
+
+  if (applied === 0) {
+    onProgress?.(`  ⚠ ${file}: no valid replacement blocks returned — leaving file unchanged.`);
+    return content;
+  }
+  return out;
+}
+
+/** Legacy whole-file rewrite — used only when no failing block can be located. */
+async function rewriteWholeFile(
+  content: string,
+  file: string,
+  failures: { title: string; error: string }[],
+  model: ChatModel,
+): Promise<string | null> {
+  const failureSummary = failures.slice(0, 20).map(f => `• ${f.title}\n  ${f.error}`).join('\n\n');
+  const result = await model.invoke(
+    [
+      {
+        role: 'system',
+        content:
+          'You are a Playwright test engineer. Output ONLY valid TypeScript. ' +
+          'Your response must start with an import statement. No prose, no fences.',
+      },
+      {
+        role: 'user',
+        content:
+          `Rewrite this Playwright test file fixing the listed failures. ` +
+          `Keep all passing tests EXACTLY as written (byte-for-byte). Fix failing ones by ` +
+          `correcting expected values, selectors, or waits.\n\n` +
+          `FILE: ${file}\n${content}\n\nFAILURES:\n${failureSummary}\n\n` +
+          `Output the complete fixed TypeScript file starting with the import line.`,
+      },
+    ],
+    { maxTokens: 8_192 },
+  );
+  return extractTypeScript(result);
 }

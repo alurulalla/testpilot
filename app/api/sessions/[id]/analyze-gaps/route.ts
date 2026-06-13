@@ -5,6 +5,7 @@
  * PATCH: Updates the user's selectedGapIds.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import path from 'path';
 import { getSessionDir } from '@/lib/config';
 import {
@@ -18,7 +19,8 @@ import { analyzeCoverageGaps } from '@/lib/analyze-coverage-gaps';
 import { runAuthenticatedSiteExplorer } from '@/lib/authenticated-site-explorer';
 import { getUrlContext } from '@/lib/url-context-store';
 import { performPreLogin } from '@/lib/pre-login';
-import { getDeepCrawlMaxPages } from '@/lib/config';
+import { } from '@/lib/config';
+import { getOrgSettings } from '@/lib/org-settings';
 import { existsSync } from 'fs';
 import type { SiteMap } from '@/types/session';
 
@@ -28,7 +30,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   if (!session.importedProject) {
     return NextResponse.json({ error: 'No imported project — upload a Playwright ZIP first.' }, { status: 400 });
@@ -70,7 +74,7 @@ export async function POST(
       if (authFile && existsSync(authFile)) {
         siteMap = await runAuthenticatedSiteExplorer({
           url: session.url, authFile,
-          depth: 3, maxPages: getDeepCrawlMaxPages(),
+          depth: 3, maxPages: (await getOrgSettings(session.orgId)).deepCrawlMaxPages,
           outputDir: workspace.dir,
         }) as SiteMap;
       } else {
@@ -126,7 +130,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   if (!session.coverageAnalysis) {
     return NextResponse.json({ error: 'No analysis yet' }, { status: 400 });

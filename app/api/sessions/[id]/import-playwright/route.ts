@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSessionAccess } from '@/lib/session-access';
 import { mkdirSync, writeFileSync } from 'fs';
 import path from 'path';
 import { getSession, setImportedProject, updateSession } from '@/lib/session-store';
 import { importPlaywrightProject } from '@/lib/import-playwright';
-import { snapshotTestFiles } from '@/lib/session-files';
+import { snapshotTestFiles, markAllFilesDeleted } from '@/lib/session-files';
 import { Workspace } from '@/lib/pilot';
 import { getSessionDir } from '@/lib/config';
 
@@ -27,7 +28,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
+  const session = access.session;
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
   let formData: FormData;
@@ -98,9 +101,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  if (!(await getSession(id))) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+  const access = await requireSessionAccess(id);
+  if ('error' in access) return access.error;
   setImportedProject(id, null);
-  // Reset test files — they came from the import
+  // Reset test files — they came from the import. Soft-delete the stored copies
+  // too so a later restore doesn't resurrect them onto a fresh disk.
   updateSession(id, { testFiles: [], siteMap: null, coverageAnalysis: null });
+  await markAllFilesDeleted(id);
   return NextResponse.json({ ok: true });
 }

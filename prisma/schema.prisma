@@ -30,6 +30,10 @@ model Organization {
   llmModel    String?
   llmBaseUrl  String?
 
+  // Org-scoped app settings: { maxPages?, deepCrawlMaxPages?, autoSelfHeal? }.
+  // Stored in the DB (not a disk file) so they survive redeploys.
+  settings Json?
+
   members  OrgMember[]
   apiKeys  OrgApiKey[]
   sessions Session[]
@@ -89,8 +93,9 @@ model Session {
   status          String   @default("idle")
   figmaChecking   Boolean  @default(false)
 
-  // Workspace
-  workspaceDir    String?
+  // Crawled page count — denormalised from siteMap so list views (dashboard)
+  // can show it without loading the (large) siteMap JSON blob.
+  pagesCount      Int      @default(0)
 
   // Results (JSON blobs — not huge, no logs here)
   siteMap          Json?
@@ -114,8 +119,70 @@ model Session {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  logs  SessionLog[]
-  files SessionFile[]
+  files     SessionFile[]
+  runs      TestRun[]
+  logChunks SessionLogChunk[]
+  scenarios Scenario[]
+}
+
+// ── Test runs (append-only execution history) ─────────────────────────────────
+// One row per execution — NEVER overwritten. Session.testResult keeps the
+// latest result for UI compatibility; this table is the durable history that
+// powers trends, flaky-test detection, and per-run logs.
+
+model TestRun {
+  id         String    @id @default(cuid())
+  sessionId  String
+  session    Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  trigger    String    // loop | manual | single-file | scenario
+  iteration  Int       @default(0)
+  targetFile String?   // set when a single file / scenario was run
+
+  status     String    // passed | failed | error | stopped
+  startedAt  DateTime  @default(now())
+  durationMs Int?
+
+  // Stats as real columns so SQL can aggregate (pass-rate trends, flaky tests)
+  total      Int @default(0)
+  passed     Int @default(0)
+  failed     Int @default(0)
+  errors     Int @default(0)
+
+  caseResults Json?    // { "<file> › <test title>": "passed" | "failed" | "skipped" }
+  triage      Json?    // TriageResult for this run
+  fix         Json?    // FixResult applied after this run
+  output      String?  // trimmed tail of the runner output
+  videos      Json?    // string[] — relative paths (ephemeral artifact refs)
+
+  @@index([sessionId, startedAt])
+}
+
+// ── Scenarios (user-asked checks, remembered per app) ─────────────────────────
+// Every "Test a Scenario" request is stored so (a) the session shows its list
+// of asked scenarios, and (b) future sessions on the SAME app (org + origin)
+// can offer past scenarios for one-click reuse — copying the already-generated
+// spec instead of burning tokens regenerating it.
+
+model Scenario {
+  id          String   @id @default(cuid())
+  orgId       String
+  sessionId   String
+  session     Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  urlOrigin   String   // e.g. https://www.saucedemo.com
+  description String
+  /** Workspace-relative spec path, e.g. tests/scenario-login-and-checkout.spec.ts */
+  testPath    String?
+  /** passed | failed | error — outcome of the latest run of this scenario */
+  lastStatus  String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([sessionId, description])
+  @@index([orgId, urlOrigin])
+  @@index([sessionId])
 }
 
 // ── Session files (durable copy of the test suite) ────────────────────────────
@@ -129,26 +196,38 @@ model SessionFile {
   session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   path      String   // path relative to the workspace dir, e.g. "tests/homepage.spec.ts"
+  kind      String   @default("generated") // generated | scenario | figma | fixture | sidecar
   content   String   // file contents (text)
+  /** Previous version of the content (one step back) — lets users see what
+   *  self-heal changed and provides a manual rollback point. */
+  previousContent String?
+  /** Soft delete: set when the file is removed/reset so restore skips it
+   *  (prevents deleted specs from being resurrected onto fresh disks). */
+  deletedAt DateTime?
   updatedAt DateTime @updatedAt
 
   @@unique([sessionId, path])
   @@index([sessionId])
 }
 
-// ── Session logs (every log line, persisted) ──────────────────────────────────
+// ── Session log chunks ────────────────────────────────────────────────────────
+// Logs are an append-only stream read strictly in order — so they are stored
+// as CHUNKS (~dozens of lines each) instead of one row per line: ~100× fewer
+// rows, and retention becomes "delete old chunks".
 
-model SessionLog {
+model SessionLogChunk {
   id        BigInt   @id @default(autoincrement())
   sessionId String
   session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-  message   String
-  level     String   @default("info") // info | error | warn
+  seq       Int      // per-session sequence number (ordering)
+  lineCount Int
+  content   Json     // Array<{ ts: number; msg: string; level: string }>
 
   createdAt DateTime @default(now())
 
-  @@index([sessionId, id]) // efficient cursor-based streaming: WHERE id > lastSeen
+  @@unique([sessionId, seq])
+  @@index([sessionId, id]) // cursor-based catch-up: WHERE id > lastSeen
 }
 
 // ── Context store (saved credentials per URL, per org) ────────────────────────
@@ -165,4 +244,27 @@ model ContextStore {
   updatedAt DateTime @updatedAt
 
   @@unique([orgId, urlKey])
+}
+
+// ── Test-case use-case descriptions (durable AI output) ───────────────────────
+// One short, user-facing use-case sentence per unique test, keyed by a content
+// hash so it is generated ONCE ever (reused across sessions, redeploys, and
+// instances) instead of re-hitting the LLM. This replaces an in-memory cache:
+// it is durable derived data, not throwaway, so it lives in Postgres.
+
+model TestCaseDescription {
+  id        String   @id @default(cuid())
+  orgId     String
+
+  host      String   // e.g. "saucedemo.com"
+  hash      String   // sha256(host + file + semantic signature)
+  title     String   // the test title (reference / display fallback)
+  useCase   String   // the AI-generated, user-facing use-case sentence
+  area      String?  // functional area (Authentication, Cart, Checkout, …)
+  model     String?  // model that produced it (auditing)
+
+  createdAt DateTime @default(now())
+
+  @@unique([orgId, hash])
+  @@index([orgId, host])
 }
