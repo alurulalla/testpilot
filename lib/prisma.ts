@@ -11,8 +11,22 @@ import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@/lib/generated/prisma/client';
 
+/**
+ * Pin the SSL mode explicitly. `pg`/`pg-connection-string` currently treat
+ * `prefer`/`require`/`verify-ca` as aliases for `verify-full` but warn that a
+ * future major version will change that. Rewriting to the explicit
+ * `verify-full` keeps the SAME (strong) behavior we have today and silences the
+ * deprecation warning — Neon serves publicly-trusted certs, so verify-full
+ * connects fine.
+ */
+function pinSslMode(cs: string): string {
+  return cs.replace(/([?&]sslmode=)(prefer|require|verify-ca)\b/i, '$1verify-full');
+}
+
 function createPrismaClient() {
-  const connectionString = process.env.DATABASE_URL;
+  const connectionString = process.env.DATABASE_URL
+    ? pinSslMode(process.env.DATABASE_URL)
+    : undefined;
   if (!connectionString) {
     throw new Error(
       'DATABASE_URL is not set. Add it to .env.local — see README for Neon setup.',
