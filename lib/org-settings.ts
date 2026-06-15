@@ -9,10 +9,14 @@
  */
 import { prisma } from '@/lib/prisma';
 
+export type HealMode = 'single-shot' | 'agent';
+
 export interface OrgSettings {
   maxPages: number;
   deepCrawlMaxPages: number;
   autoSelfHeal: boolean;
+  /** 'agent' = iterative observe→act→verify healing; 'single-shot' = one rewrite (default). */
+  healMode: HealMode;
 }
 
 /** Raw stored shape — all fields optional (absent = use env/default). */
@@ -20,6 +24,7 @@ export interface OrgSettingsPatch {
   maxPages?: number;
   deepCrawlMaxPages?: number;
   autoSelfHeal?: boolean;
+  healMode?: HealMode;
 }
 
 function envInt(name: string, fallback: number): number {
@@ -41,6 +46,7 @@ export async function getOrgSettings(orgId: string): Promise<OrgSettings> {
     maxPages:          stored.maxPages          ?? envInt('MAX_PAGES', 10),
     deepCrawlMaxPages: stored.deepCrawlMaxPages ?? envInt('DEEP_CRAWL_MAX_PAGES', 50),
     autoSelfHeal:      stored.autoSelfHeal      ?? (process.env.AUTO_SELF_HEAL === 'true'),
+    healMode:          stored.healMode          ?? (process.env.HEAL_MODE === 'agent' ? 'agent' : 'single-shot'),
   };
 }
 

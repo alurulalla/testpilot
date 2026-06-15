@@ -165,10 +165,12 @@ export interface GenerateFlowOptions {
   pages: SiteMapPageLite[];
   workspace: Workspace;
   model: ChatModel;
+  /** Compact app-profile context block (Phase 2). */
+  appContext?: string;
 }
 
 export async function generateFlowTest(options: GenerateFlowOptions): Promise<string> {
-  const { description, steps, pages, workspace, model } = options;
+  const { description, steps, pages, workspace, model, appContext = '' } = options;
 
   // Gather the pages the journey touches (deduped), capped to keep tokens sane.
   const touched = new Map<string, SiteMapPageLite>();
@@ -193,7 +195,8 @@ export async function generateFlowTest(options: GenerateFlowOptions): Promise<st
     'You are an expert Playwright Test engineer (TypeScript). Write ONE test that performs the ' +
     'complete user journey below, step by step, asserting each step\'s expected outcome before ' +
     'moving to the next. The journey spans multiple pages — click through them like a real user. ' +
-    'Return ONLY the complete TypeScript file — no markdown fences, no explanation.';
+    'Return ONLY the complete TypeScript file — no markdown fences, no explanation.' +
+    (appContext ? `\n\n${appContext}` : '');
 
   const user =
     `JOURNEY: ${description}\n\n` +

@@ -230,6 +230,8 @@ export interface GenerateScenarioOptions {
   workspace: Workspace;
   model: ChatModel;
   siteMapPages?: SiteMapPage[];
+  /** Compact app-profile context block (Phase 2). */
+  appContext?: string;
 }
 
 export interface GenerateScenarioResult {
@@ -241,7 +243,7 @@ export interface GenerateScenarioResult {
 export async function generateScenarioTest(
   options: GenerateScenarioOptions,
 ): Promise<GenerateScenarioResult> {
-  const { description, workspace, model, siteMapPages = [] } = options;
+  const { description, workspace, model, siteMapPages = [], appContext = '' } = options;
 
   // Read optional CONTEXT.md for credential hints
   let contextHint = '';
@@ -273,6 +275,7 @@ export async function generateScenarioTest(
     'Write a single focused test file that navigates directly to that page and verifies the scenario. ' +
     'Use accessibility-first locators (getByRole, getByLabel, getByText). ' +
     'Return ONLY the complete TypeScript file — no markdown fences, no explanation.' +
+    (appContext ? `\n\n${appContext}` : '') +
     contextHint;
 
   const userPrompt =

@@ -129,6 +129,7 @@ export default function SettingsPage() {
   const [appMaxPages, setAppMaxPages]         = useState(10);
   const [appDeepMax, setAppDeepMax]           = useState(50);
   const [appAutoHeal, setAppAutoHeal]         = useState(false);
+  const [appHealAgent, setAppHealAgent]       = useState(false);
   const [appSaving, setAppSaving]             = useState(false);
   const [appMsg, setAppMsg]                   = useState('');
 
@@ -203,6 +204,7 @@ export default function SettingsPage() {
         setAppMaxPages(d.maxPages ?? 10);
         setAppDeepMax(d.deepCrawlMaxPages ?? 50);
         setAppAutoHeal(d.autoSelfHeal ?? false);
+        setAppHealAgent((d.healMode ?? 'single-shot') === 'agent');
       }).catch(() => {});
     }
   }, [loading, isAdmin, loadMembers, loadApiKeys]);
@@ -332,7 +334,7 @@ export default function SettingsPage() {
     const res = await fetch('/api/app-settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ maxPages: appMaxPages, deepCrawlMaxPages: appDeepMax, autoSelfHeal: appAutoHeal }),
+      body: JSON.stringify({ maxPages: appMaxPages, deepCrawlMaxPages: appDeepMax, autoSelfHeal: appAutoHeal, healMode: appHealAgent ? 'agent' : 'single-shot' }),
     });
     setAppMsg(res.ok ? 'Saved' : 'Save failed');
     if (res.ok) setTimeout(() => setAppMsg(''), 2500);
@@ -804,6 +806,19 @@ export default function SettingsPage() {
                 <div>
                   <p className="text-sm text-zinc-200">Auto self-heal</p>
                   <p className="text-xs text-zinc-400">Automatically fix failing tests after each run</p>
+                </div>
+              </label>
+
+              <label className={`flex items-center gap-3 select-none ${isAdmin && appAutoHeal ? 'cursor-pointer' : 'opacity-50'}`}>
+                <div
+                  onClick={() => isAdmin && appAutoHeal && setAppHealAgent(v => !v)}
+                  className={`relative h-5 w-9 rounded-full transition-colors ${appHealAgent ? 'bg-violet-600' : 'bg-zinc-700'}`}
+                >
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${appHealAgent ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                </div>
+                <div>
+                  <p className="text-sm text-zinc-200">Self-heal agent <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-300 border border-violet-500/30 ml-1">beta</span></p>
+                  <p className="text-xs text-zinc-400">Iteratively fix & re-run each failing test until it passes (uses more tokens). Requires auto self-heal.</p>
                 </div>
               </label>
 

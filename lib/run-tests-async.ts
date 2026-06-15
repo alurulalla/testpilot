@@ -5,6 +5,11 @@ import { Workspace } from '@/lib/pilot';
 import { TestResult } from '@/types/session';
 import { parsePlaywrightReport } from '@/lib/playwright-report';
 import { registerProcess, unregisterProcess } from '@/lib/session-store';
+
+/** Escape a literal string for use inside a Playwright --grep regex. */
+export function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 // NOTE: patchPlaywrightConfigForAuth is intentionally NOT called here.
 // Generated spec files use manual login (loginAndGoto helpers). Adding a global
 // storageState: './auth.json' would pre-authenticate the browser context so that
@@ -59,6 +64,8 @@ export async function runTestsAsync(
   onProgress?: (line: string) => void,
   sessionId?: string,
   headed = false,
+  grep?: string,
+  grepRegex?: string,
 ): Promise<TestResult> {
   const reportsDir = path.join(workspace.dir, 'reports');
   const testResultsDir = path.join(workspace.dir, 'test-results');
@@ -85,6 +92,10 @@ export async function runTestsAsync(
 
     const nodeArgs = [playwrightCli, 'test', '--config', 'playwright.config.ts'];
     if (headed) nodeArgs.push('--headed');
+    // Run a single test by exact title (escaped), or a prebuilt regex alternation
+    // for a feature-scoped "smoke" run. --grep takes a regex.
+    if (grep) nodeArgs.push('--grep', escapeRegExp(grep));
+    else if (grepRegex) nodeArgs.push('--grep', grepRegex);
 
     const proc = spawn(
       process.execPath,

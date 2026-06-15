@@ -249,7 +249,35 @@ export async function collectPageElements(page: Page): Promise<Record<string, un
           }),
       )];
 
-      return { interactives, buttons, links, inputs, forms, headings, landmarks };
+      // ── Semantic meta (free, factual — feeds the App Profile) ────────────────
+      // Description + OpenGraph + schema.org @type are the strongest signals for
+      // "what is this app/page" without any LLM (e.g. @type "MedicalOrganization").
+      const metaContent = (sel: string): string => {
+        const el = document.querySelector(sel);
+        return el ? (attr(el, 'content') || '').slice(0, 200) : '';
+      };
+      const meta = {
+        description: metaContent('meta[name="description"]'),
+        ogTitle: metaContent('meta[property="og:title"]'),
+        ogDescription: metaContent('meta[property="og:description"]'),
+        ogSiteName: metaContent('meta[property="og:site_name"]'),
+        lang: (document.documentElement.getAttribute('lang') || '').slice(0, 10),
+      };
+      const schemaTypes: string[] = [];
+      for (const s of [...document.querySelectorAll('script[type="application/ld+json"]')].slice(0, 10)) {
+        try {
+          const data = JSON.parse(s.textContent || 'null');
+          const collect = (o: unknown) => {
+            if (!o || typeof o !== 'object') return;
+            const t = (o as Record<string, unknown>)['@type'];
+            if (typeof t === 'string') schemaTypes.push(t);
+            else if (Array.isArray(t)) for (const x of t) if (typeof x === 'string') schemaTypes.push(x);
+          };
+          if (Array.isArray(data)) data.forEach(collect); else collect(data);
+        } catch { /* malformed JSON-LD */ }
+      }
+
+      return { interactives, buttons, links, inputs, forms, headings, landmarks, meta, schemaTypes: [...new Set(schemaTypes)].slice(0, 10) };
     },
     { maxInteractives: MAX_INTERACTIVES, maxLinks: MAX_LINKS },
   ).catch(() => ({}));

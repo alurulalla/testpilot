@@ -11,6 +11,8 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSessionAccess } from '@/lib/session-access';
+import { getFeatureContext } from '@/lib/feature-context';
+import { hostOf } from '@/lib/app-profile';
 import path from 'path';
 import { getSession, getCachedSession, setScenarioResult, setTestResult, addLog, updateSession } from '@/lib/session-store';
 import { snapshotTestFiles, ensureWorkspaceReady } from '@/lib/session-files';
@@ -115,6 +117,9 @@ export async function POST(
         elements: p.elements,
       })) ?? [];
 
+      // Feature-context spine (Phase 2): bias the scenario toward real features.
+      const appContext = await getFeatureContext(session.orgId, hostOf(session.url)).catch(() => '');
+
       // ── Generation: intent-driven journey OR single-page check ────────────
       let testFile: string;
       let testContent: string;
@@ -138,7 +143,7 @@ export async function POST(
           addLog(id, `📋 Plan (${steps.length} steps):`, 'info');
           steps.forEach((st, i) =>
             addLog(id, `  ${i + 1}. ${st.action}  →  expect: ${st.expected}`, 'info'));
-          const code = await generateFlowTest({ description, steps, pages: siteMapPages, workspace, model });
+          const code = await generateFlowTest({ description, steps, pages: siteMapPages, workspace, model, appContext });
           const slug = description.toLowerCase().replace(/[^a-z0-9]+/g, '-')
             .replace(/^-|-$/g, '').slice(0, 50) || 'flow';
           testFile = path.join(workspace.testsDir, `scenario-${slug}.spec.ts`);
@@ -148,7 +153,7 @@ export async function POST(
           usedFlow = true;
         } else {
           addLog(id, '  Intent extraction returned no plan — using single-page generator.', 'info');
-          const gen = await generateScenarioTest({ description, workspace, model, siteMapPages });
+          const gen = await generateScenarioTest({ description, workspace, model, siteMapPages, appContext });
           testFile = gen.testFile; testContent = gen.testContent; matchedTests = gen.matchedTests;
         }
       } else {
@@ -156,7 +161,7 @@ export async function POST(
           const top = findRelevantPages(description, siteMapPages, 1);
           if (top.length > 0) addLog(id, `🎯 Most relevant page: ${top[0].url} — "${top[0].title}"`, 'info');
         }
-        const gen = await generateScenarioTest({ description, workspace, model, siteMapPages });
+        const gen = await generateScenarioTest({ description, workspace, model, siteMapPages, appContext });
         testFile = gen.testFile; testContent = gen.testContent; matchedTests = gen.matchedTests;
       }
 

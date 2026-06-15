@@ -261,10 +261,70 @@ model TestCaseDescription {
   title     String   // the test title (reference / display fallback)
   useCase   String   // the AI-generated, user-facing use-case sentence
   area      String?  // functional area (Authentication, Cart, Checkout, …)
+  featureId String?  // → Feature.id; promotes the loose `area` label to a real feature
   model     String?  // model that produced it (auditing)
 
   createdAt DateTime @default(now())
 
   @@unique([orgId, hash])
+  @@index([orgId, host])
+  @@index([featureId])
+}
+
+// ── App profile & features (the "feature-context spine") ──────────────────────
+// One profile per app (org + host) holding the human/business understanding of
+// the app — what it is, who uses it, its vocabulary, and environment signals.
+// Each profile owns a set of Features (the unit every other part of TestPilot
+// references by stable id). Derived/editable data, persisted so it's built once
+// and reused; standalone (orgId is a plain column, like TestCaseDescription) so
+// it carries no hard FK to Organization — cleanup is handled in session delete.
+model AppProfile {
+  id    String @id @default(cuid())
+  orgId String
+  host  String // e.g. "saucedemo.com"
+
+  purpose    String? // one-paragraph: what the app does / its domain
+  personas   Json?   // string[] or [{ name, description }] — who uses it
+  glossary   Json?   // [{ term, definition }] — the app's domain vocabulary
+  envSignals Json?   // { authModel?, spa?, consentVendor?, locales?[] }
+  source     String  @default("ai") // crawl | ai | user (strongest wins)
+  model      String? // LLM that produced the synthesized fields (auditing)
+  // Hash of the inputs (doc + figma + crawl size) the profile was last built from.
+  // When the live inputs hash differs, the profile is stale and gets rebuilt.
+  sourceHash String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  features Feature[]
+
+  @@unique([orgId, host])
+  @@index([orgId])
+}
+
+model Feature {
+  id        String     @id @default(cuid())
+  profileId String
+  profile   AppProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  // Denormalized so feature lookups don't always need the profile join.
+  orgId String
+  host  String
+
+  name             String // e.g. "Checkout", "Product Catalog"
+  area             String? // functional area label (legacy `area` maps here)
+  journeys         Json?   // critical user journeys: string[] or [{ title, steps[] }]
+  expectedOutcomes Json?   // string[] — what success looks like
+  criticality      String  @default("normal") // critical | normal | low
+  source           String  @default("ai")     // crawl | ai | user
+  confidence       String  @default("medium")  // high | medium | low
+  // Quarantined features are excluded from the CI gate + critical counts (a
+  // known-flaky low-value feature shouldn't block or distort the dashboard).
+  quarantined      Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([profileId, name])
   @@index([orgId, host])
 }

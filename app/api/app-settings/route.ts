@@ -51,6 +51,10 @@ export async function POST(req: NextRequest) {
     patch.autoSelfHeal = Boolean(body.autoSelfHeal);
   }
 
+  if ('healMode' in body) {
+    patch.healMode = body.healMode === 'agent' ? 'agent' : 'single-shot';
+  }
+
   await saveOrgSettings(orgId, patch);
   return NextResponse.json({ ok: true });
 }

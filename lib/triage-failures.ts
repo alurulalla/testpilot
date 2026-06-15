@@ -82,6 +82,7 @@ type ErrorKind =
   | 'navigation'     // couldn't reach the app (net::ERR, goto failed)
   | 'selector-missing' // locator resolved to 0 elements / not found / strict-mode
   | 'assertion-visible'
+  | 'assertion-visual'   // screenshot / snapshot baseline mismatch
   | 'assertion-url'
   | 'assertion-text'
   | 'assertion-attr'
@@ -95,6 +96,9 @@ interface ErrorSignal {
   expected: string | null;
   received: string | null;
   isTimeout: boolean;
+  /** Normalized core error line — distinguishes otherwise-identical signatures so
+   *  unrelated failures (e.g. different screenshot mismatches) don't over-merge. */
+  fingerprint: string;
 }
 
 function grab(re: RegExp, s: string): string | null {
@@ -128,10 +132,15 @@ function parseError(error: string): ErrorSignal {
   // would otherwise match the source snippet of practically every test.
   const isNav = /net::ERR|ERR_[A-Z_]+|page\.goto:|Navigation (?:failed|to)|ERR_CONNECTION|ERR_NAME_NOT_RESOLVED/i.test(e);
 
+  // Visual snapshot diffs (toHaveScreenshot/toMatchSnapshot) have no locator or
+  // expected value, so without this they all collapse into the 'other' bucket.
+  const isVisual = /toHaveScreenshot|toMatchSnapshot|screenshot comparison|snapshot/i.test(e);
+
   let kind: ErrorKind = 'other';
   if (isLogin) kind = 'setup';
   else if (isNav) kind = 'navigation';
   else if (/resolved to 0 elements|waiting for locator|strict mode violation|not found|No node found|element\(s\) not found/i.test(e)) kind = 'selector-missing';
+  else if (isVisual) kind = 'assertion-visual';
   else if (/toBeVisible|toBeHidden|toBeInViewport|toBeAttached/i.test(e)) kind = 'assertion-visible';
   else if (/toHaveURL/i.test(e)) kind = 'assertion-url';
   else if (/toHaveText|toContainText|toHaveValue|toHaveTitle/i.test(e)) kind = 'assertion-text';
@@ -139,7 +148,19 @@ function parseError(error: string): ErrorSignal {
   else if (/toHaveCount/i.test(e)) kind = 'assertion-count';
   else if (isTimeout) kind = 'timeout';
 
-  return { kind, locator, expected, received, isTimeout };
+  // A normalized fingerprint of the most informative error line — strips quoted
+  // strings/numbers/paths so the SHAPE of the error groups failures, while
+  // genuinely different errors stay in separate clusters.
+  const errLine =
+    e.split('\n').map(l => l.trim()).find(l => /^Error:|expect\(|Timed out|toHave|toBe|toMatch|not to/i.test(l)) ||
+    e.split('\n').map(l => l.trim()).find(Boolean) || '';
+  const fingerprint = errLine.toLowerCase()
+    .replace(/['"`][^'"`]*['"`]/g, '')   // drop quoted literals
+    .replace(/\/[^\s)]+/g, '')           // drop paths/urls
+    .replace(/\d+/g, '#')                // collapse numbers
+    .replace(/\s+/g, ' ').trim().slice(0, 80);
+
+  return { kind, locator, expected, received, isTimeout, fingerprint };
 }
 
 // ── Stage 1: deterministic classifier ───────────────────────────────────────────
@@ -193,12 +214,20 @@ function classify(sig: ErrorSignal, hasDoc: boolean): RuleVerdict {
         verdict: 'test_bug', confidence: 'low', signature: `url|${normSig(sig.expected)}`,
         reasoning: `Navigation did not reach the expected URL (expected ${sig.expected ?? '?'}, got ${sig.received ?? '?'}).`,
       };
+    case 'assertion-visual':
+      // Screenshot/snapshot baseline mismatch — usually a stale baseline (test_bug),
+      // but with docs it can be a real visual regression → let the LLM weigh in.
+      return {
+        verdict: 'test_bug', confidence: 'low',
+        signature: `visual|${normSig(sig.fingerprint)}`,
+        reasoning: 'Screenshot/snapshot did not match its baseline — stale baseline, or a real visual change.',
+      };
     case 'assertion-text':
     case 'assertion-attr':
     case 'assertion-count':
       return {
         verdict: 'test_bug', confidence: 'low',
-        signature: `${sig.kind}|${normSig(sig.expected)}`,
+        signature: `${sig.kind}|${normSig(sig.expected) || normSig(sig.fingerprint)}`,
         reasoning: `Assertion mismatch (expected ${sig.expected ?? '?'}, got ${sig.received ?? '?'}) — wrong expectation or a real app difference.`,
       };
     case 'timeout':
@@ -207,8 +236,11 @@ function classify(sig: ErrorSignal, hasDoc: boolean): RuleVerdict {
         reasoning: 'Test timed out — likely a slow/incorrect wait or selector, possibly app slowness.',
       };
     default:
+      // Catch-all — split by the error's fingerprint so distinct failures don't
+      // merge into one cluster (which would broadcast one verdict/reasoning to all).
       return {
-        verdict: 'ambiguous', confidence: 'low', signature: 'other',
+        verdict: 'ambiguous', confidence: 'low',
+        signature: `other|${normSig(sig.fingerprint)}`,
         reasoning: 'No clear signal in the error output.',
       };
   }
@@ -260,18 +292,25 @@ async function classifyClustersWithLLM(
   fileContent: (file: string) => string,
   docContent: string | null,
   appUrl: string,
+  appContext: string,
   model: ChatModel,
   onProgress?: (line: string) => void,
 ): Promise<void> {
   if (clusters.length === 0) return;
 
+  // Bound the prompt: classify the largest clusters (already sorted desc). The
+  // rest keep their deterministic rule verdict — finer clustering shouldn't blow
+  // up the prompt. `work` is a prefix of `clusters`, so r.id indexes both.
+  const MAX_LLM_CLUSTERS = 20;
+  const work = clusters.slice(0, MAX_LLM_CLUSTERS);
+
   const docSection = docContent
     ? `## Product Documentation\n${docContent.slice(0, 3000)}${docContent.length > 3000 ? '\n…(truncated)' : ''}`
     : '## Product Documentation\nNone provided — without docs, never answer "app_bug"; use "test_bug" or "ambiguous".';
 
-  const blocks = clusters.map((c, i) => {
+  const blocks = work.map((c, i) => {
     const rep = c.representative;
-    const snippet = fileContent(rep.failure.file).slice(0, 1500);
+    const snippet = fileContent(rep.failure.file).slice(0, 700);
     return `### Cluster ${i}  (${c.items.length} test(s) share this failure)
 Representative test: "${rep.failure.title}"  [${rep.failure.file}]
 Error:
@@ -289,7 +328,7 @@ ${docSection}
 
 ## Application URL
 ${appUrl}
-
+${appContext ? `\n${appContext}\nUse APP CONTEXT to judge INTENT: if a failing test contradicts a feature's expected outcome AND docs support it, that points to app_bug; if the test just mis-targets the app, that's test_bug.\n` : ''}
 ## Clusters
 ${blocks}
 
@@ -302,7 +341,7 @@ ${blocks}
 Respond with ONLY valid JSON, keyed by the integer cluster id:
 {"clusters":[{"id":0,"verdict":"test_bug","reasoning":"<one sentence>"}]}`;
 
-  onProgress?.(`  LLM triage for ${clusters.length} unclear cluster(s)…`);
+  onProgress?.(`  LLM triage for ${work.length} unclear cluster(s)…`);
 
   let parsed: { clusters?: { id: number; verdict: string; reasoning: string }[] } = {};
   try {
@@ -361,6 +400,7 @@ export async function triageFailures(
   appUrl: string,
   model: ChatModel,
   onProgress?: (line: string) => void,
+  appContext = '',
 ): Promise<TriageResult> {
   const empty: TriageResult = {
     analyses: [], testBugCount: 0, appBugCount: 0, ambiguousCount: 0,
@@ -408,7 +448,7 @@ export async function triageFailures(
   const unclear = clusters.filter(c => c.confidence !== 'high');
   if (unclear.length > 0) {
     try {
-      await classifyClustersWithLLM(unclear, fileContent, docContent, appUrl, model, onProgress);
+      await classifyClustersWithLLM(unclear, fileContent, docContent, appUrl, appContext, model, onProgress);
     } catch (err) {
       onProgress?.(`  ⚠ LLM triage failed: ${err instanceof Error ? err.message : String(err)} — keeping rule verdicts.`);
     }

@@ -8,7 +8,7 @@ import { extractTestError, NO_ERROR_DETAIL } from '@/lib/playwright-report';
 
 // Robustly extract TypeScript code from an LLM response that may contain
 // prose, analysis text, or markdown fences mixed with the actual code.
-function extractTypeScript(response: string): string | null {
+export function extractTypeScript(response: string): string | null {
   // 1. Prefer an explicit ```typescript or ```ts code fence
   const fenced = response.match(/```(?:typescript|ts)\n([\s\S]*?)```/);
   if (fenced) return fenced[1].trim();
@@ -82,7 +82,7 @@ function endOfCall(s: string, openIdx: number): number {
 }
 
 /** Locate a `test('title', …)` / `test.only(…)` / `it(…)` block by its title. */
-function locateTestBlock(content: string, title: string): { start: number; end: number } | null {
+export function locateTestBlock(content: string, title: string): { start: number; end: number } | null {
   for (const q of ["'", '"', '`']) {
     const needle = `${q}${title}${q}`;
     let idx = content.indexOf(needle);
@@ -110,7 +110,7 @@ function locateTestBlock(content: string, title: string): { start: number; end: 
 }
 
 /** A replacement block is usable only if it's a single, balanced test() call. */
-function isValidBlock(code: string): boolean {
+export function isValidBlock(code: string): boolean {
   const t = code.trim();
   if (!/^(test|it)(\.(only|skip|fixme|fail))?\s*\(/.test(t)) return false;
   const open = t.indexOf('(');
@@ -131,15 +131,20 @@ interface FileFailures {
 
 function collectFailures(suite: {
   file?: string;
-  specs?: { title: string; tests?: { ok: boolean; results?: Parameters<typeof extractTestError>[0] }[] }[];
+  specs?: { title: string; ok?: boolean; tests?: { status?: string; results?: Parameters<typeof extractTestError>[0] }[] }[];
   suites?: typeof suite[];
 }, parentFile?: string): FileFailures[] {
   const file = suite.file ?? parentFile ?? '';
   const result: FileFailures = { file: `tests/${file}`, failures: [] };
 
   for (const spec of suite.specs ?? []) {
+    // The Playwright report has NO `test.ok` field — outcome is `spec.ok` and the
+    // per-test `status` ('expected' = passed, 'unexpected' = failed, 'flaky',
+    // 'skipped'). The old `!test.ok` check was always true → it healed PASSING
+    // tests/files too. Only collect genuinely-failed tests.
+    if (spec.ok !== false) continue;
     for (const test of spec.tests ?? []) {
-      if (!test.ok) {
+      if (test.status === 'unexpected') {
         result.failures.push({
           title: spec.title,
           error: (extractTestError(test.results) || NO_ERROR_DETAIL).slice(0, 600),
@@ -374,6 +379,7 @@ export async function fixTestsPerFile(
   onProgress?: (line: string) => void,
   sessionId?: string,
   triageAnalyses?: FailureAnalysis[],
+  appContext = '',
 ): Promise<{ fixed: boolean; filesChanged: number; skippedAppBugs: number }> {
   const reportPath = path.join(workspace.dir, 'reports', 'report.json');
   if (!existsSync(reportPath)) {
@@ -449,7 +455,7 @@ export async function fixTestsPerFile(
     onProgress?.(`Fixing ${file} (${failures.length} failure(s))…`);
 
     try {
-      const updated = await healFileSurgically(content, file, failures, model, onProgress);
+      const updated = await healFileSurgically(content, file, failures, model, onProgress, appContext);
       if (updated && updated !== content) {
         writeFileSync(fullPath, updated, 'utf8');
         filesChanged++;
@@ -481,6 +487,7 @@ async function healFileSurgically(
   failures: { title: string; error: string }[],
   model: ChatModel,
   onProgress?: (line: string) => void,
+  appContext = '',
 ): Promise<string | null> {
   const located = failures
     .slice(0, 20)
@@ -511,6 +518,11 @@ async function healFileSurgically(
           `Fix ONLY the failing tests listed below. For each, return the COMPLETE corrected ` +
           `test(...) block (from "test(" through its closing "});"), keeping the exact same test ` +
           `title. Correct selectors, expected values, or waits. Do NOT touch any other test.\n\n` +
+          (appContext
+            ? `${appContext}\nHeal toward the feature's INTENDED behavior above: fix how the test ` +
+              `targets the app, but NEVER weaken or delete a meaningful assertion just to make it pass — ` +
+              `a test that no longer verifies its expected outcome is worse than a failing one.\n\n`
+            : '') +
           `${blocks}\n\n` +
           `Respond with ONLY JSON:\n` +
           `{"fixes":[{"title":"<exact title>","code":"<full corrected test(...) block>"}]}`,

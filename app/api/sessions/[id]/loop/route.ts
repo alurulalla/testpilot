@@ -12,6 +12,7 @@ import { createModelFromConfig } from '@/lib/pilot/model-factory';
 import { getOrgLlmConfig, getOrgFigmaToken } from '@/lib/llm-config-store';
 import { runTestsAsync } from '@/lib/run-tests-async';
 import { fixTestsPerFile, fixSyntaxErrors } from '@/lib/fix-tests-per-file';
+import { healWithAgent } from '@/lib/heal-agent';
 import { triageFailures } from '@/lib/triage-failures';
 import { SiteMap } from '@/types/session';
 import { withRateLimit } from '@/lib/rate-limited-model';
@@ -27,6 +28,8 @@ import { compareCrawlToDocs } from '@/lib/compare-crawl-to-docs';
 import { runNavClickExplorer, runBroadClickExplorer } from '@/lib/pilot/nav-click-explorer';
 import { discoverSelectors } from '@/lib/pilot/discover-selectors';
 import { synthesizeFeatures } from '@/lib/synthesize-features';
+import { ensureAppProfile, hostOf, appProfileExists, mergeDiscoveredFeatures, tagTestsToFeatures } from '@/lib/app-profile';
+import { getFeatureContext } from '@/lib/feature-context';
 import { snapshotTestFiles } from '@/lib/session-files';
 import { findPriorSuite, copySuiteInto, currentFeatureNames } from '@/lib/suite-reuse';
 import { recordTestRun, attachTriageToRun, attachFixToRun } from '@/lib/test-runs';
@@ -44,7 +47,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const body = await req.json().catch(() => ({})) as { maxIterations?: number };
-  const maxIterations = body.maxIterations ?? 5;
+  // Default lowered 5 → 3: most healing converges in 1–2 passes, and the
+  // no-progress guard stops earlier — fewer wasted triage/heal cycles (tokens).
+  const maxIterations = body.maxIterations ?? 3;
   const maxPages = session.maxPages ?? 10;
   // Note: headedMode is intentionally NOT captured here — it is read fresh from the
   // session store before each test run so the user can toggle it during exploration/generation.
@@ -154,6 +159,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       // ── Imported project fast path ──────────────────────────────────────────
       const isImportMode = Boolean(getCachedSession(id)?.importedProject) && workspace.testFiles().length > 0;
+      // App-context spine (Phase 2): set after the profile is built (crawl path),
+      // then injected into generation/triage/self-heal in the iteration loop below.
+      let appContext = '';
 
       if (isImportMode) {
         addLog(id, '📦 Imported Playwright project — skipping exploration and generation, running existing tests.', 'info');
@@ -395,6 +403,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // list of user-facing features/flows. Merges with any user-defined flows.
       // Output (features.json) is injected into generation as a coverage checklist.
       addLog(id, 'Phase 1.9: Synthesizing features from crawl…', 'info');
+      // Captured for Phase 4 drift detection (fold new capabilities into the profile).
+      let discoveredFeatures: { name: string; description: string; steps?: string[] }[] = [];
       try {
         const sessForFeat = getCachedSession(id);
         const docFeatureNames = (sessForFeat?.userFlows ?? []).map(f => f.title).filter(Boolean);
@@ -404,6 +414,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           docFeatureNames,
           onProgress: (line) => addLog(id, line, 'info'),
         });
+        discoveredFeatures = features;
         if (features.length > 0) {
           workspace.writeFeatures(features);
           addLog(id, `  ✓ Identified ${features.length} feature(s)/flow(s).`, 'success');
@@ -414,6 +425,47 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         addLog(id, `  Phase 1.9 error (non-fatal): ${e instanceof Error ? e.message : String(e)}`, 'info');
       }
       if (stopped('feature synthesis')) return;
+
+      // Phase 1.95: Build the App Profile (feature-context spine) once per app.
+      // Deterministic signals + one LLM pass → purpose/personas/glossary/features,
+      // persisted per org+host and reused. `appContext` (a compact slice) is then
+      // injected into generation / triage / self-heal below.
+      const appHost = hostOf(getCachedSession(id)?.url ?? session.url);
+      try {
+        const profileExisted = await appProfileExists(session.orgId, appHost);
+        // Figma screen names feed the profile synthesis (design intent). The
+        // profile auto-rebuilds when the doc, figma, or crawl size changes.
+        const frameMap = (getCachedSession(id)?.figmaFrameMap ?? null) as Record<string, string> | null;
+        const figmaContext = frameMap && Object.keys(frameMap).length
+          ? `Figma screens: ${Object.keys(frameMap).join(', ')}`
+          : null;
+        await ensureAppProfile({
+          orgId: session.orgId,
+          host: appHost,
+          siteMap,
+          docContent: getCachedSession(id)?.contextDoc ?? null,
+          figmaContext,
+          model: chatModel,
+          onProgress: (line) => addLog(id, line, 'info'),
+        });
+        // Phase 4 write-back (self-improving loop):
+        // (a) DRIFT — on subsequent crawls, fold newly-discovered capabilities into
+        //     the existing profile as proposals for review (skip the build run to
+        //     avoid duplicating what the build just synthesized).
+        if (profileExisted && discoveredFeatures.length) {
+          const added = await mergeDiscoveredFeatures(session.orgId, appHost, discoveredFeatures);
+          if (added > 0) addLog(id, `  ↳ ${added} new feature(s) proposed from this crawl (review in Profile).`, 'info');
+        }
+        // (b) TAGGING — link stored tests to features (area → featureId). Covers
+        //     generated AND recorded tests once they have a use-case description.
+        const tagged = await tagTestsToFeatures(session.orgId, appHost);
+        if (tagged > 0) addLog(id, `  ↳ Tagged ${tagged} test(s) to their feature.`, 'info');
+
+        appContext = await getFeatureContext(session.orgId, appHost);
+      } catch (e) {
+        addLog(id, `  App profile build skipped (non-fatal): ${e instanceof Error ? e.message : String(e)}`, 'info');
+      }
+      if (stopped('app profile')) return;
 
       // Phase 2: Generate
       setStatus(id, 'generating');
@@ -507,6 +559,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             model: llmConfig.model,
             chatModel,
             workspace,
+            appContext,
           });
         } finally {
           console.log = origLog;
@@ -546,6 +599,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // healer can't reach). See the errors>0 && total===0 branch below.
       let lastSyntaxSig: string | null = null;
       let syntaxAttempts = 0;
+      let prevFailSig = ''; // failures from the previous iteration (no-progress guard)
       for (let i = 1; i <= maxIterations; i++) {
         if (stopped()) return;
         updateSession(id, { iteration: i });
@@ -615,6 +669,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           break;
         }
 
+        // Token/time guard: if the EXACT same tests fail as last iteration, the
+        // previous heal pass changed nothing — more triage+heal cycles will just
+        // burn tokens. Stop here. (Remaining failures are app bugs or stuck tests.)
+        const failSig = Object.entries(result.cases ?? {})
+          .filter(([, s]) => s === 'failed').map(([k]) => k).sort().join('|');
+        if (i > 1 && failSig && failSig === prevFailSig) {
+          addLog(id, `Auto-heal made no progress since the last iteration (${failed} failure(s) unchanged) — stopping to save time and tokens.`, 'info');
+          break;
+        }
+        prevFailSig = failSig;
+
         // Triage failures
         addLog(id, `Iteration ${i}: Analysing failures…`, 'info');
         const triage = await triageFailures(
@@ -623,6 +688,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           getCachedSession(id)?.url ?? session.url,
           chatModel,
           (line) => addLog(id, line, 'info'),
+          appContext,
         ).catch(() => null);
         if (stopped('triage')) return;
 
@@ -648,7 +714,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           }
         }
 
-        const autoSelfHeal = (await getOrgSettings(session.orgId)).autoSelfHeal;
+        const { autoSelfHeal, healMode } = await getOrgSettings(session.orgId);
 
         if (!autoSelfHeal) {
           addLog(
@@ -675,10 +741,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         if (i < maxIterations) {
           if (stopped()) return;
           setStatus(id, 'fixing');
-          addLog(id, `Iteration ${i}: Auto-fixing healable failures…`, 'info');
-          const fixResult = await fixTestsPerFile(
-            workspace, chatModel, (line) => addLog(id, line, 'info'), id, triage?.analyses,
-          );
+          let fixResult: { fixed: boolean; filesChanged: number };
+          if (healMode === 'agent') {
+            // E2: iterative observe→act→verify agent (opt-in via org settings).
+            addLog(id, `Iteration ${i}: Self-heal agent fixing healable failures…`, 'info');
+            const healable = (triage?.analyses ?? [])
+              .filter(a => a.verdict !== 'app_bug' && a.verdict !== 'setup_error')
+              .map(a => ({ file: a.file, title: a.testName, error: a.error }));
+            const r = await healWithAgent({
+              workspace, model: chatModel, failures: healable, appContext,
+              sessionId: id, onProgress: (line) => addLog(id, line, 'info'),
+            });
+            fixResult = { fixed: r.fixed, filesChanged: r.filesChanged };
+          } else {
+            addLog(id, `Iteration ${i}: Auto-fixing healable failures…`, 'info');
+            fixResult = await fixTestsPerFile(
+              workspace, chatModel, (line) => addLog(id, line, 'info'), id, triage?.analyses, appContext,
+            );
+          }
           setFixResult(id, { fixed: fixResult.fixed, filesChanged: fixResult.filesChanged });
           await attachFixToRun(runId, { fixed: fixResult.fixed, filesChanged: fixResult.filesChanged });
           if (fixResult.fixed) await snapshotTestFiles(id, workspace); // persist healed content

@@ -350,7 +350,7 @@ function parseFeaturesFromDoc(contextMd: string): { name: string; items: string[
   return sections;
 }
 
-function buildSystemPrompt(contextMd: string | null): string {
+function buildSystemPrompt(contextMd: string | null, appContext?: string): string {
   const hasDoc = detectsProductDoc(contextMd);
 
   let prompt = 'You are an expert Playwright Test engineer (TypeScript). ';
@@ -381,6 +381,14 @@ function buildSystemPrompt(contextMd: string | null): string {
 
   if (contextMd) {
     prompt += `\n\n${contextMd}`;
+  }
+
+  // App-context spine: bias coverage toward the app's real features/journeys and
+  // their intended outcomes (when a profile has been built for this app).
+  if (appContext) {
+    prompt += `\n\n${appContext}\n` +
+      'Use the APP CONTEXT to prioritise tests for the most CRITICAL features and to ' +
+      'assert their expected outcomes — but only with selectors present in the crawl data.';
   }
   return prompt;
 }
@@ -732,6 +740,8 @@ export interface GenerateMultiFileOptions {
   baseUrl: string;
   model: ChatModel;
   maxConcurrent?: number;
+  /** Compact app-profile context block (Phase 2), injected into the system prompt. */
+  appContext?: string;
 }
 
 /** Read login info from the workspace .env file (written by the loop route after pre-login). */
@@ -822,7 +832,7 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
     );
   }
 
-  const systemPrompt = buildSystemPrompt(contextMd);
+  const systemPrompt = buildSystemPrompt(contextMd, options.appContext);
   const writtenFiles: string[] = [fixturesPath];
 
   // Discovered features (from the synthesis step) → injected as a coverage
@@ -1036,6 +1046,8 @@ export interface RunGenerateSuiteOptions {
   model: string;
   chatModel?: ChatModel;
   workspace: Workspace;
+  /** Compact app-profile context block (Phase 2), forwarded to generation. */
+  appContext?: string;
 }
 
 export async function runGenerateSuite(options: RunGenerateSuiteOptions): Promise<void> {
@@ -1093,6 +1105,7 @@ export async function runGenerateSuite(options: RunGenerateSuiteOptions): Promis
     })),
     baseUrl: effectiveStart,
     model,
+    appContext: options.appContext,
   });
   console.log('  Test suite generation complete.');
 }

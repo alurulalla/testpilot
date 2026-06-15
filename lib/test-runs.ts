@@ -9,7 +9,7 @@
 import { prisma } from '@/lib/prisma';
 import type { TestResult, TriageResult, FixResult } from '@/types/session';
 
-export type RunTrigger = 'loop' | 'manual' | 'single-file' | 'scenario';
+export type RunTrigger = 'loop' | 'manual' | 'single-file' | 'scenario' | 'smoke';
 
 const OUTPUT_TAIL_CHARS = 8_000;
 

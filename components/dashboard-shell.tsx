@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  AlertCircle, ArrowRight, ChevronDown, ChevronLeft, ChevronRight,
+  AlertCircle, ArrowRight, Bug, ChevronDown, ChevronLeft, ChevronRight,
   Clock, FileCode2, Globe, Layers3, Loader2, Menu,
   PanelLeftClose, PanelLeftOpen, Trash2, User, X,
   Zap,
@@ -606,6 +606,392 @@ function TimeSavedCard({ host, sessions }: { host: string; sessions: Session[] }
   );
 }
 
+// ── App Profile view — the editable feature-context "brief" ───────────────────
+type PfCrit = 'critical' | 'normal' | 'low';
+interface PfFeature {
+  id: string; name: string; area: string | null;
+  journeys: string[]; expectedOutcomes: string[];
+  criticality: PfCrit; source: string; confidence: string; quarantined: boolean;
+}
+interface PfData {
+  host: string; purpose: string | null;
+  personas: { name: string; description: string }[];
+  glossary: { term: string; definition: string }[];
+  envSignals: { authModel?: string; spa?: boolean; consentVendor?: string | null; locales?: string[] };
+  source: string; updatedAt: number; features: PfFeature[];
+}
+
+interface PfFeatureHealth { id: string; testCount: number; passRate: number | null; flaky: number; untested: boolean; trend: number[]; tests: string[] }
+
+/** Tiny pass-rate sparkline (oldest→newest), coloured by the latest value. */
+function Sparkline({ data }: { data: number[] }) {
+  if (!data || data.length < 2) return null;
+  const w = 48, h = 14;
+  const pts = data.map((v, i) => `${((i / (data.length - 1)) * w).toFixed(1)},${(h - (v / 100) * h).toFixed(1)}`).join(' ');
+  const last = data[data.length - 1];
+  const stroke = last >= 80 ? '#34d399' : last >= 50 ? '#fbbf24' : '#f87171';
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="shrink-0" aria-hidden="true">
+      <polyline points={pts} fill="none" stroke={stroke} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+interface PfHealth { features: PfFeatureHealth[]; totalFeatures: number; untestedCount: number; criticalUntested: number; criticalFailing: number }
+
+/** Per-feature health pill: pass rate %, flaky, or untested. */
+function HealthBadge({ h }: { h?: PfFeatureHealth }) {
+  if (!h || h.untested) return <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700/50">untested</span>;
+  if (h.passRate == null) return <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700/50">not run</span>;
+  const cls = h.passRate >= 80 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+    : h.passRate >= 50 ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+    : 'text-red-400 bg-red-500/10 border-red-500/30';
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className={`text-[10px] px-2 py-0.5 rounded-full border tabular-nums ${cls}`}>{h.passRate}%</span>
+      {h.flaky > 0 && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">flaky</span>}
+    </span>
+  );
+}
+
+const CRIT_META: Record<PfCrit, { label: string; cls: string }> = {
+  critical: { label: 'Critical', cls: 'text-red-400 bg-red-500/10 border-red-500/30' },
+  normal:   { label: 'Normal',   cls: 'text-zinc-300 bg-zinc-700/40 border-zinc-600/40' },
+  low:      { label: 'Low',      cls: 'text-zinc-400 bg-zinc-800/40 border-zinc-700/40' },
+};
+
+function FeatureEditor({ initial, onSave, onCancel, saving }: {
+  initial: Partial<PfFeature>;
+  onSave: (f: { id?: string; name: string; area: string | null; criticality: PfCrit; journeys: string[]; expectedOutcomes: string[] }) => void;
+  onCancel: () => void;
+  saving: boolean;
+}) {
+  const [name, setName] = useState(initial.name ?? '');
+  const [area, setArea] = useState(initial.area ?? '');
+  const [crit, setCrit] = useState<PfCrit>(initial.criticality ?? 'normal');
+  const [journeys, setJourneys] = useState((initial.journeys ?? []).join('\n'));
+  const [outcomes, setOutcomes] = useState((initial.expectedOutcomes ?? []).join('\n'));
+  const lines = (s: string) => s.split('\n').map(x => x.trim()).filter(Boolean);
+  const inp = 'text-sm bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:border-violet-500';
+  return (
+    <div className="rounded-xl border border-violet-500/30 bg-zinc-900/60 p-4 space-y-3">
+      <div className="flex flex-wrap gap-2">
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Feature name" className={`flex-1 min-w-[160px] ${inp}`} />
+        <input value={area} onChange={e => setArea(e.target.value)} placeholder="Area" className={`w-36 ${inp}`} />
+        <select value={crit} onChange={e => setCrit(e.target.value as PfCrit)} className="text-sm bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-2 text-zinc-200">
+          <option value="critical">Critical</option><option value="normal">Normal</option><option value="low">Low</option>
+        </select>
+      </div>
+      <div>
+        <label className="text-[11px] text-zinc-400">Journeys (one per line)</label>
+        <textarea value={journeys} onChange={e => setJourneys(e.target.value)} rows={3} className={`mt-1 w-full text-xs ${inp}`} />
+      </div>
+      <div>
+        <label className="text-[11px] text-zinc-400">Expected outcomes (one per line)</label>
+        <textarea value={outcomes} onChange={e => setOutcomes(e.target.value)} rows={2} className={`mt-1 w-full text-xs ${inp}`} />
+      </div>
+      <div className="flex gap-2 justify-end">
+        <button onClick={onCancel} className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-300 hover:bg-zinc-800">Cancel</button>
+        <button disabled={!name.trim() || saving}
+          onClick={() => onSave({ id: initial.id, name: name.trim(), area: area.trim() || null, criticality: crit, journeys: lines(journeys), expectedOutcomes: lines(outcomes) })}
+          className="text-xs px-3 py-1.5 rounded-lg bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
+      </div>
+    </div>
+  );
+}
+
+function ProfileView({ host }: { host: string }) {
+  const [data, setData] = useState<PfData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editPurpose, setEditPurpose] = useState(false);
+  const [purposeDraft, setPurposeDraft] = useState('');
+  const [editId, setEditId] = useState<string | null>(null); // feature id, or 'new'
+  const [saving, setSaving] = useState(false);
+  const [health, setHealth] = useState<PfHealth | null>(null);
+  const [rebuilding, setRebuilding] = useState(false);
+  const [genId, setGenId] = useState<string | null>(null);  // feature currently generating a test
+  const [genMsg, setGenMsg] = useState<string | null>(null);
+  const [askQ, setAskQ] = useState('');
+  const [askAnswer, setAskAnswer] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+
+  useEffect(() => {
+    let active = true; setLoading(true);
+    fetch(`/api/app-profile?host=${encodeURIComponent(host)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (active) { setData(d); setLoading(false); } })
+      .catch(() => { if (active) { setData(null); setLoading(false); } });
+    // Feature health (coverage + pass rate + flaky) is best-effort, parallel.
+    fetch(`/api/feature-health?host=${encodeURIComponent(host)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (active) setHealth(d); })
+      .catch(() => { if (active) setHealth(null); });
+    return () => { active = false; };
+  }, [host]);
+
+  const healthById = useMemo(() => {
+    const m: Record<string, PfFeatureHealth> = {};
+    for (const h of health?.features ?? []) m[h.id] = h;
+    return m;
+  }, [health]);
+
+  async function patch(body: Record<string, unknown>) {
+    setSaving(true);
+    const d = await fetch('/api/app-profile', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host, ...body }),
+    }).then(r => (r.ok ? r.json() : null)).catch(() => null);
+    if (d) setData(d);
+    setSaving(false);
+    return d;
+  }
+
+  async function genFeatureTest(featureId: string, name: string) {
+    setGenId(featureId); setGenMsg(null);
+    const d = await fetch('/api/app-profile/generate-feature', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host, featureId }),
+    }).then(r => (r.ok ? r.json() : r.json().then(e => Promise.reject(e)))).catch(e => ({ error: e?.error }));
+    setGenId(null);
+    setGenMsg(d?.ok ? `Generated ${d.testFile} for "${name}" — the feature now has coverage.` : `Could not generate: ${d?.error ?? 'error'}`);
+    // Refresh health so the feature flips from "untested" and the button hides.
+    if (d?.ok) {
+      fetch(`/api/feature-health?host=${encodeURIComponent(host)}`)
+        .then(r => (r.ok ? r.json() : null)).then(setHealth).catch(() => {});
+    }
+  }
+
+  async function toggleQuarantine(featureId: string, quarantined: boolean) {
+    const d = await patch({ quarantine: { featureId, quarantined } });
+    if (d) {
+      fetch(`/api/feature-health?host=${encodeURIComponent(host)}`)
+        .then(r => (r.ok ? r.json() : null)).then(setHealth).catch(() => {});
+    }
+  }
+
+  async function ask() {
+    if (!askQ.trim()) return;
+    setAsking(true); setAskAnswer(null);
+    const d = await fetch('/api/app-profile/ask', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host, question: askQ }),
+    }).then(r => (r.ok ? r.json() : null)).catch(() => null);
+    setAsking(false);
+    setAskAnswer(d?.answer ?? 'Could not answer right now.');
+  }
+
+  async function runFeature(featureId: string, name: string) {
+    setGenMsg(`Starting run for "${name}"…`);
+    const d = await fetch('/api/app-profile/run-critical', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host, featureId }),
+    }).then(r => (r.ok ? r.json() : r.json().then(e => Promise.reject(e)))).catch(e => ({ error: e?.error }));
+    setGenMsg(d?.ok
+      ? `Run started for "${name}" (${d.ran} test${d.ran !== 1 ? 's' : ''}) — watch the session log; health updates when it finishes.`
+      : `Could not run: ${d?.error ?? 'error'}`);
+  }
+
+  async function runCritical() {
+    setGenMsg('Starting critical smoke run…');
+    const d = await fetch('/api/app-profile/run-critical', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host }),
+    }).then(r => (r.ok ? r.json() : r.json().then(e => Promise.reject(e)))).catch(e => ({ error: e?.error }));
+    setGenMsg(d?.ok
+      ? `Critical smoke run started (${d.ran} test${d.ran !== 1 ? 's' : ''}) — watch the session log; health updates when it finishes.`
+      : `Could not start: ${d?.error ?? 'error'}`);
+  }
+
+  async function rebuild() {
+    setRebuilding(true);
+    const d = await fetch('/api/app-profile', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host }),
+    }).then(r => (r.ok ? r.json() : null)).catch(() => null);
+    if (d) setData(d);
+    fetch(`/api/feature-health?host=${encodeURIComponent(host)}`)
+      .then(r => (r.ok ? r.json() : null)).then(setHealth).catch(() => {});
+    setRebuilding(false);
+  }
+
+  if (loading) return <div className="flex items-center justify-center py-16"><Loader2 className="h-5 w-5 text-zinc-400 animate-spin" /></div>;
+  if (!data) return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-8 text-center">
+      <p className="text-sm text-zinc-300 mb-1">No profile yet</p>
+      <p className="text-xs text-zinc-400">The app brief — purpose, who uses it, and its features — is built automatically the next time this app is crawled.</p>
+    </div>
+  );
+
+  const sectionCls = 'rounded-xl border border-zinc-800 bg-zinc-900/60 p-5';
+  return (
+    <div className="space-y-5">
+      {/* Header — refresh state + manual rebuild */}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] text-zinc-400">
+          Auto-rebuilds when your doc, Figma, or crawl changes · edits are preserved
+        </p>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={() => void runCritical()}
+            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-800 transition"
+            title="Run only the tests that cover CRITICAL features (fast feedback)">
+            Run critical
+          </button>
+          <button onClick={() => void rebuild()} disabled={rebuilding}
+            className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-800 transition disabled:opacity-50">
+            {rebuilding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            {rebuilding ? 'Rebuilding…' : 'Rebuild profile'}
+          </button>
+        </div>
+      </div>
+
+      {/* Ask about coverage (#11) */}
+      <section className={sectionCls}>
+        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-2">Ask about coverage</p>
+        <div className="flex gap-2">
+          <input value={askQ} onChange={e => setAskQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void ask(); }}
+            placeholder="e.g. what's critical and untested? is checkout covered?"
+            className="flex-1 text-sm bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:border-violet-500" />
+          <button onClick={() => void ask()} disabled={asking || !askQ.trim()}
+            className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-500 transition disabled:opacity-50">
+            {asking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Ask
+          </button>
+        </div>
+        {askAnswer && <p className="mt-3 text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed">{askAnswer}</p>}
+      </section>
+
+      {/* Purpose */}
+      <section className={sectionCls}>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">Purpose</p>
+          {!editPurpose && <button onClick={() => { setPurposeDraft(data.purpose ?? ''); setEditPurpose(true); }} className="text-[11px] text-violet-400 hover:text-violet-300">Edit</button>}
+        </div>
+        {editPurpose ? (
+          <div className="space-y-2">
+            <textarea value={purposeDraft} onChange={e => setPurposeDraft(e.target.value)} rows={3}
+              className="w-full text-sm bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:border-violet-500" />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setEditPurpose(false)} className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-300 hover:bg-zinc-800">Cancel</button>
+              <button disabled={saving} onClick={async () => { await patch({ profile: { purpose: purposeDraft } }); setEditPurpose(false); }}
+                className="text-xs px-3 py-1.5 rounded-lg bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-zinc-200 leading-relaxed">{data.purpose || <span className="text-zinc-400 italic">No purpose set.</span>}</p>
+        )}
+      </section>
+
+      {/* Personas + Glossary */}
+      <div className="grid sm:grid-cols-2 gap-4">
+        <section className={sectionCls}>
+          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-3">Personas</p>
+          {data.personas.length ? (
+            <ul className="space-y-2">
+              {data.personas.map((p, i) => (
+                <li key={i} className="flex gap-2 text-sm">
+                  <User className="h-3.5 w-3.5 text-violet-400 mt-0.5 shrink-0" />
+                  <span><span className="text-zinc-100 font-medium">{p.name}</span> <span className="text-zinc-400">— {p.description}</span></span>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="text-xs text-zinc-400 italic">None.</p>}
+        </section>
+        <section className={sectionCls}>
+          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-3">Glossary</p>
+          {data.glossary.length ? (
+            <ul className="space-y-1.5 text-sm">
+              {data.glossary.map((g, i) => (<li key={i}><span className="text-zinc-100 font-medium">{g.term}</span> <span className="text-zinc-400">— {g.definition}</span></li>))}
+            </ul>
+          ) : <p className="text-xs text-zinc-400 italic">None.</p>}
+        </section>
+      </div>
+
+      {/* Environment */}
+      <section className={sectionCls}>
+        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-3">Environment</p>
+        <div className="flex flex-wrap gap-2 text-xs">
+          {data.envSignals.authModel && <span className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300">Auth: {data.envSignals.authModel}</span>}
+          {data.envSignals.spa !== undefined && <span className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300">{data.envSignals.spa ? 'SPA' : 'Multi-page'}</span>}
+          {data.envSignals.consentVendor && <span className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300">Consent: {data.envSignals.consentVendor}</span>}
+          {(data.envSignals.locales ?? []).map(l => (<span key={l} className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300">{l}</span>))}
+          {!data.envSignals.authModel && data.envSignals.spa === undefined && !data.envSignals.consentVendor && !(data.envSignals.locales?.length) &&
+            <span className="text-zinc-400 italic">No signals captured.</span>}
+        </div>
+      </section>
+
+      {/* Features */}
+      <section>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">Features <span className="text-zinc-400">({data.features.length})</span></p>
+          {editId !== 'new' && <button onClick={() => setEditId('new')} className="text-[11px] text-violet-400 hover:text-violet-300">+ Add feature</button>}
+        </div>
+        {health && (health.untestedCount > 0 || health.criticalFailing > 0) && (
+          <p className="mb-2 text-[11px] text-zinc-400">
+            Coverage: <span className="text-zinc-200">{health.totalFeatures - health.untestedCount}/{health.totalFeatures}</span> features have tests
+            {health.criticalUntested > 0 && <span className="text-red-400"> · {health.criticalUntested} critical gap{health.criticalUntested !== 1 ? 's' : ''}</span>}
+            {health.criticalFailing > 0 && <span className="text-red-400"> · {health.criticalFailing} critical feature{health.criticalFailing !== 1 ? 's' : ''} failing</span>}
+          </p>
+        )}
+        {genMsg && <p className="mb-2 text-[11px] text-emerald-400">{genMsg}</p>}
+        <div className="space-y-2">
+          {editId === 'new' && (
+            <FeatureEditor initial={{}} saving={saving} onCancel={() => setEditId(null)} onSave={async f => { await patch({ feature: f }); setEditId(null); }} />
+          )}
+          {data.features.map(f => editId === f.id ? (
+            <FeatureEditor key={f.id} initial={f} saving={saving} onCancel={() => setEditId(null)} onSave={async nf => { await patch({ feature: nf }); setEditId(null); }} />
+          ) : (
+            <div key={f.id} className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+              <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-zinc-100">{f.name}</span>
+                    {f.area && <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">{f.area}</span>}
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ${CRIT_META[f.criticality].cls}`}>{CRIT_META[f.criticality].label}</span>
+                    {f.source === 'user' && <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-300 border border-violet-500/30">edited</span>}
+                    {f.source === 'crawl' && <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30">proposed</span>}
+                    {f.quarantined && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">quarantined</span>}
+                    {!f.quarantined && <HealthBadge h={healthById[f.id]} />}
+                    {!f.quarantined && <Sparkline data={healthById[f.id]?.trend ?? []} />}
+                  </div>
+                  {f.journeys.length > 0 && (
+                    <ul className="mt-2 space-y-0.5">{f.journeys.map((j, i) => (<li key={i} className="text-xs text-zinc-300">→ {j}</li>))}</ul>
+                  )}
+                  {f.expectedOutcomes.length > 0 && (
+                    <p className="mt-1.5 text-[11px] text-zinc-400">Expected: {f.expectedOutcomes.join('; ')}</p>
+                  )}
+                  {(healthById[f.id]?.tests?.length ?? 0) > 0 && (
+                    <p className="mt-1.5 text-[10px] text-zinc-400">
+                      <span className="text-zinc-300">Verified by {healthById[f.id]!.tests.length} test{healthById[f.id]!.tests.length !== 1 ? 's' : ''}:</span>{' '}
+                      {healthById[f.id]!.tests.slice(0, 3).join(' · ')}
+                      {healthById[f.id]!.tests.length > 3 ? ` +${healthById[f.id]!.tests.length - 3} more` : ''}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {/* Untested → offer generation; covered → offer a feature-scoped run (#6). */}
+                  {healthById[f.id]?.untested !== false ? (
+                    <button onClick={() => void genFeatureTest(f.id, f.name)} disabled={genId === f.id}
+                      className="flex items-center gap-1 text-[11px] text-violet-400 hover:text-violet-300 px-2 py-1 disabled:opacity-50"
+                      title="Generate an e2e test from this feature's journeys + expected outcomes">
+                      {genId === f.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                      {genId === f.id ? 'Generating…' : 'Generate test'}
+                    </button>
+                  ) : (
+                    <button onClick={() => void runFeature(f.id, f.name)}
+                      className="text-[11px] text-zinc-400 hover:text-zinc-200 px-2 py-1"
+                      title="Run only this feature's tests">Run</button>
+                  )}
+                  <button onClick={() => void toggleQuarantine(f.id, !f.quarantined)}
+                    className="text-[11px] text-zinc-400 hover:text-amber-400 px-2 py-1"
+                    title={f.quarantined ? 'Restore — include in gate + counts' : 'Quarantine — exclude flaky/low-value feature from the gate + counts'}>
+                    {f.quarantined ? 'Restore' : 'Quarantine'}
+                  </button>
+                  <button onClick={() => setEditId(f.id)} className="text-[11px] text-zinc-400 hover:text-zinc-200 px-2 py-1">Edit</button>
+                  <button onClick={() => { if (window.confirm(`Delete feature "${f.name}"?`)) void patch({ deleteFeatureId: f.id }); }}
+                    className="text-zinc-400 hover:text-red-400 p-1" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {data.features.length === 0 && editId !== 'new' && <p className="text-xs text-zinc-400 italic">No features yet.</p>}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 const SESSIONS_PAGE_SIZE = 8;
 
 function AppConsolidated({
@@ -628,8 +1014,18 @@ function AppConsolidated({
 
   const anyActive = sessions.some(s => isActive(s.status));
   const lastRun = sessions.reduce((m, s) => Math.max(m, s.createdAt), 0);
-  const [tab, setTab] = useState<'overview' | 'cases' | 'areas' | 'trends'>('overview');
+  const [tab, setTab] = useState<'overview' | 'profile' | 'cases' | 'areas' | 'trends'>('overview');
   const [sessionPage, setSessionPage] = useState(0);
+  const [triage, setTriage] = useState<{ testBugs: number; appBugs: number; setupErrors: number } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/triage-summary?host=${encodeURIComponent(host)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (active) setTriage(d); })
+      .catch(() => { if (active) setTriage(null); });
+    return () => { active = false; };
+  }, [host]);
 
   function sessionDot(s: Session) {
     if (isActive(s.status)) return <span className="h-2 w-2 rounded-full bg-violet-500 shrink-0" />;
@@ -661,7 +1057,7 @@ function AppConsolidated({
 
       {/* Tabs */}
       <div className="flex items-center gap-1 -mt-2">
-        {([['overview', 'Overview'], ['cases', 'Test cases'], ['areas', 'Areas'], ['trends', 'Trends']] as const).map(([t, label]) => (
+        {([['overview', 'Overview'], ['profile', 'Profile'], ['cases', 'Test cases'], ['areas', 'Areas'], ['trends', 'Trends']] as const).map(([t, label]) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -676,6 +1072,8 @@ function AppConsolidated({
 
       {tab === 'trends' ? (
         <TrendsView host={host} />
+      ) : tab === 'profile' ? (
+        <ProfileView host={host} />
       ) : tab === 'cases' ? (
         <TestCasesView host={host} />
       ) : tab === 'areas' ? (
@@ -686,11 +1084,13 @@ function AppConsolidated({
       <TimeSavedCard host={host} sessions={sessions} />
 
       {/* Aggregate stat cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <StatCard icon={<Layers3 className="h-4 w-4 text-zinc-400" />} label="Sessions" value={sessions.length} accent="text-zinc-100" />
         <StatCard icon={<Zap className="h-4 w-4 text-emerald-400" />} label="Passed" value={agg.total > 0 ? agg.passed : '—'} accent="text-emerald-400" />
         <StatCard icon={<Zap className="h-4 w-4 text-red-400" />} label="Failed" value={agg.total > 0 ? agg.failed + agg.errors : '—'} accent="text-red-400" />
         <StatCard icon={<FileCode2 className="h-4 w-4 text-violet-400" />} label="Spec files" value={agg.specs > 0 ? agg.specs : '—'} accent="text-violet-400" />
+        <StatCard icon={<AlertCircle className="h-4 w-4 text-amber-400" />} label="Test bugs" value={triage ? triage.testBugs : '—'} accent="text-amber-400" />
+        <StatCard icon={<Bug className="h-4 w-4 text-red-400" />} label="App bugs" value={triage ? triage.appBugs : '—'} accent="text-red-400" />
       </div>
 
       {/* Combined test-results ring */}
