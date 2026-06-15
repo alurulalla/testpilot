@@ -159,7 +159,7 @@ export default function OrgDetailPage() {
   if (error || !org) return (
     <div className="max-w-2xl mx-auto">
       <p className="text-red-400 text-sm">{error || 'Organisation not found'}</p>
-      <button onClick={() => router.push('/admin')} className="text-xs text-zinc-500 mt-2 hover:text-zinc-300">← Back</button>
+      <button onClick={() => router.push('/admin')} className="text-xs text-zinc-400 mt-2 hover:text-zinc-300">← Back</button>
     </div>
   );
 
@@ -168,12 +168,12 @@ export default function OrgDetailPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-start gap-3">
-          <Link href="/admin" className="text-zinc-500 hover:text-zinc-100 transition-colors mt-0.5">
+          <Link href="/admin" className="text-zinc-400 hover:text-zinc-100 transition-colors mt-0.5">
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <div>
             <h1 className="text-lg font-bold text-zinc-100">{org.name}</h1>
-            <p className="text-xs text-zinc-500 font-mono mt-0.5">{org.slug}</p>
+            <p className="text-xs text-zinc-400 font-mono mt-0.5">{org.slug}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -201,7 +201,7 @@ export default function OrgDetailPage() {
           { label: 'Sessions', value: org._count.sessions, highlight: 'text-zinc-100' },
         ].map(s => (
           <div key={s.label} className="rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-3">
-            <p className="text-xs text-zinc-500">{s.label}</p>
+            <p className="text-xs text-zinc-400">{s.label}</p>
             <p className={`text-lg font-bold mt-0.5 capitalize ${s.highlight}`}>{s.value}</p>
           </div>
         ))}
@@ -243,8 +243,8 @@ export default function OrgDetailPage() {
           )}
         </div>
         <div className="pt-2 border-t border-zinc-800">
-          <p className="text-xs text-zinc-600">
-            License key: <span className="font-mono text-zinc-500">{org.licenseKey}</span>
+          <p className="text-xs text-zinc-400">
+            License key: <span className="font-mono text-zinc-400">{org.licenseKey}</span>
           </p>
         </div>
       </div>
@@ -252,20 +252,20 @@ export default function OrgDetailPage() {
       {/* Members list */}
       <div className="rounded-xl border border-zinc-800 overflow-hidden">
         <div className="px-5 py-3.5 border-b border-zinc-800 bg-zinc-900/60 flex items-center gap-2">
-          <Users className="h-4 w-4 text-zinc-500" />
+          <Users className="h-4 w-4 text-zinc-400" />
           <h2 className="text-sm font-semibold text-zinc-100">Members</h2>
-          <span className="text-xs text-zinc-500 ml-auto">{org.members.length} / {org.maxMembers}</span>
+          <span className="text-xs text-zinc-400 ml-auto">{org.members.length} / {org.maxMembers}</span>
         </div>
         {org.members.length === 0 ? (
-          <div className="px-5 py-8 text-center text-sm text-zinc-600 bg-zinc-900">No members yet</div>
+          <div className="px-5 py-8 text-center text-sm text-zinc-400 bg-zinc-900">No members yet</div>
         ) : (
           <table className="w-full text-sm bg-zinc-900">
             <thead>
               <tr className="border-b border-zinc-800">
-                <th className="text-left px-5 py-2.5 text-xs font-semibold text-zinc-500">Member</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-500">Role</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-500">Status</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-500">Joined</th>
+                <th className="text-left px-5 py-2.5 text-xs font-semibold text-zinc-400">Member</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-400">Role</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-400">Status</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-400">Joined</th>
                 <th className="px-4 py-2.5" />
               </tr>
             </thead>
@@ -274,7 +274,7 @@ export default function OrgDetailPage() {
                 <tr key={m.id} className="hover:bg-zinc-800/30 transition-colors">
                   <td className="px-5 py-3">
                     <p className="text-zinc-100 font-medium">{m.displayName ?? '—'}</p>
-                    <p className="text-xs text-zinc-500">{m.email}</p>
+                    <p className="text-xs text-zinc-400">{m.email}</p>
                   </td>
                   <td className="px-4 py-3">
                     {m.role === 'ORG_ADMIN' ? (
@@ -282,13 +282,13 @@ export default function OrgDetailPage() {
                         <ShieldCheck className="h-2.5 w-2.5" /> Admin
                       </span>
                     ) : (
-                      <span className="text-xs text-zinc-500">Member</span>
+                      <span className="text-xs text-zinc-400">Member</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
                     <MemberStatusBadge status={m.status} />
                   </td>
-                  <td className="px-4 py-3 text-xs text-zinc-500">
+                  <td className="px-4 py-3 text-xs text-zinc-400">
                     {m.joinedAt ? timeAgo(m.joinedAt) : `Invited ${timeAgo(m.invitedAt)}`}
                   </td>
                   <td className="px-4 py-3 text-right">

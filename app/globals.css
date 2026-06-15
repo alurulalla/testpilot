@@ -60,4 +60,14 @@ html.light {
   /* Status colors — shift to darker stops */
   --color-emerald-400: oklch(59.6% 0.145 163.225); /* was 600 */
   --color-red-400:     oklch(57.7% 0.245 27.325);  /* was 600 */
+
+  /* Amber (Test Bug / warnings) — bright yellow is illegible on white, so the
+   * 400 stop (used everywhere) goes to a strong-contrast dark amber, and the
+   * lighter 300 sibling (used on tinted backgrounds) one stop up. */
+  --color-amber-400: oklch(55.5% 0.163 48.998);  /* was 700 */
+  --color-amber-300: oklch(66.6% 0.179 58.318);  /* was 600 */
+
+  /* Sky (Setup verdict) — same problem, same treatment. */
+  --color-sky-400: oklch(58.8% 0.158 241.966);   /* was 600 */
+  --color-sky-300: oklch(50%   0.134 242.749);   /* was 700 */
 }

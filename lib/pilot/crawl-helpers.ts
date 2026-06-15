@@ -132,31 +132,65 @@ export async function collectPageElements(page: Page): Promise<Record<string, un
       const intSel = "a[href], button:not([disabled]), [role='button'], " +
         "input:not([type='hidden']):not([disabled]), select, textarea, " +
         "[role='link'], [role='menuitem'], [role='tab']";
-      const intEls = [...document.querySelectorAll(intSel)].slice(0, maxInteractives);
-      const interactives = intEls.flatMap(el => {
-        if (!isVisible(el)) return [];
-        const tag  = el.tagName.toLowerCase();
+
+      // Role/name derivation shared by extraction AND the duplicate-count pass, so
+      // the counts match exactly what we emit (and what Playwright would resolve).
+      const intRole = (el: Element): string => {
+        const tag = el.tagName.toLowerCase();
         const type = attr(el, 'type') || 'text';
-        const explicitRole = attr(el, 'role');
-        const role = explicitRole || (
+        return attr(el, 'role') || (
           tag === 'a' ? 'link' :
           tag === 'button' || type === 'submit' || type === 'button' ? 'button' :
           tag === 'select' ? 'combobox' : tag === 'textarea' ? 'textbox' :
           type === 'search' ? 'searchbox' : type === 'checkbox' ? 'checkbox' :
           type === 'radio' ? 'radio' : 'textbox'
         );
-        const id          = attr(el, 'id');
-        const ariaLabel   = attr(el, 'aria-label');
-        const innerText   = txt(el);
-        const placeholder = attr(el, 'placeholder');
-        const titleAttr   = attr(el, 'title');
-        const labelEl     = id ? document.querySelector(`label[for="${id}"]`) : null;
-        const labelText   = labelEl ? txt(labelEl).replace(/[*:\s]+$/, '') : '';
-        const name        = (ariaLabel || labelText || innerText || placeholder || titleAttr).slice(0, 100);
+      };
+      const intName = (el: Element): string => {
+        const id = attr(el, 'id');
+        const labelEl = id ? document.querySelector(`label[for="${id}"]`) : null;
+        const labelText = labelEl ? txt(labelEl).replace(/[*:\s]+$/, '') : '';
+        return (attr(el, 'aria-label') || labelText || txt(el) || attr(el, 'placeholder') || attr(el, 'title')).slice(0, 100);
+      };
+
+      // Duplicate-count pass over ALL candidates (not just the visible/sliced set)
+      // so a locator's uniqueness reflects what Playwright strict mode actually
+      // sees. Same role+name (header/mega-menu/footer copies) or the same href →
+      // an ambiguous locator that throws on >1 match. We record the count + the
+      // element's index so the generator can pin it with .nth()/.first().
+      const allInt = [...document.querySelectorAll(intSel)];
+      const rnCount = new Map<string, number>();   // role+name → total count
+      const rnNth   = new WeakMap<Element, number>(); // element → index among same role+name
+      for (const el of allInt) {
+        const nm = intName(el);
+        if (!nm) continue;
+        const k = intRole(el) + '\n' + nm;
+        const i = rnCount.get(k) || 0;
+        rnNth.set(el, i);
+        rnCount.set(k, i + 1);
+      }
+      const hrefCount = new Map<string, number>();
+      for (const a of [...document.querySelectorAll('a[href]')]) {
+        const h = attr(a, 'href');
+        if (h) hrefCount.set(h, (hrefCount.get(h) || 0) + 1);
+      }
+
+      const intEls = allInt.slice(0, maxInteractives);
+      const interactives = intEls.flatMap(el => {
+        if (!isVisible(el)) return [];
+        const role = intRole(el);
+        const name = intName(el);
         if (!name) return [];
+        const tag    = el.tagName.toLowerCase();
+        const id     = attr(el, 'id');
         const testId = attr(el, 'data-testid') || attr(el, 'data-cy') || '';
         const href   = (role === 'link' || tag === 'a') ? attr(el, 'href') : '';
-        return [{ role, name, id, testId, href }];
+        const dupe   = (rnCount.get(role + '\n' + name) || 0) > 1;
+        return [{
+          role, name, id, testId, href, dupe,
+          nth: dupe ? (rnNth.get(el) || 0) : undefined,
+          hrefDupe: !!(href && (hrefCount.get(href) || 0) > 1),
+        }];
       });
 
       // ── Buttons ─────────────────────────────────────────────────────────────

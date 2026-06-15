@@ -193,7 +193,39 @@ export async function login(page: Page): Promise<void> {
 ${loginHelper}
 export const TARGET_URL = ${JSON.stringify(baseUrl)};
 
+// Cookie / privacy consent banners (OneTrust, Cookiebot, and generic "Accept"
+// dialogs) sit on top of the page and intercept clicks or hide content, which
+// silently fails most interaction and visibility checks. addLocatorHandler runs
+// automatically whenever such a banner appears — before any action — and clicks
+// it away, so individual tests never have to deal with it. Multilingual
+// (incl. German) because sites localise the button label.
+async function armConsentDismissal(page: import('@playwright/test').Page) {
+  const accept = page
+    .getByRole('button', {
+      name: /^(accept all|accept|allow all|allow|agree|i agree|i accept|got it|ok|okay|akzeptieren|alle akzeptieren|zustimmen|einverstanden|tout accepter|accepter)/i,
+    })
+    .first();
+  await page.addLocatorHandler(accept, async () => {
+    await accept.click({ timeout: 2000 }).catch(() => {});
+  }).catch(() => {});
+
+  // Known consent frameworks by their stable element ids (more reliable than text).
+  const byId = page.locator(
+    '#onetrust-accept-btn-handler, ' +
+    '#CybotCookiebotDialogBodyButtonAccept, ' +
+    '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll, ' +
+    '[aria-label="Accept all"], [data-testid="uc-accept-all-button"]',
+  ).first();
+  await page.addLocatorHandler(byId, async () => {
+    await byId.click({ timeout: 2000 }).catch(() => {});
+  }).catch(() => {});
+}
+
 export const test = base.extend<{ targetUrl: string }>({
+  page: async ({ page }, use) => {
+    await armConsentDismissal(page);
+    await use(page);
+  },
   targetUrl: async ({}, use) => {
     await use(TARGET_URL);
   },
@@ -210,7 +242,15 @@ interface PageData {
   accessibility_tree?: unknown;
 }
 
-interface Interactive { role: string; name: string; id: string; testId: string; href?: string }
+interface Interactive {
+  role: string; name: string; id: string; testId: string; href?: string;
+  /** Crawl-time uniqueness: role+name repeats on the page (header/footer copies). */
+  dupe?: boolean;
+  /** This element's index among the same-role+name matches (when `dupe`). */
+  nth?: number;
+  /** The href appears on more than one element (so a[href] is ambiguous too). */
+  hrefDupe?: boolean;
+}
 
 // ── Emoji helpers ─────────────────────────────────────────────────────────────
 // Emoji characters in accessible names make `getByRole(role, { name: 'exact' })`
@@ -253,7 +293,14 @@ function formatInteractives(elements: Record<string, unknown>, maxItems = 80): s
 
     let hint = '';
     if (isNavLink) {
-      hint = `  href="${el.href}"  ← prefer: locator('a[href="${el.href}"]')`;
+      // If the same href appears more than once (typically header + footer), the
+      // a[href] locator matches >1 element → strict-mode failure. Pin it.
+      const sel = `locator('a[href="${el.href}"]')${el.hrefDupe ? '.first()' : ''}`;
+      hint = `  href="${el.href}"  ← prefer: ${sel}`;
+    } else if (el.dupe) {
+      // role+name repeats on the page → getByRole would be ambiguous. Pin to the
+      // exact one we saw, by index.
+      hint = `  ← DUPLICATE name: use getByRole('${el.role}', { name: '${displayName}' }).nth(${el.nth ?? 0})`;
     } else if (nameHasEmoji) {
       hint = '  ← use /regex/';
     }
@@ -426,7 +473,18 @@ function buildPageTestPrompt(
     `- LINK RULE: if a row shows  href="..."  ← prefer: locator(...)  → use that CSS locator\n` +
     `  Example:  link "Employees"  href="/Employee"  → page.locator('a[href="/Employee"]')\n` +
     `  This is more precise than text matching and immune to emoji or wording changes.\n` +
+    `- DUPLICATE RULE (strict mode): the interactives table marks elements whose name or href ` +
+    `repeats on the page (e.g. a nav link that also appears in the footer). Playwright throws ` +
+    `on a locator that matches >1 element, so when a row shows '.first()' or '.nth(N)' in its ` +
+    `hint, you MUST include that exact suffix. Never write a bare getByRole/a[href] locator for ` +
+    `a row flagged DUPLICATE.\n` +
     `- For links WITHOUT an href hint: use getByRole('link', { name: 'exact name' })\n` +
+    `- COLLAPSED MENU RULE: If there is a hamburger/"Menu"/"Navigation" toggle button, the nav ` +
+    `links are HIDDEN until it is clicked. Do NOT assert toBeVisible() on a nav link directly — it ` +
+    `will fail. Instead either (a) click the menu button first, then assert the link, or (b) for an ` +
+    `existence/navigation check use page.locator('a[href="…"]').first().click() and assert ` +
+    `toHaveURL(...) — clicking a hidden-but-attached link still navigates. Reserve toBeVisible() for ` +
+    `elements visible without opening a menu.\n` +
     `- EMOJI RULE: if a row shows  ← use /regex/  → write  getByRole(role, { name: /Name/i })\n` +
     `- NEVER invent IDs, class names, or attributes not shown in the data above\n` +
     `- For inputs: if the input has a non-empty aria_label, use getByLabel('…'). ` +

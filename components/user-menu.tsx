@@ -65,7 +65,7 @@ export function UserMenu() {
         <span className="text-xs text-zinc-400 group-hover:text-zinc-200 transition-colors hidden sm:block max-w-28 truncate">
           {name}
         </span>
-        <ChevronDown className={`h-3 w-3 text-zinc-600 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`h-3 w-3 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Dropdown */}
@@ -74,7 +74,7 @@ export function UserMenu() {
           {/* User info */}
           <div className="px-3 py-2.5 border-b border-zinc-700">
             <p className="text-xs font-semibold text-zinc-100 truncate">{name}</p>
-            <p className="text-[10px] text-zinc-500 truncate mt-0.5">{email}</p>
+            <p className="text-[10px] text-zinc-400 truncate mt-0.5">{email}</p>
           </div>
 
           {/* Menu items */}
@@ -83,7 +83,7 @@ export function UserMenu() {
               onClick={() => { setOpen(false); router.push('/settings'); }}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors text-left"
             >
-              <Settings className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
+              <Settings className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
               Settings
             </button>
 

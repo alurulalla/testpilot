@@ -69,22 +69,22 @@ function ScoreCard({
   hasData: boolean;
 }) {
   const color =
-    !hasData ? 'text-zinc-600'
+    !hasData ? 'text-zinc-400'
     : score >= 80 ? 'text-emerald-400'
     : score >= 50 ? 'text-violet-400'
     : 'text-red-400';
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 flex flex-col items-center gap-3">
-      <div className="text-zinc-500">{icon}</div>
-      <p className="text-xs text-zinc-500 text-center">{label}</p>
+      <div className="text-zinc-400">{icon}</div>
+      <p className="text-xs text-zinc-400 text-center">{label}</p>
       {hasData ? (
         <>
           <span className={`text-3xl font-bold tabular-nums ${color}`}>{score}%</span>
-          <p className="text-xs text-zinc-600">{covered} / {total} covered</p>
+          <p className="text-xs text-zinc-400">{covered} / {total} covered</p>
         </>
       ) : (
-        <span className="text-sm text-zinc-600">—</span>
+        <span className="text-sm text-zinc-400">—</span>
       )}
     </div>
   );
@@ -92,7 +92,7 @@ function ScoreCard({
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="text-xs text-zinc-500 uppercase tracking-widest mb-3">{children}</h2>
+    <h2 className="text-xs text-zinc-400 uppercase tracking-widest mb-3">{children}</h2>
   );
 }
 
@@ -113,14 +113,14 @@ function FeatureTable({ features }: { features: FeatureCoverage[] }) {
           <div className="flex items-start gap-3">
             {f.covered
               ? <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-              : <XCircle className="h-4 w-4 text-zinc-600 shrink-0 mt-0.5" />
+              : <XCircle className="h-4 w-4 text-zinc-400 shrink-0 mt-0.5" />
             }
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-zinc-200">{f.name}</p>
               {f.items.length > 0 && (
                 <ul className="mt-1 space-y-0.5">
                   {f.items.map((item, j) => (
-                    <li key={j} className="text-xs text-zinc-500">· {item}</li>
+                    <li key={j} className="text-xs text-zinc-400">· {item}</li>
                   ))}
                 </ul>
               )}
@@ -137,7 +137,7 @@ function FeatureTable({ features }: { features: FeatureCoverage[] }) {
                 </div>
               )}
               {f.testFile && (
-                <p className="mt-1.5 text-[10px] text-zinc-600 font-mono">{f.testFile}</p>
+                <p className="mt-1.5 text-[10px] text-zinc-400 font-mono">{f.testFile}</p>
               )}
             </div>
           </div>
@@ -163,14 +163,14 @@ function PageList({ pages }: { pages: SitePageCoverage[] }) {
         >
           {p.covered
             ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-            : <XCircle className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
+            : <XCircle className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
           }
           <div className="flex-1 min-w-0">
             <p className="text-xs text-zinc-300 truncate">{p.title}</p>
-            <p className="text-[10px] text-zinc-600 font-mono truncate">{p.url}</p>
+            <p className="text-[10px] text-zinc-400 font-mono truncate">{p.url}</p>
           </div>
           {p.testFile && (
-            <span className="text-[10px] font-mono text-zinc-500 shrink-0">{p.testFile}</span>
+            <span className="text-[10px] font-mono text-zinc-400 shrink-0">{p.testFile}</span>
           )}
         </div>
       ))}
@@ -194,11 +194,11 @@ function AlignmentList({ items }: { items: TestAlignmentItem[] }) {
         >
           {t.alignedTo
             ? <CheckCircle2 className="h-3.5 w-3.5 text-violet-400 shrink-0" />
-            : <XCircle className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
+            : <XCircle className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
           }
           <div className="flex-1 min-w-0">
             <p className="text-xs text-zinc-300 truncate">{t.name}</p>
-            <p className="text-[10px] text-zinc-600 font-mono truncate">{t.file}</p>
+            <p className="text-[10px] text-zinc-400 font-mono truncate">{t.file}</p>
           </div>
           {t.alignedTo && (
             <span className="text-[10px] text-violet-400 shrink-0 text-right max-w-[160px] truncate">
@@ -206,7 +206,7 @@ function AlignmentList({ items }: { items: TestAlignmentItem[] }) {
             </span>
           )}
           {!t.alignedTo && (
-            <span className="text-[10px] text-zinc-600 shrink-0">undocumented</span>
+            <span className="text-[10px] text-zinc-400 shrink-0">undocumented</span>
           )}
         </div>
       ))}
@@ -230,14 +230,14 @@ function FigmaList({ frames }: { frames: FigmaFrameCoverage[] }) {
         >
           {f.covered
             ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-            : <XCircle className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
+            : <XCircle className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
           }
           <p className="text-xs text-zinc-300 flex-1 truncate">{f.frameName}</p>
           <a
             href={f.compareUrl}
             target="_blank"
             rel="noreferrer"
-            className="text-[10px] text-zinc-500 hover:text-violet-400 transition font-mono truncate max-w-[160px] shrink-0"
+            className="text-[10px] text-zinc-400 hover:text-violet-400 transition font-mono truncate max-w-[160px] shrink-0"
           >
             {f.compareUrl}
           </a>
@@ -292,7 +292,7 @@ export default function AccuracyPage() {
       <header className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur px-5 py-3 flex items-center gap-4 shrink-0">
         <button
           onClick={() => router.push(`/session/${id}`)}
-          className="text-zinc-500 hover:text-zinc-200 transition-colors"
+          className="text-zinc-400 hover:text-zinc-200 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
@@ -301,7 +301,7 @@ export default function AccuracyPage() {
             Accuracy Report
           </p>
           {report?.sessionUrl && (
-            <p className="text-xs text-zinc-500 truncate">{report.sessionUrl}</p>
+            <p className="text-xs text-zinc-400 truncate">{report.sessionUrl}</p>
           )}
         </div>
 
@@ -309,14 +309,14 @@ export default function AccuracyPage() {
         {!loading && (
           <button
             onClick={runAnalysis}
-            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-200 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition"
+            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Re-analyse
           </button>
         )}
 
-        <span className="text-[10px] uppercase tracking-wider text-zinc-600 font-medium shrink-0">
+        <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium shrink-0">
           Coverage
         </span>
       </header>
@@ -330,7 +330,7 @@ export default function AccuracyPage() {
             <div className="flex flex-col items-center justify-center gap-4 py-24">
               <Loader2 className="h-8 w-8 text-violet-400 animate-spin" />
               <p className="text-sm text-zinc-400">Running coverage analysis…</p>
-              <p className="text-xs text-zinc-600 text-center max-w-xs">
+              <p className="text-xs text-zinc-400 text-center max-w-xs">
                 The LLM is mapping your tests to documented features. This takes 10–20 seconds.
               </p>
             </div>
@@ -343,7 +343,7 @@ export default function AccuracyPage() {
               <p className="text-sm text-red-300">{error}</p>
               <button
                 onClick={runAnalysis}
-                className="text-xs text-zinc-500 hover:text-zinc-300 underline underline-offset-2 transition"
+                className="text-xs text-zinc-400 hover:text-zinc-300 underline underline-offset-2 transition"
               >
                 Try again
               </button>
@@ -361,7 +361,7 @@ export default function AccuracyPage() {
                     <span className={`text-4xl font-bold tabular-nums ${scoreColor}`}>
                       {report.overallScore}
                     </span>
-                    <span className="text-xs text-zinc-500 mt-0.5">overall</span>
+                    <span className="text-xs text-zinc-400 mt-0.5">overall</span>
                   </div>
                 </div>
                 <p className="text-sm text-zinc-400 text-center max-w-sm">
@@ -371,7 +371,7 @@ export default function AccuracyPage() {
                     ? 'Moderate coverage — some documented features are missing test cases.'
                     : 'Low coverage — many documented features lack test coverage.'}
                 </p>
-                <p className="text-[10px] text-zinc-700 font-mono">
+                <p className="text-[10px] text-zinc-400 font-mono">
                   analysed {new Date(report.generatedAt).toLocaleString()}
                 </p>
               </div>
@@ -485,14 +485,14 @@ export default function AccuracyPage() {
               {/* ── No tests yet ─────────────────────────────────────────────── */}
               {report.tests.total === 0 && (
                 <div className="flex flex-col items-center gap-3 py-12 text-center">
-                  <Code2 className="h-8 w-8 text-zinc-700" />
-                  <p className="text-sm text-zinc-500">No test files found yet.</p>
-                  <p className="text-xs text-zinc-600 max-w-xs">
+                  <Code2 className="h-8 w-8 text-zinc-400" />
+                  <p className="text-sm text-zinc-400">No test files found yet.</p>
+                  <p className="text-xs text-zinc-400 max-w-xs">
                     Run the Generate phase on the session page to create tests, then re-analyse.
                   </p>
                   <button
                     onClick={() => router.push(`/session/${id}`)}
-                    className="text-xs text-zinc-500 hover:text-zinc-300 underline underline-offset-2 transition mt-1"
+                    className="text-xs text-zinc-400 hover:text-zinc-300 underline underline-offset-2 transition mt-1"
                   >
                     ← Go to session
                   </button>

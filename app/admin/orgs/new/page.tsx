@@ -60,7 +60,7 @@ export default function NewOrgPage() {
     <div className="max-w-lg mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Link href="/admin" className="text-zinc-500 hover:text-zinc-100 transition-colors">
+        <Link href="/admin" className="text-zinc-400 hover:text-zinc-100 transition-colors">
           <ArrowLeft className="h-4 w-4" />
         </Link>
         <div className="flex items-center gap-2">
@@ -89,7 +89,7 @@ export default function NewOrgPage() {
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-zinc-400">
             Slug
-            <span className="ml-1.5 text-zinc-600 font-normal">(auto-generated, must be unique)</span>
+            <span className="ml-1.5 text-zinc-400 font-normal">(auto-generated, must be unique)</span>
           </label>
           <input
             type="text"
@@ -101,7 +101,7 @@ export default function NewOrgPage() {
             title="Lowercase letters, numbers and hyphens only"
             className="w-full h-9 px-3 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm font-mono"
           />
-          <p className="text-xs text-zinc-600">Lowercase letters, numbers and hyphens only</p>
+          <p className="text-xs text-zinc-400">Lowercase letters, numbers and hyphens only</p>
         </div>
 
         {/* Max members */}
@@ -115,14 +115,14 @@ export default function NewOrgPage() {
             onChange={e => setMaxMembers(Number(e.target.value))}
             className="w-24 h-9 px-3 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm"
           />
-          <p className="text-xs text-zinc-600">Maximum number of members allowed in this org</p>
+          <p className="text-xs text-zinc-400">Maximum number of members allowed in this org</p>
         </div>
 
         {/* Admin email */}
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-zinc-400">
             Org Admin Email
-            <span className="ml-1.5 text-zinc-600 font-normal">(receives invite email)</span>
+            <span className="ml-1.5 text-zinc-400 font-normal">(receives invite email)</span>
           </label>
           <input
             type="email"
@@ -132,7 +132,7 @@ export default function NewOrgPage() {
             required
             className="w-full h-9 px-3 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm"
           />
-          <p className="text-xs text-zinc-600">
+          <p className="text-xs text-zinc-400">
             A Clerk invitation email will be sent. They click the link, set a password, and become the Org Admin.
           </p>
         </div>

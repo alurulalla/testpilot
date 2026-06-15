@@ -82,6 +82,12 @@ export interface TriageCluster {
   testNames: string[];
   /** File the cluster is concentrated in, when it is single-file. */
   file?: string;
+  /** All spec files this cluster spans (basename-able), so the UI can name them
+   *  even when the failure is spread across several files. */
+  files?: string[];
+  /** Per-test "spec › title" pairs, so the user can see exactly which test in
+   *  which spec failed — not just an aggregate count. */
+  tests?: { title: string; file: string }[];
 }
 
 export interface TriageResult {

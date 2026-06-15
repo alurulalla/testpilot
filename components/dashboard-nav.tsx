@@ -64,13 +64,13 @@ export function DashboardNav({ orgs = [], currentOrgId }: DashboardNavProps) {
             <div className="flex items-start justify-between">
               <div>
                 <h2 className="text-base font-semibold text-zinc-100">Start New Session</h2>
-                <p className="text-xs text-zinc-500 mt-0.5">
+                <p className="text-xs text-zinc-400 mt-0.5">
                   Enter your app's URL. TestPilot will explore it, generate a Playwright suite, run it, and self-heal failures automatically.
                 </p>
               </div>
               <button
                 onClick={closeModal}
-                className="ml-4 text-zinc-600 hover:text-zinc-300 transition-colors"
+                className="ml-4 text-zinc-400 hover:text-zinc-300 transition-colors"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -79,7 +79,7 @@ export function DashboardNav({ orgs = [], currentOrgId }: DashboardNavProps) {
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="relative">
-                <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 pointer-events-none" />
+                <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
                 <input
                   type="text"
                   value={url}
@@ -155,7 +155,7 @@ function OrgSwitcher({ orgs, currentOrgId }: { orgs: OrgOption[]; currentOrgId?:
   if (orgs.length === 1) {
     return (
       <span className="flex items-center gap-1.5 text-sm text-zinc-400 select-none min-w-0">
-        <Building2 className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
+        <Building2 className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
         <span className="truncate max-w-[120px] sm:max-w-[200px]">{current?.name}</span>
       </span>
     );
@@ -167,14 +167,14 @@ function OrgSwitcher({ orgs, currentOrgId }: { orgs: OrgOption[]; currentOrgId?:
         onClick={() => setOpen(o => !o)}
         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-zinc-200 hover:bg-zinc-800 transition-colors min-w-0 max-w-full"
       >
-        <Building2 className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
+        <Building2 className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
         <span className="truncate max-w-[90px] sm:max-w-[160px]">{current?.name}</span>
-        <ChevronsUpDown className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
+        <ChevronsUpDown className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
       </button>
 
       {open && (
         <div className="absolute left-0 top-full mt-1 w-60 z-50 rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl py-1.5">
-          <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">
+          <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
             Organisations
           </p>
           {orgs.map(o => {
@@ -188,10 +188,10 @@ function OrgSwitcher({ orgs, currentOrgId }: { orgs: OrgOption[]; currentOrgId?:
                   isCurrent ? 'text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100'
                 } disabled:opacity-50`}
               >
-                <Building2 className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+                <Building2 className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
                 <span className="flex-1 truncate">{o.name}</span>
                 {switching === o.id
-                  ? <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-500 shrink-0" />
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-400 shrink-0" />
                   : isCurrent && <Check className="h-3.5 w-3.5 text-violet-400 shrink-0" />}
               </button>
             );

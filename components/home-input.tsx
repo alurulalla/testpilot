@@ -23,7 +23,7 @@ export function HomeInput() {
     <form onSubmit={handleSubmit} className="w-full max-w-2xl mx-auto px-4 sm:px-0">
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
-          <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+          <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
           <input
             type="text"
             value={url}

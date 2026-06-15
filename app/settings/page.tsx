@@ -373,7 +373,7 @@ export default function SettingsPage() {
         <Building2 className="h-4 w-4 text-violet-400 shrink-0" />
         <div>
           <p className="text-sm font-semibold text-zinc-100">{org?.name}</p>
-          <p className="text-xs text-zinc-500">{currentMember?.email} · {currentMember?.role === 'ORG_ADMIN' ? 'Admin' : 'Member'}</p>
+          <p className="text-xs text-zinc-400">{currentMember?.email} · {currentMember?.role === 'ORG_ADMIN' ? 'Admin' : 'Member'}</p>
         </div>
         <div className="flex-1" />
         <Button size="sm" variant="secondary" onClick={() => router.push('/')}>
@@ -381,7 +381,7 @@ export default function SettingsPage() {
         </Button>
         <button
           onClick={() => signOut(() => router.push('/sign-in'))}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-red-400 hover:bg-zinc-800 transition-colors"
         >
           <LogOut className="h-3.5 w-3.5" /> Sign out
         </button>
@@ -390,7 +390,7 @@ export default function SettingsPage() {
       <div className="max-w-4xl mx-auto p-6 space-y-6">
         <div>
           <h1 className="text-xl font-bold text-zinc-100">Settings</h1>
-          <p className="text-sm text-zinc-500 mt-0.5">Manage your organisation</p>
+          <p className="text-sm text-zinc-400 mt-0.5">Manage your organisation</p>
         </div>
 
         {/* Tabs */}
@@ -407,7 +407,7 @@ export default function SettingsPage() {
               className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
                 tab === t.id
                   ? 'border-violet-500 text-violet-400'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                  : 'border-transparent text-zinc-400 hover:text-zinc-300'
               }`}
             >
               <t.icon className="h-3.5 w-3.5" />
@@ -447,7 +447,7 @@ export default function SettingsPage() {
                 </form>
                 {inviteError && <p className="text-xs text-red-400">{inviteError}</p>}
                 {inviteSuccess && <p className="text-xs text-emerald-400">{inviteSuccess}</p>}
-                <p className="text-xs text-zinc-600">
+                <p className="text-xs text-zinc-400">
                   {members.filter(m => m.status !== 'suspended').length} / {org?.maxMembers} members used
                 </p>
               </div>
@@ -456,19 +456,19 @@ export default function SettingsPage() {
             {/* Members list */}
             <div className="rounded-xl border border-zinc-800 overflow-hidden">
               <div className="px-5 py-3 border-b border-zinc-800 bg-zinc-900/60 flex items-center gap-2">
-                <Users className="h-4 w-4 text-zinc-500" />
+                <Users className="h-4 w-4 text-zinc-400" />
                 <h2 className="text-sm font-semibold text-zinc-100">Members</h2>
-                <button onClick={loadMembers} className="ml-auto text-zinc-600 hover:text-zinc-400 transition-colors">
+                <button onClick={loadMembers} className="ml-auto text-zinc-400 hover:text-zinc-400 transition-colors">
                   <RefreshCw className={`h-3.5 w-3.5 ${membersLoading ? 'animate-spin' : ''}`} />
                 </button>
               </div>
               <table className="w-full text-sm bg-zinc-900">
                 <thead>
                   <tr className="border-b border-zinc-800">
-                    <th className="text-left px-5 py-2.5 text-xs font-semibold text-zinc-500">Member</th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-500">Role</th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-500">Status</th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-500">Joined</th>
+                    <th className="text-left px-5 py-2.5 text-xs font-semibold text-zinc-400">Member</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-400">Role</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-400">Status</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-zinc-400">Joined</th>
                     {isAdmin && <th className="px-4 py-2.5" />}
                   </tr>
                 </thead>
@@ -477,7 +477,7 @@ export default function SettingsPage() {
                     <tr key={m.id} className="hover:bg-zinc-800/30 transition-colors">
                       <td className="px-5 py-3">
                         <p className="text-zinc-100 font-medium">{m.displayName ?? '—'}</p>
-                        <p className="text-xs text-zinc-500">{m.email}</p>
+                        <p className="text-xs text-zinc-400">{m.email}</p>
                       </td>
                       <td className="px-4 py-3">
                         {isAdmin && m.email !== currentMember?.email ? (
@@ -509,17 +509,17 @@ export default function SettingsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3"><MemberStatusBadge status={m.status} /></td>
-                      <td className="px-4 py-3 text-xs text-zinc-500">
+                      <td className="px-4 py-3 text-xs text-zinc-400">
                         {m.joinedAt ? timeAgo(m.joinedAt) : `Invited ${timeAgo(m.invitedAt)}`}
                       </td>
                       {isAdmin && (
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 justify-end">
-                            {actionLoading === m.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-500" />}
+                            {actionLoading === m.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-400" />}
                             {m.status === 'invited' && (
                               <button
                                 onClick={() => resendInvite(m.id)}
-                                className="text-xs text-zinc-500 hover:text-violet-400 transition-colors flex items-center gap-1"
+                                className="text-xs text-zinc-400 hover:text-violet-400 transition-colors flex items-center gap-1"
                               >
                                 <Mail className="h-3 w-3" /> Resend
                               </button>
@@ -527,7 +527,7 @@ export default function SettingsPage() {
                             {m.status === 'active' && (
                               <button
                                 onClick={() => toggleMemberStatus(m)}
-                                className="text-xs text-zinc-500 hover:text-amber-400 transition-colors"
+                                className="text-xs text-zinc-400 hover:text-amber-400 transition-colors"
                               >
                                 Suspend
                               </button>
@@ -535,14 +535,14 @@ export default function SettingsPage() {
                             {m.status === 'suspended' && (
                               <button
                                 onClick={() => toggleMemberStatus(m)}
-                                className="text-xs text-zinc-500 hover:text-emerald-400 transition-colors"
+                                className="text-xs text-zinc-400 hover:text-emerald-400 transition-colors"
                               >
                                 Reactivate
                               </button>
                             )}
                             <button
                               onClick={() => removeMember(m)}
-                              className="text-zinc-600 hover:text-red-400 transition-colors"
+                              className="text-zinc-400 hover:text-red-400 transition-colors"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -567,7 +567,7 @@ export default function SettingsPage() {
               <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 space-y-4">
                 <div>
                   <h2 className="text-sm font-semibold text-zinc-100">Provider &amp; Model</h2>
-                  <p className="text-xs text-zinc-500 mt-0.5">
+                  <p className="text-xs text-zinc-400 mt-0.5">
                     Used for test generation, analysis, and Figma comparison.
                   </p>
                 </div>
@@ -661,7 +661,7 @@ export default function SettingsPage() {
                     )}
                   </div>
                 ) : (
-                  <p className="text-xs text-zinc-600 pt-1">
+                  <p className="text-xs text-zinc-400 pt-1">
                     The provider &amp; model are managed by your organisation admin.
                   </p>
                 )}
@@ -672,7 +672,7 @@ export default function SettingsPage() {
                 <div className="space-y-4">
                   <div>
                     <h2 className="text-sm font-semibold text-zinc-100">API Keys</h2>
-                    <p className="text-xs text-zinc-500 mt-0.5">
+                    <p className="text-xs text-zinc-400 mt-0.5">
                       Encrypted at rest, scoped to your org. Takes precedence over server environment variables.
                     </p>
                   </div>
@@ -687,12 +687,12 @@ export default function SettingsPage() {
                         <div className="flex items-start justify-between gap-4">
                           <div>
                             <p className="text-sm font-semibold text-zinc-100">{def.label}</p>
-                            <p className="text-xs font-mono text-zinc-500 mt-0.5">{def.name}</p>
+                            <p className="text-xs font-mono text-zinc-400 mt-0.5">{def.name}</p>
                           </div>
                           {existing && (
                             <div className="text-right shrink-0">
                               <p className="text-xs font-mono text-zinc-400">{existing.maskedValue}</p>
-                              <p className="text-[10px] text-zinc-600 mt-0.5">Updated {timeAgo(existing.updatedAt)}</p>
+                              <p className="text-[10px] text-zinc-400 mt-0.5">Updated {timeAgo(existing.updatedAt)}</p>
                             </div>
                           )}
                         </div>
@@ -709,7 +709,7 @@ export default function SettingsPage() {
                             <button
                               type="button"
                               onClick={() => setKeyVisible(v => ({ ...v, [def.name]: !v[def.name] }))}
-                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400"
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-400"
                             >
                               {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                             </button>
@@ -727,19 +727,19 @@ export default function SettingsPage() {
 
                         {msg && <p className={`text-xs ${msg === 'Saved' ? 'text-emerald-400' : 'text-red-400'}`}>{msg}</p>}
                         {!existing && (
-                          <p className="text-xs text-zinc-600">{def.hint}</p>
+                          <p className="text-xs text-zinc-400">{def.hint}</p>
                         )}
                       </div>
                     );
                   })}
                   {apiKeysLoading && (
-                    <div className="flex items-center gap-2 text-xs text-zinc-500">
+                    <div className="flex items-center gap-2 text-xs text-zinc-400">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading keys…
                     </div>
                   )}
                 </div>
               ) : (
-                <p className="text-xs text-zinc-500">API keys are managed by your organisation admin.</p>
+                <p className="text-xs text-zinc-400">API keys are managed by your organisation admin.</p>
               )}
             </div>
           );
@@ -751,7 +751,7 @@ export default function SettingsPage() {
             <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 space-y-4">
               <div>
                 <h2 className="text-sm font-semibold text-zinc-100">Crawl Settings</h2>
-                <p className="text-xs text-zinc-500 mt-0.5">Controls how many pages TestPilot crawls per session.</p>
+                <p className="text-xs text-zinc-400 mt-0.5">Controls how many pages TestPilot crawls per session.</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -791,7 +791,7 @@ export default function SettingsPage() {
             <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 space-y-4">
               <div>
                 <h2 className="text-sm font-semibold text-zinc-100">Pipeline</h2>
-                <p className="text-xs text-zinc-500 mt-0.5">Controls test-run behaviour.</p>
+                <p className="text-xs text-zinc-400 mt-0.5">Controls test-run behaviour.</p>
               </div>
 
               <label className={`flex items-center gap-3 select-none ${isAdmin ? 'cursor-pointer' : 'opacity-50'}`}>
@@ -803,7 +803,7 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <p className="text-sm text-zinc-200">Auto self-heal</p>
-                  <p className="text-xs text-zinc-500">Automatically fix failing tests after each run</p>
+                  <p className="text-xs text-zinc-400">Automatically fix failing tests after each run</p>
                 </div>
               </label>
 
@@ -817,7 +817,7 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              {!isAdmin && <p className="text-xs text-zinc-500">Only admins can change pipeline settings.</p>}
+              {!isAdmin && <p className="text-xs text-zinc-400">Only admins can change pipeline settings.</p>}
             </div>
           </div>
         )}
@@ -862,7 +862,7 @@ export default function SettingsPage() {
                   { label: 'Member limit', value: `${org?.maxMembers} members`, mono: false },
                 ].map(row => (
                   <div key={row.label} className="flex items-center gap-4 text-sm">
-                    <span className="text-zinc-500 w-28 shrink-0">{row.label}</span>
+                    <span className="text-zinc-400 w-28 shrink-0">{row.label}</span>
                     <span className={`text-zinc-300 ${row.mono ? 'font-mono text-xs' : ''}`}>{row.value}</span>
                   </div>
                 ))}

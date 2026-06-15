@@ -103,7 +103,15 @@ function grab(re: RegExp, s: string): string | null {
 }
 
 function parseError(error: string): ErrorSignal {
-  const e = error;
+  // Playwright embeds the SOURCE SNIPPET around the failing line in the message
+  // (e.g. "  142 |   await page.goto(...)" plus a "      |   ^" caret line). That
+  // is the test's own source, not the failure — it must NOT drive classification,
+  // or any test that merely CONTAINS `page.goto` (almost all of them) or imports
+  // `./fixtures.js` gets mislabeled a navigation/login setup error. Strip it first.
+  const e = error
+    .split('\n')
+    .filter(l => !/^\s*>?\s*\d+\s*\|/.test(l) && !/^\s*\|\s*\^?\s*$/.test(l))
+    .join('\n');
   const locator = grab(/Locator:\s*(.+)/, e);
   const expected = grab(/Expected(?: pattern| string)?:\s*(.+)/, e);
   const received = grab(/Received(?: string)?:\s*(.+)/, e);
@@ -115,7 +123,10 @@ function parseError(error: string): ErrorSignal {
     /no credentials configured/i.test(e) ||
     /username field not found/i.test(e) ||
     /fixtures\.(?:t|j)s/i.test(e);
-  const isNav = /net::ERR|ERR_[A-Z_]+|page\.goto|Navigation (?:failed|to)|ERR_CONNECTION|ERR_NAME_NOT_RESOLVED/i.test(e);
+  // Real navigation failures only: a network error, or `page.goto:` as the failing
+  // ACTION prefix (Playwright errors are "page.goto: net::ERR…"). A bare "page.goto"
+  // would otherwise match the source snippet of practically every test.
+  const isNav = /net::ERR|ERR_[A-Z_]+|page\.goto:|Navigation (?:failed|to)|ERR_CONNECTION|ERR_NAME_NOT_RESOLVED/i.test(e);
 
   let kind: ErrorKind = 'other';
   if (isLogin) kind = 'setup';
@@ -412,6 +423,8 @@ export async function triageFailures(
     summary: summarize(c),
     testNames: c.items.map(it => it.failure.title),
     file: c.files.size === 1 ? [...c.files][0] : undefined,
+    files: [...c.files],
+    tests: c.items.map(it => ({ title: it.failure.title, file: it.failure.file })),
   }));
 
   const analyses: FailureAnalysis[] = clusters.flatMap(c =>

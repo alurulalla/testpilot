@@ -53,7 +53,7 @@ function FieldInput({ field, displayLabel, showValue, onToggleShow, onChange }: 
 
   return (
     <div className="flex items-center gap-2">
-      <label className="w-32 shrink-0 text-xs text-zinc-500 truncate" title={displayLabel}>
+      <label className="w-32 shrink-0 text-xs text-zinc-400 truncate" title={displayLabel}>
         {displayLabel}
       </label>
       <div className="relative flex-1">
@@ -69,7 +69,7 @@ function FieldInput({ field, displayLabel, showValue, onToggleShow, onChange }: 
           <button
             type="button"
             onClick={onToggleShow}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 transition-colors"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-400 transition-colors"
             tabIndex={-1}
           >
             {showValue ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
@@ -231,7 +231,7 @@ export function UrlInputForm() {
       {/* ── URL input ────────────────────────────────────────────────── */}
       <div className="flex gap-3">
         <div className="relative flex-1">
-          <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+          <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
           <input
             type="text"
             value={url}
@@ -264,19 +264,19 @@ export function UrlInputForm() {
               >
                 <span className="text-xs text-zinc-300 font-mono">
                   {s.id.slice(0, 8)}
-                  <span className="mx-1.5 text-zinc-600">·</span>
-                  <span className={`${s.status === 'idle' ? 'text-zinc-500' : 'text-violet-400'}`}>{s.status}</span>
-                  <span className="mx-1.5 text-zinc-600">·</span>
-                  <span className="text-zinc-600">{timeAgo(s.createdAt)}</span>
+                  <span className="mx-1.5 text-zinc-400">·</span>
+                  <span className={`${s.status === 'idle' ? 'text-zinc-400' : 'text-violet-400'}`}>{s.status}</span>
+                  <span className="mx-1.5 text-zinc-400">·</span>
+                  <span className="text-zinc-400">{timeAgo(s.createdAt)}</span>
                   {(s.testFiles?.length ?? 0) > 0 && (
-                    <span className="mx-1.5 text-zinc-600">· {s.testFiles.length} test file(s)</span>
+                    <span className="mx-1.5 text-zinc-400">· {s.testFiles.length} test file(s)</span>
                   )}
                 </span>
-                <ArrowRight className="h-3 w-3 text-zinc-600 group-hover:text-violet-400 transition-colors shrink-0" />
+                <ArrowRight className="h-3 w-3 text-zinc-400 group-hover:text-violet-400 transition-colors shrink-0" />
               </button>
             ))}
           </div>
-          <p className="text-xs text-zinc-600">↑ Resume an existing session, or click "Run TestPilot" to start fresh.</p>
+          <p className="text-xs text-zinc-400">↑ Resume an existing session, or click "Run TestPilot" to start fresh.</p>
         </div>
       )}
 
@@ -289,7 +289,7 @@ export function UrlInputForm() {
             <button
               type="button"
               onClick={() => setShowContext(v => !v)}
-              className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-300 transition-colors"
             >
               {showContext ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
               {storedContext
@@ -305,7 +305,7 @@ export function UrlInputForm() {
               type="button"
               onClick={detectForms}
               disabled={detectLoading || !url.trim()}
-              className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-40"
+              className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-300 transition-colors disabled:opacity-40"
             >
               {detectLoading
                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -324,7 +324,7 @@ export function UrlInputForm() {
         {/* Field inputs — grouped by page when detection found multiple forms */}
         {showContext && fields.length > 0 && (
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3 space-y-3">
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-zinc-400">
               Values stored for <span className="text-zinc-300">{normalizeUrl(url)}</span> and injected during test generation and execution.
             </p>
 
@@ -348,11 +348,11 @@ export function UrlInputForm() {
                       >
                         <span className="flex items-center gap-2">
                           <span className="text-xs font-medium text-zinc-200">{group.formLabel}</span>
-                          <span className="text-[10px] text-zinc-600 font-mono truncate max-w-48">{group.pageUrl}</span>
+                          <span className="text-[10px] text-zinc-400 font-mono truncate max-w-48">{group.pageUrl}</span>
                         </span>
                         <span className="flex items-center gap-2 shrink-0">
-                          <span className="text-[10px] text-zinc-500">{group.fields.length} field{group.fields.length !== 1 ? 's' : ''}</span>
-                          {isCollapsed ? <ChevronRight className="h-3 w-3 text-zinc-600" /> : <ChevronDown className="h-3 w-3 text-zinc-600" />}
+                          <span className="text-[10px] text-zinc-400">{group.fields.length} field{group.fields.length !== 1 ? 's' : ''}</span>
+                          {isCollapsed ? <ChevronRight className="h-3 w-3 text-zinc-400" /> : <ChevronDown className="h-3 w-3 text-zinc-400" />}
                         </span>
                       </button>
 
@@ -414,7 +414,7 @@ export function UrlInputForm() {
                 Save context
               </button>
               {storedContext && (
-                <span className="text-xs text-zinc-600">Last saved {timeAgo(storedContext.updatedAt)}</span>
+                <span className="text-xs text-zinc-400">Last saved {timeAgo(storedContext.updatedAt)}</span>
               )}
             </div>
           </div>
@@ -426,15 +426,15 @@ export function UrlInputForm() {
         <button
           type="button"
           onClick={() => setShowFigma(v => !v)}
-          className="flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-300 transition-colors px-1"
+          className="flex items-center gap-2 text-xs text-zinc-400 hover:text-zinc-300 transition-colors px-1"
         >
           {showFigma ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           <Layers className="h-3.5 w-3.5" />
-          Figma verification <span className="text-zinc-600">(optional)</span>
+          Figma verification <span className="text-zinc-400">(optional)</span>
         </button>
         {showFigma && (
           <div className="mt-2 relative">
-            <Layers className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+            <Layers className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
             <input
               type="text"
               value={figmaFileUrl}
@@ -443,8 +443,8 @@ export function UrlInputForm() {
               className="w-full h-10 pl-10 pr-4 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm"
               disabled={loading}
             />
-            <p className="mt-1.5 text-xs text-zinc-600 px-1">
-              Requires a Figma token in <code className="text-zinc-500">Settings → AI → API Keys</code>
+            <p className="mt-1.5 text-xs text-zinc-400 px-1">
+              Requires a Figma token in <code className="text-zinc-400">Settings → AI → API Keys</code>
             </p>
           </div>
         )}

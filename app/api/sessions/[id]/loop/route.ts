@@ -541,6 +541,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       } // end !isImportMode
 
       // Phase 3-N: Run → Triage → (optionally) Fix loop
+      // Track the last syntax-error signature so a non-advancing "fix → same
+      // error → re-run" cycle can't spin forever (e.g. an error in a file the
+      // healer can't reach). See the errors>0 && total===0 branch below.
+      let lastSyntaxSig: string | null = null;
+      let syntaxAttempts = 0;
       for (let i = 1; i <= maxIterations; i++) {
         if (stopped()) return;
         updateSession(id, { iteration: i });
@@ -565,6 +570,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             result.output.includes('browserType.launch');
           if (isInfraError) {
             addLog(id, `Test runner infrastructure error — cannot auto-heal:\n${result.output.slice(0, 500)}`, 'error');
+            break;
+          }
+
+          // No-progress guard: if the SAME compile error survives a heal attempt,
+          // stop instead of looping (the previous endless-loop failure mode).
+          const errSig = result.output
+            .split('\n')
+            .filter(l => /SyntaxError|has already been declared|Identifier|No tests found|ReferenceError|TypeError|Cannot find/.test(l))
+            .join('|')
+            .slice(0, 600);
+          if (errSig && errSig === lastSyntaxSig) {
+            addLog(id, `Auto-heal made no progress — the same error persists after a fix attempt. Stopping to avoid an endless loop.\n${result.output.slice(0, 600)}`, 'error');
+            break;
+          }
+          lastSyntaxSig = errSig;
+          if (++syntaxAttempts > 4) {
+            addLog(id, 'Exceeded auto-heal attempts for syntax/compile errors — stopping.', 'error');
             break;
           }
 

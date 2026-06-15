@@ -110,14 +110,14 @@ export default function Home() {
                 <Icon className="h-5 w-5 text-violet-400" />
               </div>
               <h3 className="text-sm font-semibold text-zinc-100 mb-1.5">{title}</h3>
-              <p className="text-xs text-zinc-500 leading-relaxed">{desc}</p>
+              <p className="text-xs text-zinc-400 leading-relaxed">{desc}</p>
             </div>
           ))}
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-zinc-800/60 px-6 py-4 flex items-center justify-center gap-2 text-xs text-zinc-600">
+      <footer className="border-t border-zinc-800/60 px-6 py-4 flex items-center justify-center gap-2 text-xs text-zinc-400">
         <Logo height={14} iconOnly />
         <span>TestPilot · AI-powered E2E testing</span>
       </footer>

@@ -112,14 +112,14 @@ export default function CanvasPreviewPage() {
 
   if (!mounted) return (
     <div className="flex-1 flex items-center justify-center min-h-screen bg-zinc-950">
-      <Loader2 className="h-6 w-6 text-zinc-500 animate-spin" />
+      <Loader2 className="h-6 w-6 text-zinc-400 animate-spin" />
     </div>
   );
 
   if (!docContent || !parsed) return (
     <div className="flex-1 flex flex-col items-center justify-center gap-4 min-h-screen bg-zinc-950 text-center px-4">
       <p className="text-zinc-400 text-sm">No documentation found. Please upload a document first.</p>
-      <button onClick={() => router.back()} className="text-xs text-zinc-500 hover:text-zinc-300 underline underline-offset-2 transition">
+      <button onClick={() => router.back()} className="text-xs text-zinc-400 hover:text-zinc-300 underline underline-offset-2 transition">
         ← Go back
       </button>
     </div>
@@ -129,14 +129,14 @@ export default function CanvasPreviewPage() {
     <div className="flex flex-col min-h-screen bg-zinc-950">
       {/* Header */}
       <header className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur px-5 py-3 flex items-center gap-4 shrink-0">
-        <button onClick={() => router.back()} className="text-zinc-500 hover:text-zinc-200 transition-colors">
+        <button onClick={() => router.back()} className="text-zinc-400 hover:text-zinc-200 transition-colors">
           <ArrowLeft className="h-4 w-4" />
         </button>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-zinc-100 truncate">{parsed.title || 'Feature Canvas'}</p>
-          {docFileName && <p className="text-xs text-zinc-500 truncate">{docFileName}</p>}
+          {docFileName && <p className="text-xs text-zinc-400 truncate">{docFileName}</p>}
         </div>
-        <span className="text-[10px] uppercase tracking-wider text-zinc-600 font-medium shrink-0">Preview</span>
+        <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium shrink-0">Preview</span>
       </header>
 
       {/* Canvas (identical render to /canvas/[id]) */}
@@ -229,7 +229,7 @@ function CanvasBoard({
         <div key={`jn${i}`} className="absolute select-none"
              style={{left:n.x-JRN_NODE_W/2,top:n.y-JRN_NODE_H/2,width:JRN_NODE_W,height:JRN_NODE_H}}>
           <div className="w-full h-full rounded-lg border border-zinc-600 bg-zinc-900 flex flex-col items-center justify-center gap-0.5 px-2 shadow-md">
-            <span className="text-[9px] text-zinc-600 font-mono">step {i+1}</span>
+            <span className="text-[10px] text-zinc-400 font-mono">step {i+1}</span>
             <span className="text-[11px] text-zinc-300 font-medium text-center leading-tight">{tr(n.label,18)}</span>
           </div>
         </div>
@@ -239,7 +239,7 @@ function CanvasBoard({
       {parsed.bestPractices.length > 0 && (
         <div className="absolute flex flex-wrap gap-2" style={{left:30,top:TOTAL_H-42,right:30}}>
           {parsed.bestPractices.map((p,i)=>(
-            <span key={i} className="text-[10px] text-zinc-500 border border-zinc-700 rounded-full px-2.5 py-0.5 bg-zinc-900/60">{p}</span>
+            <span key={i} className="text-[10px] text-zinc-400 border border-zinc-700 rounded-full px-2.5 py-0.5 bg-zinc-900/60">{p}</span>
           ))}
         </div>
       )}

@@ -41,6 +41,29 @@ function escHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
+// ── Brand logo ──────────────────────────────────────────────────────────────────
+// Inline SVG (no external asset to load) so it renders identically in the HTML,
+// the on-screen view, and — crucially — Chromium's PDF header/footer templates,
+// which cannot fetch remote resources. Used everywhere the logo appears.
+export function logoMark(size = 24): string {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="display:block">` +
+    `<rect width="24" height="24" rx="6" fill="#7c3aed"/>` +
+    `<path d="M13 2 L5 13 H11 L10 22 L19 10 H12 Z" fill="#ffffff"/></svg>`;
+}
+
+/** Running footer for the PDF — repeats the logo + page numbers on EVERY page. */
+export const PDF_FOOTER_TEMPLATE =
+  `<div style="width:100%;box-sizing:border-box;padding:0 12mm;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;` +
+  `font-size:8px;color:#a1a1aa;display:flex;align-items:center;justify-content:space-between;">` +
+    `<span style="display:flex;align-items:center;gap:5px;">${logoMark(11)}` +
+      `<span style="font-weight:600;color:#7c3aed;">TestPilot</span>` +
+      `<span style="color:#c4c4cc;">· Automated Test Execution Report</span></span>` +
+    `<span>Page <span class="pageNumber"></span> / <span class="totalPages"></span></span>` +
+  `</div>`;
+
+/** Empty header (we only want a running footer, but Chromium still needs a template). */
+export const PDF_HEADER_TEMPLATE = `<div></div>`;
+
 // ── Report data model ──────────────────────────────────────────────────────────
 
 export interface ReportData {
@@ -69,6 +92,10 @@ export interface ReportData {
   } | null;
   contextDocName: string | null;
   rawOutput:      string;
+  /** Authoritative per-test outcomes: "<file> › <title>" → passed|failed|skipped.
+   *  Drives the per-file breakdown reliably (raw stdout has no ✓/✗ lines under
+   *  the JSON reporter, which is why every row used to read 0/0/0). */
+  caseResults:    Record<string, 'passed' | 'failed' | 'skipped'> | null;
 }
 
 export function buildReportData(session: Session): ReportData {
@@ -98,6 +125,7 @@ export function buildReportData(session: Session): ReportData {
     } : null,
     contextDocName: session.contextDocName,
     rawOutput:      session.testResult?.output ?? '',
+    caseResults:    session.testResult?.cases ?? null,
   };
 }
 
@@ -117,8 +145,8 @@ export function generateHtmlReport(d: ReportData): string {
   const gaugeCircumference = 2 * Math.PI * 40; // radius 40
   const gaugeOffset = gaugeCircumference * (1 - d.stats.passRate / 100);
 
-  // Per-file pass/fail counts parsed from raw output
-  const fileStats = parseFileStats(d.rawOutput, d.testFiles);
+  // Per-file pass/fail counts — from the authoritative case map, raw output as fallback
+  const fileStats = parseFileStats(d.caseResults, d.rawOutput, d.testFiles);
 
   const failureRows = d.triage?.analyses
     .filter(a => a.verdict !== 'test_bug' || true) // show all
@@ -185,7 +213,7 @@ export function generateHtmlReport(d: ReportData): string {
 <div style="background:linear-gradient(135deg,#1e1b4b 0%,#0f0f1a 60%);padding:40px 48px 32px;border-bottom:1px solid #27272a">
   <div style="max-width:900px;margin:0 auto">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
-      <div style="background:#7c3aed;border-radius:8px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:18px">⚡</div>
+      ${logoMark(36)}
       <div>
         <div style="font-size:11px;color:#7c3aed;font-weight:600;letter-spacing:.08em;text-transform:uppercase">TestPilot</div>
         <div style="font-size:20px;font-weight:700;color:#f4f4f5">Automated Test Execution Report</div>
@@ -394,12 +422,35 @@ function qualityRow(label: string, value: string, color: string, desc: string): 
 
 interface FileStatRow { file: string; total: number; passed: number; failed: number }
 
-function parseFileStats(output: string, testFiles: string[]): FileStatRow[] {
-  // Playwright output format:
-  //   [chromium] › tests/foo.spec.ts:4:5 › …
-  if (!output) return testFiles.map(f => ({ file: f, total: 0, passed: 0, failed: 0 }));
-
+function parseFileStats(
+  caseResults: Record<string, 'passed' | 'failed' | 'skipped'> | null,
+  output: string,
+  testFiles: string[],
+): FileStatRow[] {
   const fileCounts: Record<string, { total: number; passed: number; failed: number }> = {};
+
+  // Preferred source: the authoritative per-test map. Keys are "<file> › <title>"
+  // (possibly with nested describe segments), so the file is the leading token.
+  if (caseResults && Object.keys(caseResults).length > 0) {
+    for (const [key, outcome] of Object.entries(caseResults)) {
+      const filePart = key.split(' › ')[0]?.trim() ?? '';
+      const file = filePart.split('/').pop() || filePart || 'unknown';
+      fileCounts[file] ??= { total: 0, passed: 0, failed: 0 };
+      if (outcome === 'skipped') continue;           // not counted toward total/pass/fail
+      fileCounts[file].total++;
+      if (outcome === 'passed') fileCounts[file].passed++;
+      else fileCounts[file].failed++;
+    }
+    return testFiles.map(f => {
+      const base = f.split('/').pop() ?? f;
+      const counts = fileCounts[base] ?? { total: 0, passed: 0, failed: 0 };
+      return { file: base, ...counts };
+    });
+  }
+
+  // Fallback: scrape raw stdout (only works under the list/line reporter).
+  //   [chromium] › tests/foo.spec.ts:4:5 › …
+  if (!output) return testFiles.map(f => ({ file: f.split('/').pop() ?? f, total: 0, passed: 0, failed: 0 }));
 
   // Count lines like "[chromium] › tests/foo.spec.ts:…" (each = 1 test attempt)
   const testLineRe = /›\s+(tests\/[^\s:]+\.spec\.ts)/g;

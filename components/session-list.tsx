@@ -54,7 +54,7 @@ function StatusBadge({ status }: { status: string }) {
     </span>
   );
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500 capitalize">
+    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 capitalize">
       {status}
     </span>
   );
@@ -104,7 +104,7 @@ export function SessionList({ sessions }: { sessions: Session[] }) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <p className="text-zinc-400 text-sm font-medium">No sessions yet</p>
-        <p className="text-zinc-600 text-xs mt-1">Click <span className="text-violet-400">+ New Session</span> to get started.</p>
+        <p className="text-zinc-400 text-xs mt-1">Click <span className="text-violet-400">+ New Session</span> to get started.</p>
       </div>
     );
   }
@@ -120,12 +120,12 @@ export function SessionList({ sessions }: { sessions: Session[] }) {
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               filter === t.id
                 ? 'bg-zinc-800 text-zinc-100'
-                : 'text-zinc-500 hover:text-zinc-300'
+                : 'text-zinc-400 hover:text-zinc-300'
             }`}
           >
             {t.label}
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-              filter === t.id ? 'bg-zinc-700 text-zinc-300' : 'bg-zinc-800 text-zinc-600'
+              filter === t.id ? 'bg-zinc-700 text-zinc-300' : 'bg-zinc-800 text-zinc-400'
             }`}>
               {counts[t.id]}
             </span>
@@ -135,7 +135,7 @@ export function SessionList({ sessions }: { sessions: Session[] }) {
 
       {/* Cards */}
       {filtered.length === 0 ? (
-        <p className="text-zinc-600 text-sm py-10 text-center">No sessions in this category.</p>
+        <p className="text-zinc-400 text-sm py-10 text-center">No sessions in this category.</p>
       ) : (
         <div className="space-y-2">
           {filtered.map(s => {
@@ -160,12 +160,12 @@ export function SessionList({ sessions }: { sessions: Session[] }) {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-medium text-zinc-100">
                       {d}
-                      {p && <span className="text-zinc-500 font-normal">{p}</span>}
+                      {p && <span className="text-zinc-400 font-normal">{p}</span>}
                     </span>
                     <StatusBadge status={s.status} />
                   </div>
 
-                  <div className="flex items-center gap-3 text-xs text-zinc-500 flex-wrap">
+                  <div className="flex items-center gap-3 text-xs text-zinc-400 flex-wrap">
                     {pages > 0 && <span>{pages} page{pages !== 1 ? 's' : ''}</span>}
                     {s.testFiles.length > 0 && <span>{s.testFiles.length} spec{s.testFiles.length !== 1 ? 's' : ''}</span>}
                     {s.iteration > 0 && <span>iter {s.iteration}</span>}
@@ -188,14 +188,14 @@ export function SessionList({ sessions }: { sessions: Session[] }) {
                         </span>
                       )}
                       {passRate !== null && (
-                        <span className="text-[11px] text-zinc-500">{passRate}%</span>
+                        <span className="text-[11px] text-zinc-400">{passRate}%</span>
                       )}
                     </div>
                   )}
                 </div>
 
                 {/* Arrow */}
-                <ArrowRight className="h-4 w-4 text-zinc-600 group-hover:text-zinc-300 shrink-0 mt-1 transition-colors" />
+                <ArrowRight className="h-4 w-4 text-zinc-400 group-hover:text-zinc-300 shrink-0 mt-1 transition-colors" />
               </Link>
             );
           })}

@@ -229,8 +229,61 @@ function applySanitizer(workspace: Workspace, onProgress?: (line: string) => voi
 }
 
 /**
+ * Merge duplicate `import { … } from '@playwright/test'` statements into one,
+ * deduping by the local binding name. This is the deterministic fix for the
+ * "Identifier 'X' has already been declared" syntax error — e.g. a fixtures file
+ * that imports `type Page` on one line and `Page` on another. Returns the deduped
+ * text (unchanged when there's ≤1 such import).
+ */
+function dedupePlaywrightImports(content: string): string {
+  const importRe = /^import\s*\{([^}]*)\}\s*from\s*['"]@playwright\/test['"]\s*;?[ \t]*$/gm;
+  const matches = [...content.matchAll(importRe)];
+  if (matches.length <= 1) return content;
+
+  const seen = new Map<string, string>(); // local binding name → specifier text
+  for (const m of matches) {
+    for (const raw of m[1].split(',')) {
+      const spec = raw.trim();
+      if (!spec) continue;
+      // Collisions are on the LOCAL name: 'test as base'→base, 'type Page'→Page.
+      const local = spec.replace(/^type\s+/, '').split(/\s+as\s+/).pop()!.trim();
+      if (local && !seen.has(local)) seen.set(local, spec);
+    }
+  }
+  const merged = `import { ${[...seen.values()].join(', ')} } from '@playwright/test';`;
+
+  let first = true;
+  return content
+    .replace(importRe, () => (first ? ((first = false), merged) : ''))
+    .replace(/\n{3,}/g, '\n\n');
+}
+
+/**
+ * Dedupe @playwright/test imports across every file in the workspace's tests dir
+ * (fixtures.ts AND specs) — auto-heal previously only touched *.spec.ts, so a
+ * broken fixtures.ts looped forever. Returns true if any file changed.
+ */
+function dedupeWorkspaceImports(workspace: Workspace, onProgress?: (line: string) => void): boolean {
+  const { testsDir } = workspace;
+  if (!existsSync(testsDir)) return false;
+  let anyFixed = false;
+  for (const f of readdirSync(testsDir).filter(n => n.endsWith('.ts'))) {
+    const full = path.join(testsDir, f);
+    const before = readFileSync(full, 'utf8');
+    const after = dedupePlaywrightImports(before);
+    if (after !== before) {
+      writeFileSync(full, after, 'utf8');
+      onProgress?.(`  ✏ ${f} — merged duplicate @playwright/test imports`);
+      anyFixed = true;
+    }
+  }
+  return anyFixed;
+}
+
+/**
  * Auto-heal syntax / runtime errors in spec files.
  *
+ * Step 0: dedupe duplicate @playwright/test imports (fixes a broken fixtures.ts).
  * Step 1: run the static import sanitizer (covers ~80 % of cases with no LLM).
  * Step 2: for any remaining broken files, call the LLM with the error context.
  *
@@ -242,12 +295,15 @@ export async function fixSyntaxErrors(
   model: ChatModel,
   onProgress?: (line: string) => void,
 ): Promise<boolean> {
+  // Step 0 — dedupe duplicate @playwright/test imports (incl. fixtures.ts)
+  const deduped = dedupeWorkspaceImports(workspace, onProgress);
+
   // Step 1 — deterministic import sanitizer
   const sanitized = applySanitizer(workspace, onProgress);
 
   // Step 2 — identify files still mentioned in the error output and fix with LLM
   const brokenNames = extractBrokenFileNames(errorOutput);
-  if (brokenNames.length === 0) return sanitized;
+  if (brokenNames.length === 0) return deduped || sanitized;
 
   let llmFixed = false;
   for (const name of brokenNames) {
@@ -304,7 +360,7 @@ export async function fixSyntaxErrors(
     }
   }
 
-  return sanitized || llmFixed;
+  return deduped || sanitized || llmFixed;
 }
 
 // Per-file autofix: sends one small LLM call per failing file instead of one

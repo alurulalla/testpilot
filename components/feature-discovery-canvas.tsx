@@ -143,7 +143,7 @@ function FlowNode({ step, index, total }: { step: string; index: number; total: 
       {!isLast && (
         <div className="flex items-center shrink-0 mx-1">
           <div className="w-6 h-px bg-zinc-600" />
-          <ArrowRight className="h-3.5 w-3.5 text-zinc-500 -ml-0.5" />
+          <ArrowRight className="h-3.5 w-3.5 text-zinc-400 -ml-0.5" />
         </div>
       )}
     </div>
@@ -171,7 +171,7 @@ function StickyCard({ section, colorIdx }: { section: DocSection; colorIdx: numb
               </li>
             ))}
             {extra > 0 && (
-              <li className="text-[10px] text-zinc-600 pl-3">+{extra} more</li>
+              <li className="text-[10px] text-zinc-400 pl-3">+{extra} more</li>
             )}
           </ul>
         )}
@@ -186,7 +186,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 mb-3">
       <div className="h-px flex-1 bg-zinc-700/60" />
-      <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-medium px-2">
+      <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-medium px-2">
         {children}
       </span>
       <div className="h-px flex-1 bg-zinc-700/60" />
@@ -211,8 +211,8 @@ export function FeatureDiscoveryCanvas({ docContent }: FeatureDiscoveryCanvasPro
   if (!hasContent) {
     return (
       <div className="rounded-xl border border-zinc-700/40 bg-zinc-900/50 p-6 text-center space-y-2">
-        <BookOpen className="h-5 w-5 text-zinc-600 mx-auto" />
-        <p className="text-xs text-zinc-500">
+        <BookOpen className="h-5 w-5 text-zinc-400 mx-auto" />
+        <p className="text-xs text-zinc-400">
           No structured sections detected. The document will still be used during test generation.
         </p>
       </div>
@@ -233,7 +233,7 @@ export function FeatureDiscoveryCanvas({ docContent }: FeatureDiscoveryCanvasPro
         {/* ── Header card ─────────────────────────────────────────────── */}
         {(parsed.title || parsed.overview) && (
           <div className="rounded-xl border border-zinc-700/50 bg-zinc-800/70 backdrop-blur px-4 py-3 shadow-lg flex items-start gap-3">
-            <BookOpen className="h-4 w-4 text-zinc-500 shrink-0 mt-0.5" />
+            <BookOpen className="h-4 w-4 text-zinc-400 shrink-0 mt-0.5" />
             <div className="space-y-0.5 min-w-0">
               {parsed.title && (
                 <p className="text-sm font-semibold text-zinc-100 leading-snug">{parsed.title}</p>
@@ -268,7 +268,7 @@ export function FeatureDiscoveryCanvas({ docContent }: FeatureDiscoveryCanvasPro
                 <div className="flex items-center gap-1 shrink-0 ml-2">
                   <div className="w-4 h-px bg-zinc-600 shrink-0" />
                   <div className="w-3 h-3 rounded-full bg-zinc-600 border-2 border-zinc-500" />
-                  <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider">end</span>
+                  <span className="text-[10px] text-zinc-400 font-mono uppercase tracking-wider">end</span>
                 </div>
               </div>
             </div>

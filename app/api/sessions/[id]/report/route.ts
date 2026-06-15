@@ -8,6 +8,8 @@ import {
   generateMarkdownReport,
   generateJsonReport,
   generateCsvReport,
+  PDF_FOOTER_TEMPLATE,
+  PDF_HEADER_TEMPLATE,
 } from '@/lib/generate-report';
 
 
@@ -50,7 +52,12 @@ export async function GET(
         const pdfBuffer = await page.pdf({
           format: 'A4',
           printBackground: true,
-          margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
+          // Running footer carries the logo + page numbers on EVERY page; the
+          // bottom margin is widened so it never overlaps the report content.
+          displayHeaderFooter: true,
+          headerTemplate: PDF_HEADER_TEMPLATE,
+          footerTemplate: PDF_FOOTER_TEMPLATE,
+          margin: { top: '10mm', bottom: '16mm', left: '10mm', right: '10mm' },
         });
         const pdf = new Uint8Array(pdfBuffer);
         return new NextResponse(pdf, {

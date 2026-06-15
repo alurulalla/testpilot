@@ -52,6 +52,7 @@ import { Logo } from "@/components/logo";
 import { UserMenu } from "@/components/user-menu";
 import { ModelStatusBadge } from "@/components/model-status-badge";
 import { Paginator } from "@/components/paginator";
+import { RecordingPanel } from "@/components/recording-panel";
 
 type PhaseState = "pending" | "running" | "done" | "failed";
 
@@ -169,7 +170,7 @@ function CoverageGapPanel({
           <ListChecks className="h-4 w-4 text-zinc-400" />
           <span className="text-sm font-semibold text-zinc-100">Coverage Gap Analysis</span>
         </div>
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-zinc-400">
           Crawl the site to compare your existing tests against all discovered features
           and find what&apos;s missing.
         </p>
@@ -192,7 +193,7 @@ function CoverageGapPanel({
         <Loader2 className="h-4 w-4 text-violet-400 animate-spin shrink-0" />
         <div>
           <p className="text-sm font-semibold text-zinc-100">Analysing coverage…</p>
-          <p className="text-xs text-zinc-500">Crawling site and comparing against imported tests</p>
+          <p className="text-xs text-zinc-400">Crawling site and comparing against imported tests</p>
         </div>
       </div>
     );
@@ -213,7 +214,7 @@ function CoverageGapPanel({
           type="button"
           disabled={isBusy}
           onClick={analyzeGaps}
-          className="flex items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300 transition disabled:opacity-40"
+          className="flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-300 transition disabled:opacity-40"
           title="Re-run analysis"
         >
           <RefreshCw className="h-3 w-3" /> Re-analyse
@@ -247,11 +248,11 @@ function CoverageGapPanel({
                 type="button"
                 onClick={toggleAll}
                 disabled={isBusy}
-                className="text-[11px] text-zinc-500 hover:text-zinc-300 transition disabled:opacity-40"
+                className="text-[11px] text-zinc-400 hover:text-zinc-300 transition disabled:opacity-40"
               >
                 {selected.size === gaps.length ? 'Deselect all' : 'Select all'}
               </button>
-              <span className="text-[11px] text-zinc-600">{selectedCount} selected</span>
+              <span className="text-[11px] text-zinc-400">{selectedCount} selected</span>
             </div>
 
             {/* Gap list */}
@@ -278,11 +279,11 @@ function CoverageGapPanel({
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-zinc-200 truncate">{gap.feature}</p>
-                        <p className="text-[10px] text-zinc-500 font-mono truncate mt-0.5">{gap.pageUrl}</p>
+                        <p className="text-[10px] text-zinc-400 font-mono truncate mt-0.5">{gap.pageUrl}</p>
                         {gap.suggestedTestNames.length > 0 && (
                           <div className="mt-1.5 space-y-0.5">
                             {gap.suggestedTestNames.map((name, i) => (
-                              <p key={i} className="text-[10px] text-zinc-500 flex items-center gap-1">
+                              <p key={i} className="text-[10px] text-zinc-400 flex items-center gap-1">
                                 <span className="h-1 w-1 rounded-full bg-zinc-700 shrink-0" />
                                 {name}
                               </p>
@@ -350,13 +351,13 @@ function ReportDownloadMenu({ sessionId }: { sessionId: string }) {
       >
         <Download className="h-4 w-4" />
         Download Report
-        <ChevronDown className={`h-3.5 w-3.5 text-zinc-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`h-3.5 w-3.5 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
         <div className="absolute right-0 top-full mt-1.5 z-40 w-60 rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden">
           <div className="px-3 py-2 border-b border-zinc-800">
-            <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Export Format</p>
+            <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest">Export Format</p>
           </div>
           {REPORT_FORMATS.map(({ format, label, icon: Icon, ext, desc }) => (
             <a
@@ -369,7 +370,7 @@ function ReportDownloadMenu({ sessionId }: { sessionId: string }) {
               <Icon className="h-4 w-4 text-violet-400 shrink-0 mt-0.5" />
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <span className="text-sm font-medium text-zinc-200 group-hover:text-zinc-50 transition">{label}</span>
-                <span className="text-[10px] text-zinc-600 font-mono">{ext}</span>
+                <span className="text-[10px] text-zinc-400 font-mono">{ext}</span>
               </div>
             </a>
           ))}
@@ -458,8 +459,8 @@ function ScenarioRunner({
         )}
 
         {open
-          ? <ChevronDown className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
-          : <ChevronRight className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
+          ? <ChevronDown className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
+          : <ChevronRight className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
         }
       </button>
 
@@ -562,14 +563,14 @@ function ScenarioRunner({
                 <Code2 className="h-3.5 w-3.5" />
                 {scenario.wasFound ? 'Existing test' : 'Generated test'}
                 {scenario.testFile && (
-                  <span className="text-zinc-600 font-mono">
+                  <span className="text-zinc-400 font-mono">
                     — {scenario.testFile.split('/').pop()}
                   </span>
                 )}
               </span>
               {showCode
-                ? <ChevronDown className="h-3.5 w-3.5 text-zinc-600" />
-                : <ChevronRight className="h-3.5 w-3.5 text-zinc-600" />
+                ? <ChevronDown className="h-3.5 w-3.5 text-zinc-400" />
+                : <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />
               }
             </button>
             {showCode && (
@@ -638,8 +639,8 @@ function TriagePanel({ triage }: { triage: TriageResult }) {
         </div>
 
         {open
-          ? <ChevronDown  className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
-          : <ChevronRight className="h-3.5 w-3.5 text-zinc-600 shrink-0" />}
+          ? <ChevronDown  className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
+          : <ChevronRight className="h-3.5 w-3.5 text-zinc-400 shrink-0" />}
       </button>
 
       {/* Root-cause banner — the single most important takeaway */}
@@ -658,15 +659,33 @@ function TriagePanel({ triage }: { triage: TriageResult }) {
           {/* Root-cause clusters: report shared failures once, biggest first */}
           {clusters.length > 0 && (
             <div className="px-4 py-3 space-y-1.5 border-b border-zinc-800/60">
-              <p className="text-[10px] uppercase tracking-wide text-zinc-500 font-semibold">Root causes</p>
+              <p className="text-[10px] uppercase tracking-wide text-zinc-400 font-semibold">Root causes</p>
               {clusters.map(c => {
                 const m = VERDICT_META[c.verdict];
+                // Prefer the precise per-test "spec › title" list; fall back to
+                // just the spec basenames so the user always knows WHERE it failed.
+                const tests = c.tests ?? [];
+                const specs = [...new Set((c.files ?? []).map(f => f.split('/').pop()))];
                 return (
                   <div key={c.id} className="flex items-start gap-2">
                     <span className={`flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${m.color} ${m.bg}`}>
                       {m.icon} {c.count}
                     </span>
-                    <p className="text-[11px] text-zinc-400 min-w-0 flex-1">{c.summary}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] text-zinc-400">{c.summary}</p>
+                      {tests.length > 0 ? (
+                        <ul className="mt-1 space-y-0.5">
+                          {tests.map((t, i) => (
+                            <li key={i} className="text-[10px] font-mono text-zinc-400 truncate">
+                              <span className="text-zinc-400">📄 {t.file.split('/').pop()}</span>
+                              <span className="text-zinc-400"> › </span>{t.title}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : specs.length > 0 && (
+                        <p className="mt-1 text-[10px] font-mono text-zinc-400 truncate">📄 {specs.join(', ')}</p>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -674,7 +693,7 @@ function TriagePanel({ triage }: { triage: TriageResult }) {
           )}
 
           {/* Legend */}
-          <div className="px-4 py-2 flex flex-wrap gap-3 text-[10px] text-zinc-500 border-b border-zinc-800/60">
+          <div className="px-4 py-2 flex flex-wrap gap-3 text-[10px] text-zinc-400 border-b border-zinc-800/60">
             <span className="flex items-center gap-1 text-red-400"><Bug className="h-3 w-3" /> App Bug — real product gap</span>
             <span className="flex items-center gap-1 text-amber-400"><FlaskConical className="h-3 w-3" /> Test Bug — fix the test code</span>
             <span className="flex items-center gap-1 text-sky-400"><KeyRound className="h-3 w-3" /> Setup — fix login/env</span>
@@ -692,11 +711,11 @@ function TriagePanel({ triage }: { triage: TriageResult }) {
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium text-zinc-200 truncate">{a.testName}</p>
                     {a.file && (
-                      <p className="text-[10px] font-mono text-zinc-500 mt-0.5 truncate">
+                      <p className="text-[10px] font-mono text-zinc-400 mt-0.5 truncate">
                         📄 {a.file.split('/').pop()}
                       </p>
                     )}
-                    <p className="text-[11px] text-zinc-500 mt-0.5">{a.reasoning}</p>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">{a.reasoning}</p>
                     {a.verdict === 'app_bug' && (
                       <p className="text-[10px] text-red-400/70 mt-0.5 italic">
                         ↳ Will not be auto-healed — update the application instead.
@@ -724,11 +743,14 @@ function DocumentationPanel({
   sessionId,
   contextDoc,
   contextDocName,
+  hasSourceOfTruth,
   onOpenCanvas,
 }: {
   sessionId: string;
   contextDoc: string | null;
   contextDocName: string | null;
+  /** False when no doc, Figma, flows, or imported tests exist — tests would be inferred from the live app only. */
+  hasSourceOfTruth: boolean;
   onOpenCanvas: () => void;
 }) {
   const [open, setOpen] = useState(true);
@@ -768,18 +790,35 @@ function DocumentationPanel({
       >
         <FileText className="h-4 w-4 text-zinc-400 shrink-0" />
         <span className="flex-1 text-sm font-semibold text-zinc-100">Product Documentation</span>
-        {contextDoc && (
+        {contextDoc ? (
           <span className="text-xs text-emerald-400 mr-1">✓ loaded</span>
-        )}
-        {open ? <ChevronDown className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
-               : <ChevronRight className="h-3.5 w-3.5 text-zinc-600 shrink-0" />}
+        ) : !hasSourceOfTruth ? (
+          <span className="flex items-center gap-1 text-[11px] text-amber-400/90 mr-1">
+            <AlertCircle className="h-3 w-3" /> Recommended
+          </span>
+        ) : null}
+        {open ? <ChevronDown className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
+               : <ChevronRight className="h-3.5 w-3.5 text-zinc-400 shrink-0" />}
       </button>
 
       {open && (
         <div className="px-4 pb-4 space-y-3 border-t border-zinc-800 pt-3">
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-zinc-400">
             Upload your product&apos;s <code className="text-zinc-400">.md</code> or <code className="text-zinc-400">.txt</code> spec file. The AI will use it to understand features and generate better tests.
           </p>
+
+          {/* No source of truth → tests are inferred from the live app only. Lives
+              here, beside the fix (upload a doc / define flows), not in the pipeline. */}
+          {!hasSourceOfTruth && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+              <AlertCircle className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-[11px] leading-relaxed text-amber-300">
+                No documentation, Figma, flows, or imported tests yet — tests are
+                inferred from the live app only, with no source of truth to validate
+                intended behavior. Add a doc or flows for more meaningful assertions.
+              </p>
+            </div>
+          )}
 
           {contextDoc ? (
             <div className="space-y-3">
@@ -789,13 +828,13 @@ function DocumentationPanel({
                 <span className="flex-1 text-xs text-emerald-300 truncate font-mono">
                   {contextDocName ?? 'documentation.md'}
                 </span>
-                <span className="text-xs text-zinc-500 shrink-0">
+                <span className="text-xs text-zinc-400 shrink-0">
                   {(contextDoc.length / 1024).toFixed(1)} KB
                 </span>
                 <button
                   type="button"
                   onClick={handleClear}
-                  className="text-zinc-500 hover:text-red-400 transition shrink-0"
+                  className="text-zinc-400 hover:text-red-400 transition shrink-0"
                   title="Remove documentation"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -809,17 +848,17 @@ function DocumentationPanel({
                 className="flex items-center justify-between w-full rounded-lg border border-zinc-700/60 bg-zinc-800/50 hover:bg-zinc-800 hover:border-zinc-600 transition px-3 py-2.5 group"
               >
                 <span className="flex items-center gap-2 text-xs text-zinc-300 group-hover:text-zinc-100 transition">
-                  <Network className="h-3.5 w-3.5 text-zinc-500 group-hover:text-zinc-300 transition" />
+                  <Network className="h-3.5 w-3.5 text-zinc-400 group-hover:text-zinc-300 transition" />
                   Feature Canvas
                 </span>
-                <span className="text-zinc-600 group-hover:text-zinc-400 transition text-xs">→</span>
+                <span className="text-zinc-400 group-hover:text-zinc-400 transition text-xs">→</span>
               </button>
 
               {/* Raw text toggle */}
               <button
                 type="button"
                 onClick={() => setPreview(v => !v)}
-                className="text-[11px] text-zinc-600 hover:text-zinc-400 transition"
+                className="text-[11px] text-zinc-400 hover:text-zinc-400 transition"
               >
                 {preview ? '▲ Hide raw text' : '▼ Show raw text'}
               </button>
@@ -842,7 +881,7 @@ function DocumentationPanel({
                 type="button"
                 disabled={uploading}
                 onClick={() => fileRef.current?.click()}
-                className="flex items-center gap-2 w-full justify-center rounded-lg border-2 border-dashed border-zinc-700 px-4 py-4 text-xs text-zinc-500 hover:border-violet-500/50 hover:text-zinc-300 transition disabled:opacity-40"
+                className="flex items-center gap-2 w-full justify-center rounded-lg border-2 border-dashed border-zinc-700 px-4 py-4 text-xs text-zinc-400 hover:border-violet-500/50 hover:text-zinc-300 transition disabled:opacity-40"
               >
                 <UploadCloud className="h-4 w-4" />
                 {uploading ? 'Uploading…' : 'Click to upload .md / .txt'}
@@ -931,10 +970,10 @@ function TestFileCard({
           className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
         >
           {open
-            ? <ChevronDown className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
-            : <ChevronRight className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
+            ? <ChevronDown className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
+            : <ChevronRight className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
           }
-          <Code2 className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
+          <Code2 className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
           <span className="flex-1 text-xs font-mono text-zinc-300 truncate">{fileName}</span>
         </button>
 
@@ -976,11 +1015,11 @@ function TestFileCard({
       {open && (
         <div className="px-4 pb-2.5 border-t border-zinc-800 pt-2 space-y-2">
           {testNames === null ? (
-            <span className="text-xs text-zinc-600">Loading…</span>
+            <span className="text-xs text-zinc-400">Loading…</span>
           ) : (
             <>
               {testNames.length === 0 ? (
-                <span className="text-xs text-zinc-600">No test() found in file</span>
+                <span className="text-xs text-zinc-400">No test() found in file</span>
               ) : (
                 <div className="space-y-1">
                   {testNames.map((name, i) => {
@@ -1002,7 +1041,7 @@ function TestFileCard({
               <button
                 type="button"
                 onClick={() => setShowCode(v => !v)}
-                className="flex items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                className="flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-300 transition-colors"
               >
                 <Code2 className="h-3 w-3" />
                 {showCode ? 'Hide code' : 'View code'}
@@ -1034,19 +1073,19 @@ function CollapsibleVideo({ videoPath, src }: { videoPath: string; src: string }
         onClick={() => setOpen(v => !v)}
         className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-900 transition text-left"
       >
-        <Video className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
+        <Video className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
         <span className="flex-1 text-xs text-zinc-400 font-mono truncate">{label}</span>
         {!open && (
-          <span className="text-[10px] text-zinc-600 mr-1">click to watch</span>
+          <span className="text-[10px] text-zinc-400 mr-1">click to watch</span>
         )}
         {open
-          ? <ChevronDown className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
-          : <ChevronRight className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
+          ? <ChevronDown className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
+          : <ChevronRight className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
         }
       </button>
       {open && (
         missing ? (
-          <p className="px-3 py-4 text-xs text-zinc-500">
+          <p className="px-3 py-4 text-xs text-zinc-400">
             Recording not available — re-run this test to regenerate it.
           </p>
         ) : (
@@ -1138,9 +1177,9 @@ function ScenariosPanel({
       >
         <Sparkles className="h-4 w-4 text-violet-400 shrink-0" />
         <span className="text-sm font-semibold text-zinc-100 flex-1">
-          Scenarios <span className="text-zinc-500 font-normal">({current.length})</span>
+          Scenarios <span className="text-zinc-400 font-normal">({current.length})</span>
         </span>
-        {open ? <ChevronDown className="h-4 w-4 text-zinc-600" /> : <ChevronRight className="h-4 w-4 text-zinc-600" />}
+        {open ? <ChevronDown className="h-4 w-4 text-zinc-400" /> : <ChevronRight className="h-4 w-4 text-zinc-400" />}
       </button>
 
       {open && (
@@ -1159,7 +1198,7 @@ function ScenariosPanel({
                     onClick={() => setConfirmDel(s)}
                     disabled={busy === s.id}
                     title="Delete scenario"
-                    className="shrink-0 p-1 rounded text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition disabled:opacity-50"
+                    className="shrink-0 p-1 rounded text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition disabled:opacity-50"
                   >
                     {busy === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                   </button>
@@ -1171,7 +1210,7 @@ function ScenariosPanel({
           {/* Reusable scenarios from previous runs of the same app */}
           {prior.length > 0 && (
             <div className="space-y-1.5">
-              <p className="text-[11px] text-zinc-500">
+              <p className="text-[11px] text-zinc-400">
                 Previously tested for this app — add any back in one click (no regeneration):
               </p>
               {prior.map(s => (
@@ -1264,14 +1303,14 @@ function ScenarioRecording({
 
         {/* Video count chip */}
         {hasVideos && (
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-zinc-400">
             {videos.length} video{videos.length !== 1 ? 's' : ''}
           </span>
         )}
 
         {open
-          ? <ChevronDown className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
-          : <ChevronRight className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
+          ? <ChevronDown className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
+          : <ChevronRight className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
         }
       </button>
 
@@ -1279,13 +1318,13 @@ function ScenarioRecording({
       {open && (
         <div className="px-4 py-4">
           {isRunning && !hasVideos && (
-            <div className="flex items-center justify-center py-10 text-zinc-600 text-sm gap-2">
+            <div className="flex items-center justify-center py-10 text-zinc-400 text-sm gap-2">
               <Loader2 className="h-5 w-5 animate-spin" /> Recording in progress…
             </div>
           )}
 
           {!isRunning && !hasVideos && (
-            <p className="text-xs text-zinc-600 text-center py-6">
+            <p className="text-xs text-zinc-400 text-center py-6">
               No recording yet — run the scenario to capture a video.
             </p>
           )}
@@ -1332,6 +1371,8 @@ export default function SessionPage() {
   const [runningFile, setRunningFile] = useState<string | null>(null);
   const [testFilePage, setTestFilePage] = useState(0); // paginate the spec list
   const TEST_FILE_PAGE_SIZE = 8;
+  const [videoPage, setVideoPage] = useState(0); // paginate the test-recording videos
+  const VIDEO_PAGE_SIZE = 8;
   // Run a single spec file alone; the run-file route merges its result into the
   // suite results. Shared by the Generated Tests cards and the Scenarios panel.
   const runSingleFile = useCallback(async (testFile: string) => {
@@ -1694,7 +1735,7 @@ export default function SessionPage() {
       <div className="flex-1 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="h-6 w-6 rounded-full border-2 border-violet-500 border-t-transparent animate-spin" />
-          <p className="text-sm text-zinc-500">Loading session…</p>
+          <p className="text-sm text-zinc-400">Loading session…</p>
         </div>
       </div>
     );
@@ -1748,7 +1789,7 @@ export default function SessionPage() {
               <span className="text-sm font-medium text-zinc-200 truncate">{imageModal.label}</span>
               <button
                 onClick={() => setImageModal(null)}
-                className="text-zinc-500 hover:text-zinc-100 transition-colors ml-3 shrink-0"
+                className="text-zinc-400 hover:text-zinc-100 transition-colors ml-3 shrink-0"
                 aria-label="Close"
               >
                 <X className="h-4 w-4" />
@@ -1764,7 +1805,7 @@ export default function SessionPage() {
                 style={{ imageRendering: 'auto' }}
               />
             </div>
-            <p className="px-4 py-2 text-[10px] text-zinc-600 border-t border-zinc-800 shrink-0">
+            <p className="px-4 py-2 text-[10px] text-zinc-400 border-t border-zinc-800 shrink-0">
               Click outside or press Esc to close
             </p>
           </div>
@@ -1775,7 +1816,7 @@ export default function SessionPage() {
       <header className="border-b border-zinc-800 px-6 py-4 flex items-center gap-4 shrink-0">
         <Link
           href="/dashboard"
-          className="text-zinc-500 hover:text-zinc-100 transition-colors"
+          className="text-zinc-400 hover:text-zinc-100 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
         </Link>
@@ -1784,9 +1825,9 @@ export default function SessionPage() {
           <p className="text-sm font-medium text-zinc-100 truncate">
             {session.url}
           </p>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-zinc-400">
             Session {session.id.slice(0, 8)}
-            <span className="mx-1.5 text-zinc-700">·</span>
+            <span className="mx-1.5 text-zinc-400">·</span>
             {session.maxPages ?? 10} pages
           </p>
         </div>
@@ -1802,7 +1843,7 @@ export default function SessionPage() {
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
             session.headedMode
               ? "border-violet-500/50 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20"
-              : "border-zinc-700 bg-zinc-900 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
+              : "border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300"
           }`}
         >
           <Monitor className="h-3.5 w-3.5" />
@@ -1849,9 +1890,9 @@ export default function SessionPage() {
               <ArrowLeft className="h-3.5 w-3.5" />
               Back to session
             </button>
-            <span className="text-zinc-700">·</span>
+            <span className="text-zinc-400">·</span>
             <span className="text-xs font-semibold text-zinc-300">Feature Canvas</span>
-            <span className="text-zinc-700 text-[10px] truncate max-w-[300px] ml-1">{session.url}</span>
+            <span className="text-zinc-400 text-[10px] truncate max-w-[300px] ml-1">{session.url}</span>
           </div>
           {/* Canvas body — flex-1 of a fixed-size parent = concrete pixel height */}
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
@@ -1871,13 +1912,22 @@ export default function SessionPage() {
               sessionId={session.id}
               contextDoc={session.contextDoc}
               contextDocName={session.contextDocName}
+              hasSourceOfTruth={hasSourceOfTruth}
               onOpenCanvas={() => setCanvasOpen(true)}
             />
 
             <div className="flex items-center justify-between">
-              <h2 className="text-xs text-zinc-500 uppercase tracking-widest">
-                Pipeline
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xs text-zinc-400 uppercase tracking-widest">
+                  Pipeline
+                </h2>
+                {(session.iteration ?? 0) > 0 && (
+                  <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-[10px] text-zinc-400">
+                    <RefreshCw className="h-3 w-3 text-zinc-400" />
+                    Iteration {session.iteration}
+                  </span>
+                )}
+              </div>
               {!isRunning && (
                 <Button
                   size="sm"
@@ -1932,19 +1982,6 @@ export default function SessionPage() {
                   <Code2 className="h-3.5 w-3.5" /> Generate
                 </Button>
               ) : null}
-
-              {/* No source of truth → tests are inferred from the live app only */}
-              {!hasSourceOfTruth && (testFiles.length > 0 || canGenerate) && (
-                <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
-                  <AlertCircle className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-[11px] leading-relaxed text-amber-300">
-                    No documentation, Figma, flows, or imported tests were provided.
-                    Tests are inferred from the live app only — there's no source of
-                    truth to validate intended behavior. Upload a doc or define flows
-                    for more meaningful assertions.
-                  </p>
-                </div>
-              )}
             </PhaseCard>
 
             <PhaseCard
@@ -1982,7 +2019,7 @@ export default function SessionPage() {
                 className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${
                   autoSelfHeal
                     ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/20'
-                    : 'text-zinc-500 bg-zinc-800 border-zinc-700 hover:border-zinc-500 hover:text-zinc-300'
+                    : 'text-zinc-400 bg-zinc-800 border-zinc-700 hover:border-zinc-500 hover:text-zinc-300'
                 }`}
               >
                 {autoSelfHeal ? '⚡ Auto-heal ON' : '⏸ Auto-heal OFF'}
@@ -2112,14 +2149,6 @@ export default function SessionPage() {
               </PhaseCard>
             )}
 
-            {(session.iteration ?? 0) > 0 && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800">
-                <RefreshCw className="h-3.5 w-3.5 text-zinc-500" />
-                <span className="text-xs text-zinc-400">
-                  Iteration {session.iteration}
-                </span>
-              </div>
-            )}
           </div>
 
           {/* ── Right: Results ─────────────────────────────────────────────── */}
@@ -2206,6 +2235,13 @@ export default function SessionPage() {
               }}
             />
 
+            {/* ── Record a test by using the live app ── */}
+            <RecordingPanel
+              sessionId={id}
+              defaultUrl={session.url}
+              onSaved={() => router.refresh()}
+            />
+
             {/* ── Saved scenarios (this session + reusable from past runs) ── */}
             <ScenariosPanel
               sessionId={id}
@@ -2233,28 +2269,31 @@ export default function SessionPage() {
                   onClick={() => toggleSection("videos")}
                   className="w-full flex items-center justify-between mb-2 group"
                 >
-                  <h2 className="text-xs text-zinc-500 uppercase tracking-widest group-hover:text-zinc-300 transition-colors">
+                  <h2 className="text-xs text-zinc-400 uppercase tracking-widest group-hover:text-zinc-300 transition-colors">
                     Test Recordings
-                    <span className="ml-2 text-zinc-600 normal-case">
+                    <span className="ml-2 text-zinc-400 normal-case">
                       ({session.testResult!.videos.length} video
                       {session.testResult!.videos.length !== 1 ? "s" : ""})
                     </span>
                   </h2>
                   {collapsed["videos"] ? (
-                    <ChevronRight className="h-3.5 w-3.5 text-zinc-600" />
+                    <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />
                   ) : (
-                    <ChevronDown className="h-3.5 w-3.5 text-zinc-600" />
+                    <ChevronDown className="h-3.5 w-3.5 text-zinc-400" />
                   )}
                 </button>
                 {!collapsed["videos"] && (
                   <div className="space-y-3">
-                    {session.testResult!.videos.map((videoPath, i) => (
+                    {session.testResult!.videos
+                      .slice(videoPage * VIDEO_PAGE_SIZE, (videoPage + 1) * VIDEO_PAGE_SIZE)
+                      .map((videoPath, i) => (
                       <CollapsibleVideo
-                        key={i}
+                        key={`${videoPath}:${i}`}
                         videoPath={videoPath}
                         src={`/api/sessions/${session.id}/assets/${videoPath}`}
                       />
                     ))}
+                    <Paginator page={videoPage} pageSize={VIDEO_PAGE_SIZE} total={session.testResult!.videos.length} onPage={setVideoPage} />
                   </div>
                 )}
               </div>
@@ -2268,17 +2307,17 @@ export default function SessionPage() {
                     onClick={() => toggleSection("figma")}
                     className="w-full flex items-center justify-between mb-2 group"
                   >
-                    <h2 className="text-xs text-zinc-500 uppercase tracking-widest group-hover:text-zinc-300 transition-colors">
+                    <h2 className="text-xs text-zinc-400 uppercase tracking-widest group-hover:text-zinc-300 transition-colors">
                       Figma Verification
-                      <span className="ml-2 text-zinc-600 normal-case">
+                      <span className="ml-2 text-zinc-400 normal-case">
                         ({session.figmaResult.comparisons.length} frame
                         {session.figmaResult.comparisons.length !== 1 ? "s" : ""})
                       </span>
                     </h2>
                     {collapsed["figma"] ? (
-                      <ChevronRight className="h-3.5 w-3.5 text-zinc-600" />
+                      <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />
                     ) : (
-                      <ChevronDown className="h-3.5 w-3.5 text-zinc-600" />
+                      <ChevronDown className="h-3.5 w-3.5 text-zinc-400" />
                     )}
                   </button>
                   {!collapsed["figma"] && (
@@ -2336,7 +2375,7 @@ export default function SessionPage() {
                                   )}
                                 </span>
                               ) : null}
-                              <span className="text-xs text-zinc-600 font-mono shrink-0 hidden md:block truncate max-w-[200px]">
+                              <span className="text-xs text-zinc-400 font-mono shrink-0 hidden md:block truncate max-w-[200px]">
                                 {c.url}
                               </span>
                             </div>
@@ -2352,7 +2391,7 @@ export default function SessionPage() {
                                 },
                                 {
                                   label: 'Live app',
-                                  icon: <Globe className="h-3 w-3 text-zinc-500 shrink-0" />,
+                                  icon: <Globe className="h-3 w-3 text-zinc-400 shrink-0" />,
                                   src: `/api/sessions/${session.id}/assets/${c.screenshotPath}`,
                                   alt: `Live: ${c.frameName}`,
                                 },
@@ -2369,7 +2408,7 @@ export default function SessionPage() {
                                     <div key={label} className="space-y-0">
                                       <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-zinc-800 bg-zinc-950/60">
                                         {icon}
-                                        <span className="text-[10px] text-zinc-500">{label}</span>
+                                        <span className="text-[10px] text-zinc-400">{label}</span>
                                       </div>
                                       <button
                                         type="button"
@@ -2411,12 +2450,12 @@ export default function SessionPage() {
                                       {(d.figmaValue || d.liveValue) && (
                                         <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
                                           {d.figmaValue && (
-                                            <span className="text-[10px] text-zinc-500">
+                                            <span className="text-[10px] text-zinc-400">
                                               Design: <span className="text-violet-400 font-mono">{d.figmaValue}</span>
                                             </span>
                                           )}
                                           {d.liveValue && (
-                                            <span className="text-[10px] text-zinc-500">
+                                            <span className="text-[10px] text-zinc-400">
                                               Live: <span className="text-zinc-300 font-mono">{d.liveValue}</span>
                                             </span>
                                           )}
@@ -2465,21 +2504,21 @@ export default function SessionPage() {
                                 <span className="text-[10px] text-amber-400">{mediumCount} medium</span>
                               )}
                               {lowCount > 0 && (
-                                <span className="text-[10px] text-zinc-500">{lowCount} low</span>
+                                <span className="text-[10px] text-zinc-400">{lowCount} low</span>
                               )}
                               {issues.length === 0 && (
                                 <span className="text-[10px] text-emerald-500">✓ Design matches</span>
                               )}
-                              <span className="ml-auto text-[10px] text-zinc-500 flex items-center gap-1">
+                              <span className="ml-auto text-[10px] text-zinc-400 flex items-center gap-1">
                                 <ZoomIn className="h-3 w-3" /> Click images to enlarge
                               </span>
                             </div>
                           </div>
                         );
                       })}
-                      <p className="text-xs text-zinc-600 px-1">
+                      <p className="text-xs text-zinc-400 px-1">
                         {(session.figmaResult.testFiles?.length ?? 0)} verification spec file(s) generated in{" "}
-                        <code className="text-zinc-500">tests/figma/</code>
+                        <code className="text-zinc-400">tests/figma/</code>
                         {" "}— they also appear in the generated tests list above, where you can view the code and run each one.
                       </p>
                     </div>
@@ -2493,16 +2532,16 @@ export default function SessionPage() {
                   onClick={() => toggleSection("sitemap")}
                   className="w-full flex items-center justify-between mb-2 group"
                 >
-                  <h2 className="text-xs text-zinc-500 uppercase tracking-widest group-hover:text-zinc-300 transition-colors">
+                  <h2 className="text-xs text-zinc-400 uppercase tracking-widest group-hover:text-zinc-300 transition-colors">
                     Site Map
-                    <span className="ml-2 text-zinc-600 normal-case">
+                    <span className="ml-2 text-zinc-400 normal-case">
                       ({session.siteMap.pages.length} pages)
                     </span>
                   </h2>
                   {collapsed["sitemap"] ? (
-                    <ChevronRight className="h-3.5 w-3.5 text-zinc-600" />
+                    <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />
                   ) : (
-                    <ChevronDown className="h-3.5 w-3.5 text-zinc-600" />
+                    <ChevronDown className="h-3.5 w-3.5 text-zinc-400" />
                   )}
                 </button>
                 {!collapsed["sitemap"] && (
@@ -2518,16 +2557,16 @@ export default function SessionPage() {
                     onClick={() => toggleSection("testfiles")}
                     className="flex items-center gap-2 flex-1 group"
                   >
-                    <h2 className="text-xs text-zinc-500 uppercase tracking-widest group-hover:text-zinc-300 transition-colors">
+                    <h2 className="text-xs text-zinc-400 uppercase tracking-widest group-hover:text-zinc-300 transition-colors">
                       Generated Tests
-                      <span className="ml-2 text-zinc-600 normal-case">
+                      <span className="ml-2 text-zinc-400 normal-case">
                         ({testFiles.length} file{testFiles.length !== 1 ? 's' : ''})
                       </span>
                     </h2>
                     {collapsed["testfiles"] ? (
-                      <ChevronRight className="h-3.5 w-3.5 text-zinc-600" />
+                      <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />
                     ) : (
-                      <ChevronDown className="h-3.5 w-3.5 text-zinc-600" />
+                      <ChevronDown className="h-3.5 w-3.5 text-zinc-400" />
                     )}
                   </button>
 
@@ -2589,16 +2628,16 @@ export default function SessionPage() {
                 onClick={() => toggleSection("logs")}
                 className="w-full flex items-center justify-between mb-2 group"
               >
-                <h2 className="text-xs text-zinc-500 uppercase tracking-widest group-hover:text-zinc-300 transition-colors">
+                <h2 className="text-xs text-zinc-400 uppercase tracking-widest group-hover:text-zinc-300 transition-colors">
                   Live Log
-                  <span className="ml-2 text-zinc-600 normal-case">
+                  <span className="ml-2 text-zinc-400 normal-case">
                     ({logs.length} entries)
                   </span>
                 </h2>
                 {collapsed["logs"] ? (
-                  <ChevronRight className="h-3.5 w-3.5 text-zinc-600" />
+                  <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />
                 ) : (
-                  <ChevronDown className="h-3.5 w-3.5 text-zinc-600" />
+                  <ChevronDown className="h-3.5 w-3.5 text-zinc-400" />
                 )}
               </button>
               {!collapsed["logs"] && <ExecutionLog logs={logs} />}

@@ -27,12 +27,12 @@ export function Paginator({
 
   return (
     <div className="flex items-center justify-between pt-2">
-      <span className="text-[11px] text-zinc-500 tabular-nums">{from}–{to} of {total}</span>
+      <span className="text-[11px] text-zinc-400 tabular-nums">{from}–{to} of {total}</span>
       <div className="flex items-center gap-1.5">
         <button type="button" disabled={page <= 0} onClick={() => onPage(page - 1)} className={btn}>
           <ChevronLeft className="h-3 w-3" /> Prev
         </button>
-        <span className="text-[11px] text-zinc-500 tabular-nums px-1">{page + 1} / {totalPages}</span>
+        <span className="text-[11px] text-zinc-400 tabular-nums px-1">{page + 1} / {totalPages}</span>
         <button type="button" disabled={page >= totalPages - 1} onClick={() => onPage(page + 1)} className={btn}>
           Next <ChevronRight className="h-3 w-3" />
         </button>

@@ -41,10 +41,10 @@ export function ModelStatusBadge() {
         : `No API key for ${status.providerLabel} — click to configure`}
       className="hidden sm:flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-zinc-800 hover:border-zinc-600 hover:bg-zinc-800/60 transition-colors group max-w-[260px] shrink-0"
     >
-      <Cpu className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
+      <Cpu className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
       <span className="flex items-center gap-1.5 min-w-0">
         <span className="text-xs text-zinc-400 group-hover:text-zinc-200 truncate">{status.providerLabel}</span>
-        <span className="text-zinc-700">·</span>
+        <span className="text-zinc-400">·</span>
         <span className="text-xs font-medium text-zinc-200 truncate">{status.model}</span>
       </span>
       <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${ok ? 'bg-emerald-500' : 'bg-amber-500'}`} />

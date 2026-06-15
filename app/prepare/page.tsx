@@ -112,7 +112,7 @@ function FieldInput({ field, displayLabel, showValue, onToggleShow, onChange }: 
   const isSensitive = field.sensitive;
   return (
     <div className="flex items-center gap-2">
-      <label className="w-28 shrink-0 text-xs text-zinc-500 truncate" title={displayLabel}>
+      <label className="w-28 shrink-0 text-xs text-zinc-400 truncate" title={displayLabel}>
         {displayLabel}
       </label>
       <div className="relative flex-1">
@@ -128,7 +128,7 @@ function FieldInput({ field, displayLabel, showValue, onToggleShow, onChange }: 
           <button
             type="button"
             onClick={onToggleShow}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 transition-colors"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-400 transition-colors"
             tabIndex={-1}
           >
             {showValue ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
@@ -518,7 +518,7 @@ function PrepareContent() {
       <header className="border-b border-zinc-800 px-6 py-3.5 flex items-center gap-4 shrink-0">
         <button
           onClick={() => router.push('/dashboard')}
-          className="text-zinc-500 hover:text-zinc-100 transition-colors"
+          className="text-zinc-400 hover:text-zinc-100 transition-colors"
           title="Back to home"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -548,18 +548,18 @@ function PrepareContent() {
               <button
                 type="button"
                 onClick={() => { setUrlDraft(rawUrl); setEditingUrl(false); }}
-                className="text-zinc-500 hover:text-zinc-300 transition-colors"
+                className="text-zinc-400 hover:text-zinc-300 transition-colors"
               >
                 <X className="h-4 w-4" />
               </button>
             </form>
           ) : (
             <div className="flex items-center gap-2">
-              <Globe className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
+              <Globe className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
               <p className="text-sm text-zinc-100 truncate">{url}</p>
               <button
                 onClick={() => { setUrlDraft(rawUrl); setEditingUrl(true); }}
-                className="text-zinc-600 hover:text-zinc-400 transition-colors shrink-0"
+                className="text-zinc-400 hover:text-zinc-400 transition-colors shrink-0"
                 title="Edit URL"
               >
                 <Edit2 className="h-3.5 w-3.5" />
@@ -602,7 +602,7 @@ function PrepareContent() {
                     ? <ShieldCheck className="h-4 w-4 text-violet-400 mt-0.5 shrink-0" />
                     : hasAuthForm || authFallbackStage === 'manual'
                       ? <Lock className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
-                      : <Search className="h-4 w-4 text-zinc-500 mt-0.5 shrink-0" />
+                      : <Search className="h-4 w-4 text-zinc-400 mt-0.5 shrink-0" />
                   }
                   <div>
                     <h2 className="text-sm font-semibold text-zinc-100">
@@ -616,7 +616,7 @@ function PrepareContent() {
                               ? 'Login Page Not Found'
                               : 'Form Detection'}
                     </h2>
-                    <p className="text-xs text-zinc-500 mt-0.5">
+                    <p className="text-xs text-zinc-400 mt-0.5">
                       {deepCrawlEnabled
                         ? 'TestPilot will log in and crawl the full authenticated app before generating tests.'
                         : hasAuthForm
@@ -807,9 +807,9 @@ function PrepareContent() {
                           }`}
                           title={g.pageUrl}
                         >
-                          <Lock className={`h-2.5 w-2.5 ${activeGroupLabel === tabKey ? 'text-amber-400' : 'text-zinc-600'}`} />
+                          <Lock className={`h-2.5 w-2.5 ${activeGroupLabel === tabKey ? 'text-amber-400' : 'text-zinc-400'}`} />
                           {g.formLabel}
-                          <span className={`text-[10px] ${activeGroupLabel === tabKey ? 'text-zinc-400' : 'text-zinc-600'}`}>
+                          <span className={`text-[10px] ${activeGroupLabel === tabKey ? 'text-zinc-400' : 'text-zinc-400'}`}>
                             {g.fields.length}
                           </span>
                         </button>
@@ -861,7 +861,7 @@ function PrepareContent() {
 
               {/* No auth form + no error → show non-auth crawl notice */}
               {!hasAuthForm && groups.length === 0 && !detectLoading && !detectError && (
-                <p className="text-xs text-zinc-600">
+                <p className="text-xs text-zinc-400">
                   No forms detected yet — scanning automatically on page load.
                 </p>
               )}
@@ -878,8 +878,8 @@ function PrepareContent() {
                       className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700/50"
                     >
                       <span className="text-xs font-medium text-zinc-200">{g.formLabel}</span>
-                      <span className="text-[10px] text-zinc-600 font-mono truncate flex-1">{g.pageUrl}</span>
-                      <span className="text-[10px] text-zinc-500 shrink-0">{g.fields.length} field{g.fields.length !== 1 ? 's' : ''}</span>
+                      <span className="text-[10px] text-zinc-400 font-mono truncate flex-1">{g.pageUrl}</span>
+                      <span className="text-[10px] text-zinc-400 shrink-0">{g.fields.length} field{g.fields.length !== 1 ? 's' : ''}</span>
                     </div>
                   ))}
                 </div>
@@ -900,10 +900,10 @@ function PrepareContent() {
                 className="w-full flex items-center justify-between px-5 py-4 hover:bg-zinc-800/40 transition-colors text-left"
               >
                 <div className="flex items-center gap-3">
-                  <PackageOpen className={`h-4 w-4 shrink-0 ${importUrlMismatch ? 'text-red-400' : importValidation?.valid ? 'text-emerald-400' : 'text-zinc-500'}`} />
+                  <PackageOpen className={`h-4 w-4 shrink-0 ${importUrlMismatch ? 'text-red-400' : importValidation?.valid ? 'text-emerald-400' : 'text-zinc-400'}`} />
                   <div>
                     <p className="text-sm font-semibold text-zinc-100">Import Existing Tests</p>
-                    <p className="text-xs text-zinc-500 mt-0.5">
+                    <p className="text-xs text-zinc-400 mt-0.5">
                       {importUrlMismatch && importValidation?.valid && importValidation.detectedBaseUrl ? (
                         <span className="text-red-400">URL mismatch — project targets {importValidation.detectedBaseUrl}</span>
                       ) : importValidation?.valid ? (
@@ -915,8 +915,8 @@ function PrepareContent() {
                   </div>
                 </div>
                 {showImport
-                  ? <ChevronDown className="h-4 w-4 text-zinc-600 shrink-0" />
-                  : <ChevronRight className="h-4 w-4 text-zinc-600 shrink-0" />}
+                  ? <ChevronDown className="h-4 w-4 text-zinc-400 shrink-0" />
+                  : <ChevronRight className="h-4 w-4 text-zinc-400 shrink-0" />}
               </button>
 
               {showImport && (
@@ -947,7 +947,7 @@ function PrepareContent() {
                         <button
                           type="button"
                           onClick={clearImport}
-                          className="text-zinc-600 hover:text-red-400 transition-colors flex items-center gap-1"
+                          className="text-zinc-400 hover:text-red-400 transition-colors flex items-center gap-1"
                         >
                           <X className="h-3 w-3" /> Clear
                         </button>
@@ -958,7 +958,7 @@ function PrepareContent() {
                             <div key={i} className="text-xs text-zinc-400">
                               <span className="text-zinc-300 font-medium">{uc.suite}</span>
                               {uc.tests.length > 0 && (
-                                <span className="text-zinc-600"> · {uc.tests.length} test{uc.tests.length !== 1 ? 's' : ''}</span>
+                                <span className="text-zinc-400"> · {uc.tests.length} test{uc.tests.length !== 1 ? 's' : ''}</span>
                               )}
                             </div>
                           ))}
@@ -980,11 +980,11 @@ function PrepareContent() {
                   ) : (
                     /* ── Empty dropzone ── */
                     <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-zinc-700 rounded-lg p-5 cursor-pointer hover:border-violet-500/50 hover:bg-zinc-800/40 transition-colors">
-                      <Upload className="h-5 w-5 text-zinc-500" />
+                      <Upload className="h-5 w-5 text-zinc-400" />
                       <span className="text-xs text-zinc-400 text-center">
                         Upload your Playwright project <code className="text-zinc-300">.zip</code>
                       </span>
-                      <span className="text-[10px] text-zinc-600 text-center">Must contain playwright.config.ts and spec files</span>
+                      <span className="text-[10px] text-zinc-400 text-center">Must contain playwright.config.ts and spec files</span>
                       <input
                         type="file"
                         accept=".zip"
@@ -1000,7 +1000,7 @@ function PrepareContent() {
 
                   {/* Replace dropzone after clear */}
                   {importValidation !== null && (
-                    <label className="flex items-center gap-2 text-xs text-zinc-600 hover:text-zinc-400 cursor-pointer transition-colors">
+                    <label className="flex items-center gap-2 text-xs text-zinc-400 hover:text-zinc-400 cursor-pointer transition-colors">
                       <Upload className="h-3.5 w-3.5" />
                       Replace ZIP
                       <input
@@ -1016,7 +1016,7 @@ function PrepareContent() {
                     </label>
                   )}
 
-                  <p className="text-xs text-zinc-600 pt-1 border-t border-zinc-800">
+                  <p className="text-xs text-zinc-400 pt-1 border-t border-zinc-800">
                     TestPilot will run your existing tests directly — no site exploration or test generation.
                   </p>
                 </div>
@@ -1031,10 +1031,10 @@ function PrepareContent() {
                 className="w-full flex items-center justify-between px-5 py-4 hover:bg-zinc-800/40 transition-colors text-left"
               >
                 <div className="flex items-center gap-3">
-                  <Layers className="h-4 w-4 text-zinc-500 shrink-0" />
+                  <Layers className="h-4 w-4 text-zinc-400 shrink-0" />
                   <div>
                     <p className="text-sm font-semibold text-zinc-100">Figma Verification</p>
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-zinc-400">
                       {figmaFileUrl.trim()
                         ? <span className="text-violet-400 font-mono truncate">{figmaFileUrl}</span>
                         : 'Optional — compare live UI against Figma designs'}
@@ -1042,14 +1042,14 @@ function PrepareContent() {
                   </div>
                 </div>
                 {showFigma
-                  ? <ChevronDown className="h-4 w-4 text-zinc-600 shrink-0" />
-                  : <ChevronRight className="h-4 w-4 text-zinc-600 shrink-0" />}
+                  ? <ChevronDown className="h-4 w-4 text-zinc-400 shrink-0" />
+                  : <ChevronRight className="h-4 w-4 text-zinc-400 shrink-0" />}
               </button>
 
               {showFigma && (
                 <div className="px-5 pb-5 pt-4 border-t border-zinc-800 space-y-2">
                   <div className="relative">
-                    <Layers className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                    <Layers className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
                     <input
                       type="text"
                       value={figmaFileUrl}
@@ -1058,9 +1058,9 @@ function PrepareContent() {
                       className="w-full h-10 pl-10 pr-4 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm"
                     />
                   </div>
-                  <p className="text-xs text-zinc-600">
+                  <p className="text-xs text-zinc-400">
                     Requires a Figma token in{' '}
-                    <code className="text-zinc-500">Settings → AI → API Keys</code>
+                    <code className="text-zinc-400">Settings → AI → API Keys</code>
                   </p>
 
                   {/* Frame → page mapping */}
@@ -1088,7 +1088,7 @@ function PrepareContent() {
                             <div key={f.name} className="flex items-center gap-2">
                               <span className="text-xs text-zinc-300 w-40 shrink-0 truncate" title={f.name}>
                                 {f.name}
-                                {f.width ? <span className="text-zinc-600"> · {f.width}px</span> : null}
+                                {f.width ? <span className="text-zinc-400"> · {f.width}px</span> : null}
                               </span>
                               <input
                                 type="text"
@@ -1099,7 +1099,7 @@ function PrepareContent() {
                               />
                             </div>
                           ))}
-                          <p className="text-[11px] text-zinc-600">
+                          <p className="text-[11px] text-zinc-400">
                             Leave a field blank to let TestPilot guess that frame&apos;s page automatically.
                           </p>
                         </div>
@@ -1118,10 +1118,10 @@ function PrepareContent() {
                 className="w-full flex items-center justify-between px-5 py-4 hover:bg-zinc-800/40 transition-colors text-left"
               >
                 <div className="flex items-center gap-3">
-                  <FileText className="h-4 w-4 text-zinc-500 shrink-0" />
+                  <FileText className="h-4 w-4 text-zinc-400 shrink-0" />
                   <div>
                     <p className="text-sm font-semibold text-zinc-100">Product Documentation</p>
-                    <p className="text-xs text-zinc-500 mt-0.5">
+                    <p className="text-xs text-zinc-400 mt-0.5">
                       {docContent.trim()
                         ? <span className="text-emerald-400">{docFileName} · {docContent.length.toLocaleString()} chars</span>
                         : 'Optional — generate tests guided by your product spec or docs'}
@@ -1129,8 +1129,8 @@ function PrepareContent() {
                   </div>
                 </div>
                 {showDoc
-                  ? <ChevronDown className="h-4 w-4 text-zinc-600 shrink-0" />
-                  : <ChevronRight className="h-4 w-4 text-zinc-600 shrink-0" />}
+                  ? <ChevronDown className="h-4 w-4 text-zinc-400 shrink-0" />
+                  : <ChevronRight className="h-4 w-4 text-zinc-400 shrink-0" />}
               </button>
 
               {showDoc && (
@@ -1147,7 +1147,7 @@ function PrepareContent() {
                         <button
                           type="button"
                           onClick={() => { setDocContent(''); setDocFileName(''); setDocPasting(false); setDocPasteText(''); }}
-                          className="text-zinc-600 hover:text-red-400 transition-colors flex items-center gap-1"
+                          className="text-zinc-400 hover:text-red-400 transition-colors flex items-center gap-1"
                         >
                           <X className="h-3 w-3" /> Clear
                         </button>
@@ -1165,7 +1165,7 @@ function PrepareContent() {
                         <span className="text-xs text-zinc-300 group-hover:text-zinc-100 transition">
                           Open Feature Canvas
                         </span>
-                        <span className="text-zinc-600 group-hover:text-zinc-400 transition text-xs">↗</span>
+                        <span className="text-zinc-400 group-hover:text-zinc-400 transition text-xs">↗</span>
                       </button>
                     </div>
                   ) : docPasting ? (
@@ -1197,7 +1197,7 @@ function PrepareContent() {
                         <button
                           type="button"
                           onClick={() => { setDocPasting(false); setDocPasteText(''); }}
-                          className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                          className="text-xs text-zinc-400 hover:text-zinc-400 transition-colors"
                         >
                           Cancel
                         </button>
@@ -1207,7 +1207,7 @@ function PrepareContent() {
                     /* ── Empty state ── */
                     <div className="space-y-3">
                       <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-zinc-700 rounded-lg p-5 cursor-pointer hover:border-violet-500/50 hover:bg-zinc-800/40 transition-colors">
-                        <Upload className="h-5 w-5 text-zinc-500" />
+                        <Upload className="h-5 w-5 text-zinc-400" />
                         <span className="text-xs text-zinc-400">Upload <code className="text-zinc-300">.md</code> or <code className="text-zinc-300">.txt</code> file</span>
                         <input
                           type="file"
@@ -1223,7 +1223,7 @@ function PrepareContent() {
                           }}
                         />
                       </label>
-                      <div className="flex items-center gap-3 text-xs text-zinc-600">
+                      <div className="flex items-center gap-3 text-xs text-zinc-400">
                         <div className="flex-1 h-px bg-zinc-800" />
                         or
                         <div className="flex-1 h-px bg-zinc-800" />
@@ -1231,13 +1231,13 @@ function PrepareContent() {
                       <button
                         type="button"
                         onClick={() => setDocPasting(true)}
-                        className="w-full py-2 text-xs text-zinc-500 hover:text-zinc-300 transition-colors rounded-lg hover:bg-zinc-800"
+                        className="w-full py-2 text-xs text-zinc-400 hover:text-zinc-300 transition-colors rounded-lg hover:bg-zinc-800"
                       >
                         Paste text instead
                       </button>
                     </div>
                   )}
-                  <p className="text-xs text-zinc-600 pt-1 border-t border-zinc-800">
+                  <p className="text-xs text-zinc-400 pt-1 border-t border-zinc-800">
                     When provided, tests are generated against your documented features and user flows
                     rather than relying solely on site crawling.
                   </p>
@@ -1263,23 +1263,23 @@ function PrepareContent() {
                     >
                       <span className="text-xs text-zinc-300 font-mono">
                         {s.id.slice(0, 8)}
-                        <span className="mx-1.5 text-zinc-600">·</span>
-                        <span className={s.status === 'idle' ? 'text-zinc-500' : 'text-violet-400'}>
+                        <span className="mx-1.5 text-zinc-400">·</span>
+                        <span className={s.status === 'idle' ? 'text-zinc-400' : 'text-violet-400'}>
                           {s.status}
                         </span>
-                        <span className="mx-1.5 text-zinc-600">·</span>
-                        <span className="text-zinc-600">{timeAgo(s.createdAt)}</span>
+                        <span className="mx-1.5 text-zinc-400">·</span>
+                        <span className="text-zinc-400">{timeAgo(s.createdAt)}</span>
                         {(s.testFiles?.length ?? 0) > 0 && (
-                          <span className="mx-1.5 text-zinc-600">
+                          <span className="mx-1.5 text-zinc-400">
                             · {s.testFiles.length} test file(s)
                           </span>
                         )}
                       </span>
-                      <ArrowRight className="h-3 w-3 text-zinc-600 group-hover:text-violet-400 transition-colors shrink-0" />
+                      <ArrowRight className="h-3 w-3 text-zinc-400 group-hover:text-violet-400 transition-colors shrink-0" />
                     </button>
                   ))}
                 </div>
-                <p className="text-xs text-zinc-600">
+                <p className="text-xs text-zinc-400">
                   Resume an existing session or click "Run TestPilot" to start fresh.
                 </p>
               </div>
@@ -1306,7 +1306,7 @@ function PrepareContent() {
               <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-zinc-100">Context</h2>
                 {savedAt && (
-                  <span className="text-[10px] text-zinc-600">Saved {timeAgo(savedAt)}</span>
+                  <span className="text-[10px] text-zinc-400">Saved {timeAgo(savedAt)}</span>
                 )}
               </div>
 
@@ -1322,7 +1322,7 @@ function PrepareContent() {
                       After login, TestPilot will crawl up to 50 pages of the authenticated app
                       and compare them against your documentation.
                     </p>
-                    <p className="text-[10px] text-zinc-600 mt-1">
+                    <p className="text-[10px] text-zinc-400 mt-1">
                       Override with <code>DEEP_CRAWL_MAX_PAGES</code> in .env.local
                     </p>
                   </div>
@@ -1347,7 +1347,7 @@ function PrepareContent() {
                 {/* Saved context summary (when auth fields shown inline above, just show summary here) */}
                 {hasContext && (hasAuthForm || authFallbackStage === 'manual') ? (
                   <div className="space-y-2">
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-zinc-400">
                       Credentials for <span className="text-zinc-300 break-all">{url}</span>
                     </p>
                     {hasFilledFields ? (
@@ -1355,7 +1355,7 @@ function PrepareContent() {
                         <div key={groupLabel || '__all__'} className="space-y-1">
                           {groupLabel && (
                             <div className="flex items-center gap-2 pt-0.5">
-                              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
                                 {groupLabel}
                               </span>
                               <div className="flex-1 h-px bg-zinc-800" />
@@ -1363,7 +1363,7 @@ function PrepareContent() {
                           )}
                           {groupFields.map(f => (
                             <div key={f.key} className="flex items-center gap-2 text-xs">
-                              <span className="text-zinc-500 w-24 truncate shrink-0">{displayLabel(f.label)}</span>
+                              <span className="text-zinc-400 w-24 truncate shrink-0">{displayLabel(f.label)}</span>
                               <span className="text-zinc-400 font-mono">
                                 {f.sensitive ? '••••••••' : f.value.slice(0, 20)}
                               </span>
@@ -1372,13 +1372,13 @@ function PrepareContent() {
                         </div>
                       ))
                     ) : (
-                      <p className="text-xs text-zinc-600">No values entered yet.</p>
+                      <p className="text-xs text-zinc-400">No values entered yet.</p>
                     )}
                   </div>
                 ) : hasContext && !hasAuthForm ? (
                   /* Non-auth stored context — show editable fields grouped by form */
                   <div className="space-y-3">
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-zinc-400">
                       Context for <span className="text-zinc-300">{url}</span>
                     </p>
                     <div className="space-y-4">
@@ -1423,18 +1423,18 @@ function PrepareContent() {
                         <Check className="h-3 w-3" /> Save context
                       </button>
                       {storedContext && (
-                        <span className="text-[10px] text-zinc-600">Last saved {timeAgo(storedContext.updatedAt)}</span>
+                        <span className="text-[10px] text-zinc-400">Last saved {timeAgo(storedContext.updatedAt)}</span>
                       )}
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-zinc-400">
                       {detectLoading
                         ? 'Scanning for forms…'
                         : 'No credentials saved for this URL.'}
                     </p>
-                    <p className="text-xs text-zinc-600">
+                    <p className="text-xs text-zinc-400">
                       If a login form is detected, credentials entered here will be
                       used to authenticate before crawling.
                     </p>

@@ -69,7 +69,7 @@ export default function AdminOrgsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-zinc-100">Organisations</h1>
-          <p className="text-sm text-zinc-500 mt-0.5">{orgs.length} total</p>
+          <p className="text-sm text-zinc-400 mt-0.5">{orgs.length} total</p>
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="secondary" onClick={load} disabled={loading}>
@@ -101,8 +101,8 @@ export default function AdminOrgsPage() {
       {/* Empty */}
       {!loading && orgs.length === 0 && !error && (
         <div className="flex flex-col items-center justify-center py-20 gap-3">
-          <Building2 className="h-10 w-10 text-zinc-700" />
-          <p className="text-sm text-zinc-500">No organisations yet</p>
+          <Building2 className="h-10 w-10 text-zinc-400" />
+          <p className="text-sm text-zinc-400">No organisations yet</p>
           <Link href="/admin/orgs/new">
             <Button size="sm"><Plus className="h-3.5 w-3.5" /> Create first org</Button>
           </Link>
@@ -115,11 +115,11 @@ export default function AdminOrgsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-zinc-800 bg-zinc-900/60">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Organisation</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Members</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Sessions</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Created</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Organisation</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Status</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Members</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Sessions</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Created</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -128,27 +128,27 @@ export default function AdminOrgsPage() {
                 <tr key={org.id} className="bg-zinc-900 hover:bg-zinc-800/60 transition-colors">
                   <td className="px-4 py-3.5">
                     <p className="font-medium text-zinc-100">{org.name}</p>
-                    <p className="text-xs text-zinc-500 font-mono mt-0.5">{org.slug}</p>
+                    <p className="text-xs text-zinc-400 font-mono mt-0.5">{org.slug}</p>
                   </td>
                   <td className="px-4 py-3.5">
                     <StatusBadge status={org.licenseStatus} />
                   </td>
                   <td className="px-4 py-3.5">
                     <span className="flex items-center gap-1.5 text-zinc-300">
-                      <Users className="h-3.5 w-3.5 text-zinc-600" />
+                      <Users className="h-3.5 w-3.5 text-zinc-400" />
                       {org._count.members}
-                      <span className="text-zinc-600">/ {org.maxMembers}</span>
+                      <span className="text-zinc-400">/ {org.maxMembers}</span>
                     </span>
                   </td>
                   <td className="px-4 py-3.5">
                     <span className="flex items-center gap-1.5 text-zinc-300">
-                      <Activity className="h-3.5 w-3.5 text-zinc-600" />
+                      <Activity className="h-3.5 w-3.5 text-zinc-400" />
                       {org._count.sessions}
                     </span>
                   </td>
-                  <td className="px-4 py-3.5 text-xs text-zinc-500">
+                  <td className="px-4 py-3.5 text-xs text-zinc-400">
                     {timeAgo(org.createdAt)}
-                    <p className="text-zinc-600 mt-0.5">by {org.createdByAdmin}</p>
+                    <p className="text-zinc-400 mt-0.5">by {org.createdByAdmin}</p>
                   </td>
                   <td className="px-4 py-3.5 text-right">
                     <Link

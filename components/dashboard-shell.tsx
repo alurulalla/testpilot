@@ -122,14 +122,14 @@ function HistoryBarChart({ values, createdAts }: HistoryBarChartProps) {
             : v >= 0.5  ? 'bg-amber-500'
             :              'bg-red-500';
           const textColor =
-            v === null  ? 'text-zinc-600'
+            v === null  ? 'text-zinc-400'
             : v >= 0.8  ? 'text-emerald-400'
             : v >= 0.5  ? 'text-amber-400'
             :              'text-red-400';
 
           return (
             <div key={i} className="flex-1 min-w-0 flex flex-col items-center gap-1">
-              <span className={`text-[10px] font-semibold leading-none ${textColor}`}>
+              <span className={`text-[11px] font-semibold leading-none ${textColor}`}>
                 {pct !== null ? `${pct}%` : '—'}
               </span>
               <div className={`w-full rounded-sm ${color}`} style={{ height: barH }} />
@@ -142,7 +142,7 @@ function HistoryBarChart({ values, createdAts }: HistoryBarChartProps) {
       <div className="flex gap-2">
         {createdAts.map((ts, i) => (
           <div key={i} className="flex-1 text-center min-w-0">
-            <span className="text-[9px] text-zinc-600 truncate block">
+            <span className="text-[10px] text-zinc-400 truncate block">
               {new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' })}
             </span>
           </div>
@@ -166,16 +166,16 @@ function PhaseStepper({ status }: { status: Session['status'] }) {
         const pending = i > current;
         return (
           <div key={ph} className="flex items-center">
-            <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium capitalize transition-all ${
+            <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium capitalize transition-all ${
               active  ? 'bg-violet-500/20 text-violet-300 ring-1 ring-violet-500/40'
               : done  ? 'text-emerald-500'
-              : 'text-zinc-600'
+              : 'text-zinc-400'
             }`}>
               {active && <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />}
               {ph}
             </div>
             {i < phases.length - 1 && (
-              <ChevronRight className={`h-3 w-3 mx-0.5 ${done ? 'text-zinc-500' : 'text-zinc-700'}`} />
+              <ChevronRight className={`h-3 w-3 mx-0.5 ${done ? 'text-zinc-400' : 'text-zinc-400'}`} />
             )}
           </div>
         );
@@ -206,7 +206,7 @@ function StatusBadge({ status }: { status: string }) {
     </span>
   );
   return (
-    <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500 capitalize">{status}</span>
+    <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 capitalize">{status}</span>
   );
 }
 
@@ -259,9 +259,9 @@ function SidebarItem({ session: s, initiator, selected, onClick, isAdmin, deleti
           <p className="text-xs font-medium truncate leading-tight" title={hideHost ? s.id : undefined}>
             {hideHost
               ? <span className="font-mono">{s.id}</span>
-              : <>{host}{path && <span className="text-zinc-500 font-normal">{path}</span>}</>}
+              : <>{host}{path && <span className="text-zinc-400 font-normal">{path}</span>}</>}
           </p>
-          <div className="flex items-center gap-1.5 text-[10px] text-zinc-600">
+          <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
             <span>{timeAgo(s.createdAt)}</span>
             {rate !== null && (
               <span className={`font-medium ${rate >= 80 ? 'text-emerald-600' : rate >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
@@ -270,7 +270,7 @@ function SidebarItem({ session: s, initiator, selected, onClick, isAdmin, deleti
             )}
           </div>
           {initiator && (
-            <p className="text-[10px] text-zinc-600 truncate">{initiator}</p>
+            <p className="text-[11px] text-zinc-400 truncate">{initiator}</p>
           )}
         </div>
       </button>
@@ -279,7 +279,7 @@ function SidebarItem({ session: s, initiator, selected, onClick, isAdmin, deleti
       {isAdmin && (
         running ? (
           <span
-            className="shrink-0 mr-2 mt-2 text-zinc-700"
+            className="shrink-0 mr-2 mt-2 text-zinc-400"
             title="Running sessions can't be deleted — stop it first"
           >
             <Trash2 className="h-3.5 w-3.5 opacity-40" />
@@ -289,7 +289,7 @@ function SidebarItem({ session: s, initiator, selected, onClick, isAdmin, deleti
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
             disabled={deleting}
             title="Delete session"
-            className="shrink-0 mr-2 mt-2 p-1 rounded text-zinc-600 opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-500/10 transition disabled:opacity-100"
+            className="shrink-0 mr-2 mt-2 p-1 rounded text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-500/10 transition disabled:opacity-100"
           >
             {deleting
               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -333,14 +333,14 @@ function SessionDetail({ session: s, membersMap, domainHistory, domainCreatedAts
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <h1 className="text-lg font-semibold text-zinc-100 truncate">
                 {hostname(s.url)}
-                <span className="text-zinc-500 font-normal">{shortPath(s.url)}</span>
+                <span className="text-zinc-400 font-normal">{shortPath(s.url)}</span>
               </h1>
               <StatusBadge status={s.status} />
             </div>
-            <div className="flex items-center gap-3 text-xs text-zinc-500 flex-wrap">
+            <div className="flex items-center gap-3 text-xs text-zinc-400 flex-wrap">
               {initiator && (
                 <span className="flex items-center gap-1.5">
-                  <span className="h-4 w-4 rounded-full bg-violet-700/60 flex items-center justify-center text-[9px] font-bold text-violet-200">
+                  <span className="h-4 w-4 rounded-full bg-violet-700/60 flex items-center justify-center text-[10px] font-bold text-violet-200">
                     {initiator.charAt(0).toUpperCase()}
                   </span>
                   {initiator}
@@ -393,7 +393,7 @@ function SessionDetail({ session: s, membersMap, domainHistory, domainCreatedAts
           {/* Test results ring */}
           {total > 0 && (
             <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
-              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-4">
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-4">
                 Test results
               </p>
               <div className="flex items-center gap-6">
@@ -409,13 +409,13 @@ function SessionDetail({ session: s, membersMap, domainHistory, domainCreatedAts
                     <LegendRow color="bg-amber-500" label="Errors" value={stats!.errors!} total={total} />
                   )}
                   <div className="pt-1 border-t border-zinc-800">
-                    <span className="text-zinc-500">Total: </span>
+                    <span className="text-zinc-400">Total: </span>
                     <span className="text-zinc-300 font-medium">{total} tests</span>
                   </div>
                 </div>
               </div>
               {s.testResult?.duration != null && (
-                <p className="mt-3 text-[11px] text-zinc-600">
+                <p className="mt-3 text-[11px] text-zinc-400">
                   Duration: {formatDuration(s.testResult.duration * 1000)}
                 </p>
               )}
@@ -425,10 +425,10 @@ function SessionDetail({ session: s, membersMap, domainHistory, domainCreatedAts
           {/* Domain history chart */}
           {domainHistory.length > 1 && (
             <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
-              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-0.5">
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-0.5">
                 Pass rate history
               </p>
-              <p className="text-[10px] text-zinc-600 mb-4">
+              <p className="text-[11px] text-zinc-400 mb-4">
                 Each bar is one test run on <span className="text-zinc-400">{hostname(s.url)}</span>.
                 Height = pass rate. The dashed line marks 80%.
               </p>
@@ -441,12 +441,12 @@ function SessionDetail({ session: s, membersMap, domainHistory, domainCreatedAts
       {/* ── Iterations ── */}
       {s.iteration > 0 && (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 px-5 py-4 flex items-center gap-3">
-          <Layers3 className="h-4 w-4 text-zinc-500 shrink-0" />
+          <Layers3 className="h-4 w-4 text-zinc-400 shrink-0" />
           <div>
             <p className="text-xs font-medium text-zinc-300">
               {s.iteration} self-heal iteration{s.iteration !== 1 ? 's' : ''}
             </p>
-            <p className="text-[10px] text-zinc-600 mt-0.5">
+            <p className="text-[11px] text-zinc-400 mt-0.5">
               TestPilot automatically fixed failing tests across {s.iteration} round{s.iteration !== 1 ? 's' : ''}.
             </p>
           </div>
@@ -467,7 +467,7 @@ function SessionDetail({ session: s, membersMap, domainHistory, domainCreatedAts
       {/* ── Recent logs ── */}
       {s.logs.length > 0 && (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
-          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">
+          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-3">
             Recent activity
           </p>
           <div className="space-y-1.5">
@@ -477,7 +477,7 @@ function SessionDetail({ session: s, membersMap, domainHistory, domainCreatedAts
                 : log.level === 'success' ? 'text-emerald-400'
                 : 'text-zinc-400'
               }`}>
-                <span className="text-zinc-700 mr-2">
+                <span className="text-zinc-400 mr-2">
                   {new Date(log.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                 </span>
                 {log.msg}
@@ -495,7 +495,7 @@ function SessionDetail({ session: s, membersMap, domainHistory, domainCreatedAts
 function StatCard({ icon, label, value, accent }: { icon: React.ReactNode; label: string; value: string | number; accent: string }) {
   return (
     <div className="flex flex-col gap-1.5 px-4 py-3 rounded-xl border border-zinc-800 bg-zinc-900/60">
-      <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 font-medium uppercase tracking-wide">
+      <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-medium uppercase tracking-wide">
         {icon}
         {label}
       </div>
@@ -511,12 +511,102 @@ function LegendRow({ color, label, value, total }: { color: string; label: strin
       <span className={`h-2 w-2 rounded-full shrink-0 ${color}`} />
       <span className="text-zinc-400 w-12">{label}</span>
       <span className="text-zinc-200 font-medium tabular-nums w-6">{value}</span>
-      <span className="text-zinc-600">({pct}%)</span>
+      <span className="text-zinc-400">({pct}%)</span>
     </div>
   );
 }
 
 // ── App consolidated view — results across every session for one app ──────────
+
+// ── Human time saved — a transparent estimate of manual-QA effort avoided ─────
+// Three real, data-backed components: authoring each automated check, every
+// automated run that replaces a manual pass, and every failure auto-triaged.
+// Per-task minutes are deliberately conservative and shown in the UI so the
+// headline number is defensible rather than a black box.
+const MIN_AUTHOR = 15; // to hand-write one Playwright test (selectors + asserts + debug)
+const MIN_EXEC   = 2;  // to manually click through one test case, once
+const MIN_TRIAGE = 5;  // to manually diagnose one failing test
+
+function SavedRow({ label, mins }: { label: string; mins: number }) {
+  const h = mins / 60;
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="truncate">{label}</span>
+      <span className="tabular-nums text-zinc-200 font-medium shrink-0">{h >= 1 ? `${h.toFixed(1)}h` : `${Math.round(mins)}m`}</span>
+    </div>
+  );
+}
+
+function TimeSavedCard({ host, sessions }: { host: string; sessions: Session[] }) {
+  const [runs, setRuns] = useState<TrendRun[] | null>(null);
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/trends?host=${encodeURIComponent(host)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (active) setRuns(d?.runs ?? []); })
+      .catch(() => { if (active) setRuns([]); });
+    return () => { active = false; };
+  }, [host]);
+
+  // Authored suite size = the largest single run's case count. Sessions for the
+  // same app re-test the same suite, so we take the max instead of summing —
+  // otherwise re-runs would inflate the "authoring" figure.
+  const suiteSize = useMemo(() => {
+    let max = 0;
+    for (const s of sessions) {
+      const st = s.testResult?.stats;
+      if (st) max = Math.max(max, st.passed + st.failed + (st.errors ?? 0));
+    }
+    return max;
+  }, [sessions]);
+
+  const exec = useMemo(() => {
+    let executions = 0, failures = 0;
+    for (const r of runs ?? []) { executions += r.total || 0; failures += (r.failed || 0) + (r.errors || 0); }
+    return { executions, failures, runCount: (runs ?? []).length };
+  }, [runs]);
+
+  const authorMin = suiteSize * MIN_AUTHOR;
+  const execMin   = exec.executions * MIN_EXEC;
+  const triageMin = exec.failures * MIN_TRIAGE;
+  const hours = (authorMin + execMin + triageMin) / 60;
+  const days  = hours / 8;
+
+  if (suiteSize === 0 && exec.executions === 0) return null; // nothing to estimate yet
+  const fmtH = hours >= 10 ? Math.round(hours).toString() : hours.toFixed(1);
+
+  return (
+    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.07] p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <Clock className="h-4 w-4 text-emerald-400" />
+        <p className="text-xs font-semibold text-zinc-300 uppercase tracking-widest">Human time saved</p>
+      </div>
+      <p className="text-3xl font-bold text-emerald-400 tabular-nums">
+        ≈ {fmtH} <span className="text-lg font-semibold text-emerald-400">hours</span>
+      </p>
+      {hours >= 8 && (
+        <p className="text-xs text-zinc-400 mt-0.5">about {days.toFixed(1)} work-day{days >= 2 ? 's' : ''} of manual QA</p>
+      )}
+
+      <div className="mt-4 space-y-1 text-[11px] text-zinc-300">
+        <SavedRow label={`Authoring ${suiteSize} test${suiteSize !== 1 ? 's' : ''}`} mins={authorMin} />
+        {runs === null ? (
+          <p className="text-zinc-400">Loading run history…</p>
+        ) : (
+          <>
+            <SavedRow label={`Running ${exec.executions} checks across ${exec.runCount} run${exec.runCount !== 1 ? 's' : ''}`} mins={execMin} />
+            <SavedRow label={`Triaging ${exec.failures} failure${exec.failures !== 1 ? 's' : ''}`} mins={triageMin} />
+          </>
+        )}
+      </div>
+      <p className="mt-3 text-[11px] text-zinc-400">
+        Estimate · {MIN_AUTHOR} min to author · {MIN_EXEC} min per manual run · {MIN_TRIAGE} min per triage
+      </p>
+    </div>
+  );
+}
+
+const SESSIONS_PAGE_SIZE = 8;
 
 function AppConsolidated({
   host, sessions, onSelectSession,
@@ -539,6 +629,7 @@ function AppConsolidated({
   const anyActive = sessions.some(s => isActive(s.status));
   const lastRun = sessions.reduce((m, s) => Math.max(m, s.createdAt), 0);
   const [tab, setTab] = useState<'overview' | 'cases' | 'areas' | 'trends'>('overview');
+  const [sessionPage, setSessionPage] = useState(0);
 
   function sessionDot(s: Session) {
     if (isActive(s.status)) return <span className="h-2 w-2 rounded-full bg-violet-500 shrink-0" />;
@@ -557,12 +648,12 @@ function AppConsolidated({
           </div>
           <h1 className="text-lg font-semibold text-zinc-100 truncate">{host}</h1>
           {anyActive && (
-            <span className="text-[10px] font-semibold text-violet-300 bg-violet-500/15 border border-violet-500/30 px-2 py-0.5 rounded-full">
+            <span className="text-[11px] font-semibold text-violet-300 bg-violet-500/15 border border-violet-500/30 px-2 py-0.5 rounded-full">
               running
             </span>
           )}
         </div>
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-zinc-400">
           Consolidated results across {sessions.length} session{sessions.length !== 1 ? 's' : ''}
           {lastRun > 0 && <> · last activity {timeAgo(lastRun)}</>}
         </p>
@@ -575,7 +666,7 @@ function AppConsolidated({
             key={t}
             onClick={() => setTab(t)}
             className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-              tab === t ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
+              tab === t ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800/50'
             }`}
           >
             {label}
@@ -591,6 +682,9 @@ function AppConsolidated({
         <AreasView host={host} />
       ) : (
       <>
+      {/* Headline impact metric — manual-QA hours this app's automation saved */}
+      <TimeSavedCard host={host} sessions={sessions} />
+
       {/* Aggregate stat cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard icon={<Layers3 className="h-4 w-4 text-zinc-400" />} label="Sessions" value={sessions.length} accent="text-zinc-100" />
@@ -602,7 +696,7 @@ function AppConsolidated({
       {/* Combined test-results ring */}
       {agg.total > 0 && (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
-          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-4">
+          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-4">
             Combined test results
           </p>
           <div className="flex items-center gap-6">
@@ -612,7 +706,7 @@ function AppConsolidated({
               <LegendRow color="bg-red-500"    label="Failed" value={agg.failed} total={agg.total} />
               {agg.errors > 0 && <LegendRow color="bg-amber-500" label="Errors" value={agg.errors} total={agg.total} />}
               <div className="pt-1 border-t border-zinc-800">
-                <span className="text-zinc-500">Total: </span>
+                <span className="text-zinc-400">Total: </span>
                 <span className="text-zinc-300 font-medium">{agg.total} tests across {agg.withResults} run session(s)</span>
               </div>
             </div>
@@ -622,9 +716,9 @@ function AppConsolidated({
 
       {/* Per-session breakdown — click to drill into one session */}
       <div>
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-2">Sessions</p>
+        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-2">Sessions</p>
         <div className="space-y-1.5">
-          {sessions.map(s => {
+          {sessions.slice(sessionPage * SESSIONS_PAGE_SIZE, (sessionPage + 1) * SESSIONS_PAGE_SIZE).map(s => {
             const st = s.testResult?.stats;
             const t = st ? st.passed + st.failed + (st.errors ?? 0) : 0;
             const rate = t > 0 ? Math.round(st!.passed / t * 100) : null;
@@ -637,7 +731,7 @@ function AppConsolidated({
                 {sessionDot(s)}
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-mono text-zinc-200 truncate">{s.id}</p>
-                  <p className="text-[10px] text-zinc-600 mt-0.5">
+                  <p className="text-[11px] text-zinc-400 mt-0.5">
                     {timeAgo(s.createdAt)} · {s.status}
                     {s.testFiles.length > 0 && <> · {s.testFiles.length} spec{s.testFiles.length !== 1 ? 's' : ''}</>}
                   </p>
@@ -647,11 +741,12 @@ function AppConsolidated({
                     {rate}%
                   </span>
                 )}
-                <ArrowRight className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
+                <ArrowRight className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
               </button>
             );
           })}
         </div>
+        <Paginator page={sessionPage} pageSize={SESSIONS_PAGE_SIZE} total={sessions.length} onPage={setSessionPage} />
       </div>
       </>
       )}
@@ -709,7 +804,7 @@ function TestCasesView({ host }: { host: string }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-5 w-5 text-zinc-600 animate-spin" />
+        <Loader2 className="h-5 w-5 text-zinc-400 animate-spin" />
       </div>
     );
   }
@@ -717,7 +812,7 @@ function TestCasesView({ host }: { host: string }) {
     return (
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-8 text-center">
         <p className="text-sm text-zinc-400 mb-1">No test cases yet</p>
-        <p className="text-xs text-zinc-600">
+        <p className="text-xs text-zinc-400">
           Generate a suite for this app and the identified test cases will appear here.
         </p>
       </div>
@@ -734,7 +829,7 @@ function TestCasesView({ host }: { host: string }) {
         <StatCard icon={<Zap className="h-4 w-4 text-emerald-400" />} label="In every run" value={data.consistentCount} accent="text-emerald-400" />
       </div>
 
-      <p className="text-[11px] text-zinc-600">
+      <p className="text-[11px] text-zinc-400">
         Coverage shows how many of the {data.suiteSessions} session(s) with a suite contained each test —
         a high, stable coverage means we generate this test consistently from <span className="text-zinc-400">{host}</span>.
       </p>
@@ -771,20 +866,20 @@ function TestCasesView({ host }: { host: string }) {
           const consistent = c.coverage === 100 && data.suiteSessions > 1;
           return (
             <div key={`${c.file}:${c.title}:${i}`} className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-2.5">
-              <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${meta.cls}`}>
+              <span className={`shrink-0 text-[11px] font-semibold px-1.5 py-0.5 rounded border ${meta.cls}`}>
                 {meta.label}
               </span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <p className="text-xs text-zinc-200 truncate" title={c.title}>{c.title}</p>
                   {c.area && c.area !== 'Uncategorized' && (
-                    <span className="shrink-0 text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700">{c.area}</span>
+                    <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700">{c.area}</span>
                   )}
                 </div>
                 {c.description && c.description !== c.title && (
-                  <p className="text-[11px] text-zinc-500 truncate" title={c.description}>{c.description}</p>
+                  <p className="text-[11px] text-zinc-400 truncate" title={c.description}>{c.description}</p>
                 )}
-                <p className="text-[10px] font-mono text-zinc-600 truncate">{c.file}</p>
+                <p className="text-[11px] font-mono text-zinc-400 truncate">{c.file}</p>
               </div>
               {/* Coverage */}
               <div className="flex items-center gap-2 shrink-0">
@@ -794,7 +889,7 @@ function TestCasesView({ host }: { host: string }) {
                     style={{ width: `${c.coverage}%` }}
                   />
                 </div>
-                <span className="text-[10px] tabular-nums text-zinc-500 w-12 text-right">
+                <span className="text-[11px] tabular-nums text-zinc-400 w-12 text-right">
                   {c.sessionCount}/{data.suiteSessions}
                 </span>
               </div>
@@ -838,7 +933,7 @@ function AreasView({ host }: { host: string }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-5 w-5 text-zinc-600 animate-spin" />
+        <Loader2 className="h-5 w-5 text-zinc-400 animate-spin" />
       </div>
     );
   }
@@ -846,7 +941,7 @@ function AreasView({ host }: { host: string }) {
     return (
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-8 text-center">
         <p className="text-sm text-zinc-400 mb-1">No areas yet</p>
-        <p className="text-xs text-zinc-600">Functional areas appear once test cases have been generated for this app.</p>
+        <p className="text-xs text-zinc-400">Functional areas appear once test cases have been generated for this app.</p>
       </div>
     );
   }
@@ -875,9 +970,9 @@ function AreasView({ host }: { host: string }) {
               onClick={() => toggle(area)}
               className="w-full flex items-center gap-2 px-4 py-3 hover:bg-zinc-800/50 transition text-left"
             >
-              {open ? <ChevronDown className="h-3.5 w-3.5 text-zinc-600" /> : <ChevronRight className="h-3.5 w-3.5 text-zinc-600" />}
+              {open ? <ChevronDown className="h-3.5 w-3.5 text-zinc-400" /> : <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />}
               <span className="flex-1 text-sm font-semibold text-zinc-100">{area}</span>
-              <span className="text-[11px] text-zinc-500 tabular-nums">{cases.length} test{cases.length !== 1 ? 's' : ''}</span>
+              <span className="text-[11px] text-zinc-400 tabular-nums">{cases.length} test{cases.length !== 1 ? 's' : ''}</span>
             </button>
             {open && (
               <div className="border-t border-zinc-800 divide-y divide-zinc-800/60">
@@ -886,11 +981,11 @@ function AreasView({ host }: { host: string }) {
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-zinc-200 truncate" title={c.title}>{c.title}</p>
                       {c.description && c.description !== c.title && (
-                        <p className="text-[11px] text-zinc-500 truncate" title={c.description}>{c.description}</p>
+                        <p className="text-[11px] text-zinc-400 truncate" title={c.description}>{c.description}</p>
                       )}
-                      <p className="text-[10px] font-mono text-zinc-600 truncate">{c.file}</p>
+                      <p className="text-[11px] font-mono text-zinc-400 truncate">{c.file}</p>
                     </div>
-                    <span className="text-[10px] tabular-nums text-zinc-500 shrink-0">{c.sessionCount}/{data.suiteSessions}</span>
+                    <span className="text-[11px] tabular-nums text-zinc-400 shrink-0">{c.sessionCount}/{data.suiteSessions}</span>
                   </div>
                 ))}
               </div>
@@ -929,7 +1024,7 @@ function TrendsView({ host }: { host: string }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-5 w-5 text-zinc-600 animate-spin" />
+        <Loader2 className="h-5 w-5 text-zinc-400 animate-spin" />
       </div>
     );
   }
@@ -937,7 +1032,7 @@ function TrendsView({ host }: { host: string }) {
     return (
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-8 text-center">
         <p className="text-sm text-zinc-400 mb-1">No run history yet</p>
-        <p className="text-xs text-zinc-600">
+        <p className="text-xs text-zinc-400">
           Trends appear once this app&apos;s tests have been run a few times. Each run is recorded automatically.
         </p>
       </div>
@@ -953,7 +1048,7 @@ function TrendsView({ host }: { host: string }) {
         <StatCard icon={<Layers3 className="h-4 w-4 text-zinc-400" />} label="Total runs" value={data.totalRuns} accent="text-zinc-100" />
         <StatCard icon={<Zap className="h-4 w-4 text-emerald-400" />} label="Current rate" value={data.lastRate != null ? `${data.lastRate}%` : '—'} accent="text-emerald-400" />
         <StatCard
-          icon={<ArrowRight className={`h-4 w-4 ${trendDelta == null ? 'text-zinc-500' : trendDelta >= 0 ? 'text-emerald-400' : 'text-red-400'}`} />}
+          icon={<ArrowRight className={`h-4 w-4 ${trendDelta == null ? 'text-zinc-400' : trendDelta >= 0 ? 'text-emerald-400' : 'text-red-400'}`} />}
           label="Trend"
           value={trendDelta == null ? '—' : `${trendDelta >= 0 ? '+' : ''}${trendDelta}%`}
           accent={trendDelta == null ? 'text-zinc-400' : trendDelta >= 0 ? 'text-emerald-400' : 'text-red-400'}
@@ -963,7 +1058,7 @@ function TrendsView({ host }: { host: string }) {
 
       {/* Pass-rate over time */}
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-4">
+        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-4">
           Pass rate over time
         </p>
         <TrendChart runs={data.runs} />
@@ -971,13 +1066,13 @@ function TrendsView({ host }: { host: string }) {
 
       {/* Flaky tests */}
       <div>
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-2">
+        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-2">
           Flaky tests
-          <span className="ml-2 text-zinc-600 normal-case font-normal">passed in some runs, failed in others</span>
+          <span className="ml-2 text-zinc-400 normal-case font-normal">passed in some runs, failed in others</span>
         </p>
         {data.flaky.length === 0 ? (
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3">
-            <p className="text-xs text-zinc-500">No flaky tests detected — outcomes have been consistent across runs. 🎉</p>
+            <p className="text-xs text-zinc-400">No flaky tests detected — outcomes have been consistent across runs. 🎉</p>
           </div>
         ) : (
           <div className="space-y-1.5">
@@ -987,13 +1082,13 @@ function TrendsView({ host }: { host: string }) {
                 <div key={i} className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-2.5">
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-zinc-200 truncate" title={f.name}>{f.name.split(' › ').slice(1).join(' › ') || f.name}</p>
-                    <p className="text-[10px] font-mono text-zinc-600 truncate">{f.name.split(' › ')[0]}</p>
+                    <p className="text-[11px] font-mono text-zinc-400 truncate">{f.name.split(' › ')[0]}</p>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0 text-[10px] font-medium tabular-nums">
+                  <div className="flex items-center gap-2 shrink-0 text-[11px] font-medium tabular-nums">
                     <span className="text-emerald-400">{f.passed}✓</span>
                     <span className="text-red-400">{f.failed}✗</span>
                   </div>
-                  <span className="shrink-0 text-[10px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded">
+                  <span className="shrink-0 text-[11px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded">
                     {failRate}% fail
                   </span>
                 </div>
@@ -1010,7 +1105,7 @@ function TrendsView({ host }: { host: string }) {
 function TrendChart({ runs }: { runs: TrendRun[] }) {
   const pts = runs.filter(r => r.rate != null) as (TrendRun & { rate: number })[];
   if (pts.length < 2) {
-    return <p className="text-xs text-zinc-600 py-6 text-center">Need at least 2 runs with results to chart a trend.</p>;
+    return <p className="text-xs text-zinc-400 py-6 text-center">Need at least 2 runs with results to chart a trend.</p>;
   }
   const W = 600, H = 140, padX = 8, padY = 12;
   const n = pts.length;
@@ -1047,10 +1142,10 @@ function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center h-full py-32 text-center px-6">
       <div className="h-12 w-12 rounded-2xl bg-zinc-800 flex items-center justify-center mb-4">
-        <Globe className="h-6 w-6 text-zinc-500" />
+        <Globe className="h-6 w-6 text-zinc-400" />
       </div>
       <p className="text-zinc-300 text-sm font-medium mb-1">No sessions yet</p>
-      <p className="text-zinc-600 text-xs max-w-xs">
+      <p className="text-zinc-400 text-xs max-w-xs">
         Click <span className="text-violet-400 font-medium">+ New Session</span> in the top bar to crawl your app and auto-generate a Playwright test suite.
       </p>
     </div>
@@ -1211,12 +1306,12 @@ export function DashboardShell({ sessions, membersMap, isAdmin = false }: ShellP
         {/* Sidebar header */}
         <div className="flex items-center justify-between px-3 py-2.5 border-b border-zinc-800 shrink-0">
           {(sidebarOpen || mobileOpen) && (
-            <span className="text-xs font-semibold text-zinc-500 uppercase tracking-widest md:inline">Sessions</span>
+            <span className="text-xs font-semibold text-zinc-400 uppercase tracking-widest md:inline">Sessions</span>
           )}
           {/* Mobile: close drawer */}
           <button
             onClick={() => setMobileOpen(false)}
-            className="ml-auto p-1.5 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors md:hidden"
+            className="ml-auto p-1.5 rounded-md text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors md:hidden"
             title="Close"
           >
             <X className="h-4 w-4" />
@@ -1224,7 +1319,7 @@ export function DashboardShell({ sessions, membersMap, isAdmin = false }: ShellP
           {/* Desktop: collapse/expand */}
           <button
             onClick={() => setSidebarOpen(o => !o)}
-            className="ml-auto p-1.5 rounded-md text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 transition-colors hidden md:inline-flex"
+            className="ml-auto p-1.5 rounded-md text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800 transition-colors hidden md:inline-flex"
             title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
           >
             {sidebarOpen
@@ -1250,7 +1345,7 @@ export function DashboardShell({ sessions, membersMap, isAdmin = false }: ShellP
                     {/* Chevron toggles expand without changing the view */}
                     <button
                       onClick={() => toggleApp(g.host)}
-                      className="p-2 rounded-lg text-zinc-600 hover:text-zinc-300 shrink-0"
+                      className="p-2 rounded-lg text-zinc-400 hover:text-zinc-300 shrink-0"
                       title={expanded ? 'Collapse' : 'Expand'}
                     >
                       {expanded
@@ -1263,7 +1358,7 @@ export function DashboardShell({ sessions, membersMap, isAdmin = false }: ShellP
                       className="flex-1 min-w-0 flex items-center gap-2 py-2 text-left"
                       title={`Consolidated results for ${g.host}`}
                     >
-                      <Globe className={`h-3.5 w-3.5 shrink-0 ${appSelected ? 'text-violet-400' : 'text-zinc-500'}`} />
+                      <Globe className={`h-3.5 w-3.5 shrink-0 ${appSelected ? 'text-violet-400' : 'text-zinc-400'}`} />
                       <span className={`flex-1 min-w-0 text-xs font-medium truncate ${appSelected ? 'text-zinc-100' : 'text-zinc-200'}`}>
                         {g.host}
                       </span>
@@ -1273,7 +1368,7 @@ export function DashboardShell({ sessions, membersMap, isAdmin = false }: ShellP
                           <span className="absolute inset-0 rounded-full bg-violet-500" />
                         </span>
                       )}
-                      <span className="text-[10px] text-zinc-600 tabular-nums shrink-0">{g.sessions.length}</span>
+                      <span className="text-[11px] text-zinc-400 tabular-nums shrink-0">{g.sessions.length}</span>
                     </button>
                   </div>
 
@@ -1299,7 +1394,7 @@ export function DashboardShell({ sessions, membersMap, isAdmin = false }: ShellP
             })}
 
             {sessions.length === 0 && (
-              <p className="px-2 text-[11px] text-zinc-700 py-4">No sessions yet.</p>
+              <p className="px-2 text-[11px] text-zinc-400 py-4">No sessions yet.</p>
             )}
           </div>
         ) : (
@@ -1337,7 +1432,7 @@ export function DashboardShell({ sessions, membersMap, isAdmin = false }: ShellP
           >
             <Menu className="h-4 w-4" />
             Sessions
-            <span className="text-[11px] text-zinc-600">({sessions.length})</span>
+            <span className="text-[11px] text-zinc-400">({sessions.length})</span>
           </button>
         </div>
 
@@ -1371,7 +1466,7 @@ export function DashboardShell({ sessions, membersMap, isAdmin = false }: ShellP
               </div>
               <div className="min-w-0">
                 <h2 className="text-base font-semibold text-zinc-100">Delete this session?</h2>
-                <p className="text-xs text-zinc-500 mt-0.5">
+                <p className="text-xs text-zinc-400 mt-0.5">
                   <span className="text-zinc-300 font-medium">{hostname(pendingDelete.url)}{shortPath(pendingDelete.url)}</span>
                   {' '}— its tests, results, and recordings will be permanently removed. This can&apos;t be undone.
                 </p>

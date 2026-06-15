@@ -9,7 +9,7 @@ export function SiteMapViewer({ siteMap }: SiteMapViewerProps) {
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-800">
-        <Globe className="h-3.5 w-3.5 text-zinc-500" />
+        <Globe className="h-3.5 w-3.5 text-zinc-400" />
         <span className="text-xs font-mono text-zinc-400">
           {siteMap.total_pages} pages discovered
         </span>
@@ -17,11 +17,11 @@ export function SiteMapViewer({ siteMap }: SiteMapViewerProps) {
       <div className="divide-y divide-zinc-800 max-h-60 overflow-y-auto">
         {siteMap.pages.map((page, i) => (
           <div key={i} className="flex items-center gap-2 px-4 py-2 hover:bg-zinc-800/50">
-            <Link className="h-3 w-3 text-zinc-600 shrink-0" />
+            <Link className="h-3 w-3 text-zinc-400 shrink-0" />
             <div className="min-w-0">
               <p className="text-xs text-zinc-300 truncate">{page.url}</p>
               {page.title && (
-                <p className="text-xs text-zinc-600 truncate">{page.title}</p>
+                <p className="text-xs text-zinc-400 truncate">{page.title}</p>
               )}
             </div>
             {page.status_code && page.status_code !== 200 && (
