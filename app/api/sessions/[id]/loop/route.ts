@@ -162,6 +162,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // App-context spine (Phase 2): set after the profile is built (crawl path),
       // then injected into generation/triage/self-heal in the iteration loop below.
       let appContext = '';
+      // Stable host derived early so the Figma comparison (Phase 1.8) can tie
+      // frames back to features (#9) before the profile is rebuilt.
+      const appHost = hostOf(session.url);
 
       if (isImportMode) {
         addLog(id, '📦 Imported Playwright project — skipping exploration and generation, running existing tests.', 'info');
@@ -265,6 +268,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             (line) => addLog(id, line, 'info'),
             chatModel,
             figmaSession.figmaFrameMap,
+            { orgId: session.orgId, host: appHost }, // #9 — tie frames to features
           ).then(async result => {
             setFigmaResult(id, result);
             // Surface the per-frame figma specs in the main suite + persist them.
@@ -430,7 +434,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // Deterministic signals + one LLM pass → purpose/personas/glossary/features,
       // persisted per org+host and reused. `appContext` (a compact slice) is then
       // injected into generation / triage / self-heal below.
-      const appHost = hostOf(getCachedSession(id)?.url ?? session.url);
       try {
         const profileExisted = await appProfileExists(session.orgId, appHost);
         // Figma screen names feed the profile synthesis (design intent). The

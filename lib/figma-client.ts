@@ -1,8 +1,10 @@
 import { writeFileSync, mkdirSync, readFileSync } from 'fs';
 import path from 'path';
+import { createHash } from 'crypto';
 import { type Browser, type Page } from 'playwright';
 import sharp from 'sharp';
 import { launchBrowser } from '@/lib/browser';
+import { prisma } from '@/lib/prisma';
 import { FigmaComparison, FigmaDiscrepancy, FigmaResult } from '@/types/session';
 import type { ChatModel, ContentBlock } from '@/lib/pilot';
 
@@ -830,10 +832,20 @@ async function captureDiscrepancyScreenshots(
  * faithful to "how similar do these look" than a raw pixel-diff ratio, because
  * it compares local luminance/contrast/structure rather than exact pixels.
  */
-function meanSsim(grayA: Float64Array, grayB: Float64Array, w: number, h: number): number {
+/** SSIM block size, in pixels. Exposed so the region summarizer matches the grid. */
+const SSIM_BLOCK = 8;
+
+/**
+ * Mean SSIM + per-block SSIM grid (row-major, blocks across × blocks down).
+ * The grid is what powers region-level diff explanations downstream (#10).
+ */
+function meanSsim(grayA: Float64Array, grayB: Float64Array, w: number, h: number): { mean: number; grid: number[]; cols: number; rows: number } {
   const C1 = (0.01 * 255) ** 2; // 6.5025
   const C2 = (0.03 * 255) ** 2; // 58.5225
-  const B = 8;
+  const B = SSIM_BLOCK;
+  const cols = Math.floor(w / B);
+  const rows = Math.floor(h / B);
+  const grid: number[] = [];
   let total = 0, blocks = 0;
   for (let by = 0; by + B <= h; by += B) {
     for (let bx = 0; bx + B <= w; bx += B) {
@@ -855,15 +867,142 @@ function meanSsim(grayA: Float64Array, grayB: Float64Array, w: number, h: number
       varA /= n - 1; varB /= n - 1; cov /= n - 1;
       const ssim = ((2 * muA * muB + C1) * (2 * cov + C2)) /
                    ((muA * muA + muB * muB + C1) * (varA + varB + C2));
+      grid.push(ssim);
       total += ssim; blocks++;
     }
   }
-  return blocks > 0 ? total / blocks : 0;
+  return { mean: blocks > 0 ? total / blocks : 0, grid, cols, rows };
+}
+
+// ── Region-level explanation (#10 + #15) ─────────────────────────────────────
+// Group the SSIM block grid into a named 3×3 (top/middle/bottom × left/center/right)
+// region map and build a deterministic human summary. Deterministic on purpose —
+// no LLM call, instant, free, identical results every run.
+
+const BAND_NAMES = ['top', 'middle', 'bottom'] as const;
+const COL_NAMES  = ['left', 'center', 'right'] as const;
+/** A block diverges from the design when its SSIM drops below this. */
+const BAD_BLOCK_SSIM = 0.85;
+
+/**
+ * Summarize the SSIM grid into 9 named regions + a short human explanation.
+ * Returns regions sorted worst-first so the UI can headline the actual problem.
+ */
+export function summarizeFigmaRegions(grid: number[], cols: number, rows: number): { regions: { name: string; ssim: number; divergedPct: number }[]; explanation: string } {
+  if (cols === 0 || rows === 0) return { regions: [], explanation: 'No comparable region — image dimensions differ too much.' };
+  // Compute bucket boundaries so cell (rowIdx,colIdx) ∈ band[rowIdx]×col[colIdx].
+  const rowSplit = [0, Math.floor(rows / 3), Math.floor((rows * 2) / 3), rows];
+  const colSplit = [0, Math.floor(cols / 3), Math.floor((cols * 2) / 3), cols];
+
+  type R = { name: string; sum: number; n: number; bad: number };
+  const buckets: R[] = [];
+  for (let bi = 0; bi < 3; bi++) for (let ci = 0; ci < 3; ci++) {
+    buckets.push({ name: `${BAND_NAMES[bi]}-${COL_NAMES[ci]}`, sum: 0, n: 0, bad: 0 });
+  }
+  for (let r = 0; r < rows; r++) {
+    const bi = r < rowSplit[1] ? 0 : r < rowSplit[2] ? 1 : 2;
+    for (let c = 0; c < cols; c++) {
+      const ci = c < colSplit[1] ? 0 : c < colSplit[2] ? 1 : 2;
+      const s = grid[r * cols + c];
+      const b = buckets[bi * 3 + ci];
+      b.sum += s; b.n++; if (s < BAD_BLOCK_SSIM) b.bad++;
+    }
+  }
+  const regions = buckets
+    .filter(b => b.n > 0)
+    .map(b => ({ name: b.name, ssim: b.sum / b.n, divergedPct: Math.round((b.bad / b.n) * 100) }))
+    .sort((a, b) => a.ssim - b.ssim);
+
+  // Build the explanation. Goals: name the worst region(s), say overall layout
+  // status, and give a number a human can act on — without ever saying "X/100".
+  const meanSsim = regions.reduce((s, r) => s + r.ssim, 0) / regions.length;
+  const totalBad = buckets.reduce((s, b) => s + b.bad, 0);
+  const totalBlocks = buckets.reduce((s, b) => s + b.n, 0);
+  const badPct = Math.round((totalBad / totalBlocks) * 100);
+  const worst = regions.slice(0, 3).filter(r => r.divergedPct >= 20);
+
+  let explanation: string;
+  if (badPct < 5) {
+    explanation = 'Layout matches the design closely.';
+  } else if (worst.length === 0) {
+    explanation = `Minor differences spread across the page (${badPct}% of blocks).`;
+  } else if (worst.length === 1) {
+    explanation = `${worst[0].name} region diverges from the design (${worst[0].divergedPct}% of its blocks differ); the rest matches.`;
+  } else {
+    const names = worst.map(w => w.name).join(', ');
+    explanation = `${worst.length} regions diverge from the design (${names}); ${badPct}% of blocks differ overall.`;
+  }
+  // Suffix the overall similarity in plain terms so the score isn't lost.
+  const meanPct = Math.round(meanSsim * 100);
+  explanation += ` Overall similarity: ${meanPct}%.`;
+  return { regions, explanation };
+}
+
+// ── Semantic element check (#11) ──────────────────────────────────────────────
+// The pixel score sees a similar layout; this catches DIFFERENT-WORDS bugs the
+// pixels miss — design says "Place Order" but the app says "Submit". No LLM:
+// just compare the design's labels/headings/buttons against the live page text.
+
+import type { FigmaMissingText } from '@/types/session';
+
+const SEM_STOP = new Set(['the','a','an','to','of','and','or','is','for','with','on','in','your','my']);
+function normSem(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+}
+function tokensSem(s: string): string[] {
+  return normSem(s).split(' ').filter(w => w.length >= 3 && !SEM_STOP.has(w));
+}
+/** Best-match candidate from `pool` for `needle` — used to flag renames. */
+function closestLive(needle: string, pool: string[]): string | undefined {
+  const nt = new Set(tokensSem(needle));
+  if (nt.size === 0) return undefined;
+  let best: string | undefined; let bestScore = 0;
+  for (const cand of pool) {
+    const ct = new Set(tokensSem(cand));
+    let score = 0; for (const w of nt) if (ct.has(w)) score++;
+    if (score > bestScore) { bestScore = score; best = cand; }
+  }
+  // Require at least one shared meaningful word to call it a "close" match.
+  return bestScore >= 1 ? best : undefined;
+}
+
+/**
+ * Detect text the design specifies but the live page doesn't render. We check
+ * by FULL phrase first (exact match after normalization), then look for a near-
+ * match that shares meaningful words — that's the "Place Order" → "Submit"
+ * signal. Limited per kind so it never floods the UI.
+ */
+function findMissingDesignText(design: DesignContent, live: LivePageContent): FigmaMissingText[] {
+  const out: FigmaMissingText[] = [];
+
+  // Index all live text once, normalised.
+  const livePool = [
+    ...live.headings, ...live.buttonTexts, ...live.linkTexts, ...live.labelTexts,
+    ...live.inputPlaceholders, ...live.visibleText,
+  ].filter(Boolean);
+  const liveSet = new Set(livePool.map(normSem));
+
+  const check = (kind: FigmaMissingText['kind'], expected: string, scope: string[]) => {
+    const norm = normSem(expected);
+    if (!norm) return;
+    if (liveSet.has(norm)) return;                   // exact phrase present
+    if (livePool.some(t => normSem(t).includes(norm))) return; // contained in another live string
+    out.push({ kind, expected, closestLive: closestLive(expected, scope) });
+  };
+
+  // Headings: deserved to be on the page if the design has them.
+  for (const h of design.headings.slice(0, 12)) check('heading', h, live.headings);
+  // Buttons: the most common semantic miss ("Place Order" vs "Submit").
+  for (const b of design.buttonLabels.slice(0, 12)) check('button', b, live.buttonTexts);
+  // Input labels.
+  for (const l of design.inputLabels.slice(0, 12)) check('input-label', l, [...live.labelTexts, ...live.inputPlaceholders]);
+
+  return out.slice(0, 12);
 }
 
 async function generatePixelDiff(
   figmaPath: string, livePath: string, diffPath: string,
-): Promise<{ diffPath: string; ssim: number } | null> {
+): Promise<{ diffPath: string; ssim: number; regions: { name: string; ssim: number; divergedPct: number }[]; explanation: string } | null> {
   try {
     const [figMeta, liveMeta] = await Promise.all([
       sharp(figmaPath).metadata(),
@@ -914,8 +1053,9 @@ async function generatePixelDiff(
       }
     }
     await sharp(diffRgba, { raw: { width: w, height: h, channels: 4 } }).png().toFile(diffPath);
-    const ssim = meanSsim(grayFig, grayLive, w, h);
-    return { diffPath, ssim };
+    const { mean, grid, cols, rows } = meanSsim(grayFig, grayLive, w, h);
+    const { regions, explanation } = summarizeFigmaRegions(grid, cols, rows);
+    return { diffPath, ssim: mean, regions, explanation };
   } catch { return null; }
 }
 
@@ -1071,8 +1211,23 @@ export async function runFigmaComparison(
   onProgress?:  (msg: string) => void,
   model?:       ChatModel,
   frameMap?:    Record<string, string> | null,
+  /** #9 — when given, each frame is mapped to its best-matching feature so the
+   *  visual diff ties back into the feature spine (criticality, traceability). */
+  featureLookup?: { orgId: string; host: string },
 ): Promise<FigmaResult> {
   const log = (msg: string) => onProgress?.(msg);
+
+  // #9 Per-feature visual baselines: resolve the profile's features once so each
+  // frame can be tagged with the feature it visually verifies.
+  const featuresLite = featureLookup
+    ? await (async () => {
+        try {
+          const { getAppProfile } = await import('@/lib/app-profile');
+          const p = await getAppProfile(featureLookup.orgId, featureLookup.host);
+          return p?.features.map(f => ({ id: f.id, name: f.name, area: f.area })) ?? [];
+        } catch { return []; }
+      })()
+    : [];
 
   // ── Validate token before doing anything else ────────────────────────────
   log('Validating Figma token…');
@@ -1100,8 +1255,9 @@ export async function runFigmaComparison(
   mkdirSync(figmaDir,       { recursive: true });
   mkdirSync(screenshotsDir, { recursive: true });
 
-  // Download Figma PNGs — small pause between each to respect rate limits
-  const downloaded: { frame: FigmaNode; figmaFile: string }[] = [];
+  // Download Figma PNGs — small pause between each to respect rate limits.
+  // Also hash each PNG so #13 (design-drift) can compare against the prior run.
+  const downloaded: { frame: FigmaNode; figmaFile: string; frameHash: string }[] = [];
   for (const frame of frames) {
     const url = imageUrls[frame.id];
     if (!url) { log(`⚠ No export URL for "${frame.name}" — skipping`); continue; }
@@ -1111,17 +1267,48 @@ export async function runFigmaComparison(
     await sleep(300);
     const imgRes = await fetch(url);
     if (!imgRes.ok) { log(`⚠ Failed to download "${frame.name}"`); continue; }
-    writeFileSync(path.join(figmaDir, figmaFile), Buffer.from(await imgRes.arrayBuffer()));
-    downloaded.push({ frame, figmaFile });
+    const buf = Buffer.from(await imgRes.arrayBuffer());
+    writeFileSync(path.join(figmaDir, figmaFile), buf);
+    const frameHash = createHash('sha256').update(buf).digest('hex').slice(0, 32);
+    downloaded.push({ frame, figmaFile, frameHash });
   }
   if (downloaded.length === 0) throw new Error('Could not download any Figma frame images');
+
+  // #13 Design-drift: load the most-recent prior comparisons for this org+host
+  // so we can flag any frame whose hash has changed since the last run.
+  const priorHashes = featureLookup
+    ? await (async () => {
+        try {
+          const sessions = await prisma.session.findMany({
+            where: { orgId: featureLookup.orgId },
+            select: { url: true, figmaResult: true, updatedAt: true },
+            orderBy: { updatedAt: 'desc' },
+            take: 20,
+          });
+          for (const s of sessions) {
+            try { if (new URL(s.url).hostname.replace(/^www\./, '') !== featureLookup.host) continue; } catch { continue; }
+            const fr = (s.figmaResult ?? null) as { comparisons?: { frameName?: string; frameHash?: string }[] } | null;
+            const comps = fr?.comparisons ?? [];
+            const hashes = comps.filter(c => c.frameName && c.frameHash);
+            if (hashes.length > 0) {
+              const m = new Map<string, string>();
+              for (const c of hashes) m.set(c.frameName!, c.frameHash!);
+              return m;
+            }
+          }
+        } catch { /* best-effort; drift just won't surface this run */ }
+        return new Map<string, string>();
+      })()
+    : new Map<string, string>();
 
   log('Launching browser for live page analysis…');
   const browser: Browser = await launchBrowser();
   const comparisons: FigmaComparison[] = [];
 
   try {
-    for (const { frame, figmaFile } of downloaded) {
+    for (const { frame, figmaFile, frameHash } of downloaded) {
+      const designDrifted = priorHashes.has(frame.name) && priorHashes.get(frame.name) !== frameHash;
+      if (designDrifted) log(`  ⓘ Design drift: "${frame.name}" frame changed since the last run`);
       // Prefer the user-confirmed frame→page mapping; fall back to heuristics.
       const mapped = frameMap?.[frame.name]?.trim();
       const { url: targetUrl, confident } = mapped
@@ -1145,6 +1332,9 @@ export async function runFigmaComparison(
 
       let discrepancies: FigmaDiscrepancy[] = [];
       let matchScore:    number | undefined;  // undefined = not analysed / page unreachable
+      let regions: FigmaComparison['regions'] | undefined;
+      let explanation: string | undefined;
+      let missingDesignText: FigmaComparison['missingDesignText'] | undefined;
       let liveScreenshot = false;
       let diffImagePath: string | undefined;
       let navigationFailed = false;
@@ -1186,7 +1376,9 @@ export async function runFigmaComparison(
           // match score. The LLM discrepancies below are the explanatory detail,
           // not the score.
           matchScore = Math.round(Math.max(0, Math.min(1, diffResult.ssim)) * 100);
-          log(`  ✓ Pixel diff saved · SSIM match ${matchScore}/100`);
+          regions = diffResult.regions;
+          explanation = diffResult.explanation;
+          log(`  ✓ Pixel diff saved · SSIM match ${matchScore}/100 — ${explanation}`);
         }
 
         if (model) {
@@ -1212,6 +1404,13 @@ export async function runFigmaComparison(
           const domVisualSpec  = await extractDomVisualSpec(page);
           const liveContent    = await extractLivePageContent(page);
           log(`  Live DOM: ${liveContent.headings.length} heading(s), ${liveContent.buttonTexts.length} button(s)`);
+
+          // #11 Semantic element check (deterministic, no LLM): which design
+          // labels/headings/buttons aren't present on the live page?
+          missingDesignText = findMissingDesignText(designContent, liveContent);
+          if (missingDesignText.length > 0) {
+            log(`  ⚠ Semantic mismatch — ${missingDesignText.length} design text(s) missing on live page`);
+          }
 
           // ── Prepare base64 images for vision ──────────────────────────
           log(`  Preparing images for vision comparison…`);
@@ -1275,6 +1474,19 @@ export async function runFigmaComparison(
         diffImagePath,
         discrepancies,
         matchScore,
+        regions,
+        explanation,
+        missingDesignText,
+        frameHash,
+        designDrifted,
+        ...(await (async () => {
+          if (featuresLite.length === 0) return {};
+          const { bestFeatureId } = await import('@/lib/app-profile');
+          const fid = bestFeatureId(featuresLite, { title: frame.name });
+          if (!fid) return {};
+          const f = featuresLite.find(x => x.id === fid);
+          return f ? { featureId: f.id, featureName: f.name } : {};
+        })()),
       });
     }
   } finally {

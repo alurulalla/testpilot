@@ -315,6 +315,20 @@ model Feature {
   area             String? // functional area label (legacy `area` maps here)
   journeys         Json?   // critical user journeys: string[] or [{ title, steps[] }]
   expectedOutcomes Json?   // string[] — what success looks like
+  negativeOutcomes Json?   // string[] — what should NOT happen (guards/edge cases) (#3)
+  intentCoverage   Int?    // 0–100: cached % of expectedOutcomes actually asserted by tests (#1)
+  /** Hash of (expectedOutcomes + test titles) at the time intentCoverage was
+   *  computed. When the live hash differs, the audit is stale (#5). */
+  intentHash       String?
+  /** Count of tests mapping to this feature that asserted zero outcomes — i.e.
+   *  shallow tests that exist but verify nothing specific (#2). */
+  shallowTestCount Int?
+  /** Per-outcome traceability — which specific assertion(s) verify each
+   *  expectedOutcome (#7). [{ outcome, testTitle?, assertions: string[] }]. */
+  outcomeTrace     Json?
+  /** Checkable rules that hold across journeys (#4 invariants/properties),
+   *  e.g. "cart count = items added", "total = Σ item prices". string[]. */
+  invariants       Json?
   criticality      String  @default("normal") // critical | normal | low
   source           String  @default("ai")     // crawl | ai | user
   confidence       String  @default("medium")  // high | medium | low

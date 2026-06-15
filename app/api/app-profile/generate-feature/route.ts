@@ -11,6 +11,7 @@ import { requireAuth, authErrorResponse } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getAppProfile, hostOf } from '@/lib/app-profile';
 import { getFeatureContext } from '@/lib/feature-context';
+import { getFeatureHealth } from '@/lib/feature-health';
 import { Workspace } from '@/lib/pilot';
 import { getSessionDir } from '@/lib/config';
 import { ensureWorkspaceReady, snapshotTestFiles } from '@/lib/session-files';
@@ -23,7 +24,7 @@ import { generateScenarioTest } from '@/lib/pilot/generate-scenario';
 export async function POST(req: NextRequest) {
   try {
     const { org } = await requireAuth();
-    const body = (await req.json().catch(() => ({}))) as { host?: string; featureId?: string };
+    const body = (await req.json().catch(() => ({}))) as { host?: string; featureId?: string; negative?: boolean };
     if (!body.host || !body.featureId) {
       return NextResponse.json({ error: 'host and featureId are required' }, { status: 400 });
     }
@@ -51,12 +52,33 @@ export async function POST(req: NextRequest) {
 
     // Seed the description from the feature's journeys + expected outcomes so the
     // generated test follows the real flow AND asserts the intended result.
-    const journeys = feature.journeys.length ? feature.journeys.join(' ; ') : feature.name;
-    const outcomes = feature.expectedOutcomes.length ? ` Verify these outcomes: ${feature.expectedOutcomes.join('; ')}.` : '';
     // #4 persona-aware: ground the flow in the app's real user persona(s).
     const personas = (profile?.personas ?? []).map(p => p.name).filter(Boolean);
     const personaHint = personas.length ? ` Exercise it as the app's user persona(s): ${personas.slice(0, 3).join(', ')}.` : '';
-    const description = `${feature.name} — ${journeys}.${outcomes}${personaHint}`;
+
+    // #12 visual-intent assertion: if this feature has a Figma baseline, the
+    // generated test should also assert visual parity (toHaveScreenshot).
+    const health = await getFeatureHealth(org.id, host).catch(() => null);
+    const fh = health?.features.find(x => x.id === feature.id);
+    const hasVisualBaseline = (fh?.visualBaselineCount ?? 0) > 0;
+    const visualHint = hasVisualBaseline
+      ? ' Also assert visual parity: at the end, call `await expect(page).toHaveScreenshot({ maxDiffPixelRatio: 0.05 });` to catch design regressions against the saved baseline.'
+      : '';
+
+    let description: string;
+    if (body.negative) {
+      // #3 negative-intent: assert the things that MUST be prevented/rejected.
+      if (feature.negativeOutcomes.length === 0) {
+        return NextResponse.json({ error: 'This feature has no negative outcomes defined.' }, { status: 409 });
+      }
+      description = `Negative test for "${feature.name}". Verify the app PREVENTS/REJECTS each of these — assert the failure/blocked state, not success: ${feature.negativeOutcomes.join('; ')}.${personaHint}${visualHint}`;
+    } else {
+      const journeys = feature.journeys.length ? feature.journeys.join(' ; ') : feature.name;
+      const outcomes = feature.expectedOutcomes.length ? ` Verify these outcomes: ${feature.expectedOutcomes.join('; ')}.` : '';
+      // #4 — also assert invariants that hold across the journey ("cart count = items added").
+      const invariants = feature.invariants.length ? ` Also assert these invariants hold across the flow: ${feature.invariants.join('; ')}.` : '';
+      description = `${feature.name} — ${journeys}.${outcomes}${invariants}${personaHint}${visualHint}`;
+    }
 
     const gen = await generateScenarioTest({ description, workspace, model, siteMapPages, appContext });
 

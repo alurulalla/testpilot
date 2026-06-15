@@ -9,7 +9,7 @@
  * needs no extra data; Phase 4's featureId tagging makes it exact.
  */
 import { prisma } from '@/lib/prisma';
-import { getAppProfile, hostOf, bestFeatureId, type Criticality } from '@/lib/app-profile';
+import { getAppProfile, hostOf, bestFeatureId, featureIntentHash, type Criticality } from '@/lib/app-profile';
 import { getAppTestCases } from '@/lib/app-testcases';
 
 export interface FeatureHealth {
@@ -24,6 +24,23 @@ export interface FeatureHealth {
   trend: number[];            // recent per-run pass rates (oldest→newest), for a sparkline
   tests: string[];            // the test titles that verify this feature (traceability #9)
   quarantined: boolean;       // excluded from the gate + critical counts (#8)
+  /** Visual-design baseline: how many Figma frames map to this feature, and the
+   *  best (highest) pixel-match score across them — used by #14 (visual coverage
+   *  gaps) and consumed by per-feature generation (#12) to decide whether to add
+   *  a visual screenshot assertion. */
+  visualBaselineCount: number;
+  visualMatchScore: number | null;
+  /** #13 — at least one of this feature's mapped Figma frames changed in the
+   *  latest run. The visual baseline is stale relative to the new design. */
+  visualDrifted: boolean;
+  /** #1 — % of this feature's expected outcomes actually asserted by its tests
+   *  (cached from the last analyze-intent run). null when never audited. */
+  intentCoverage: number | null;
+  /** #2 — number of tests mapped to this feature that assert nothing meaningful. */
+  shallowTestCount: number;
+  /** #5 — the feature's outcomes or its tests changed since the last intent audit;
+   *  the cached intentCoverage % is stale. */
+  intentDrifted: boolean;
 }
 
 export interface FeatureHealthReport {
@@ -33,12 +50,20 @@ export interface FeatureHealthReport {
   untestedCount: number;
   criticalUntested: number;   // untested AND criticality === 'critical' (the urgent gaps)
   criticalFailing: number;    // critical features with a tested-but-below-100% pass rate (#7)
+  /** #14 — features without a visual baseline (no Figma frame mapped). */
+  visualUntestedCount: number;
+  /** #13 — features with a stale visual baseline (a mapped frame changed). */
+  visualDriftedCount: number;
+  /** #5 — features whose intent audit is stale (outcomes or tests changed). */
+  intentDriftedCount: number;
+  /** #2 — features with at least one shallow test (asserts nothing). */
+  shallowTestFeatureCount: number;
 }
 
 const MAX_RUNS = 200;
 
 export async function getFeatureHealth(orgId: string, host: string): Promise<FeatureHealthReport> {
-  const empty: FeatureHealthReport = { host, features: [], totalFeatures: 0, untestedCount: 0, criticalUntested: 0, criticalFailing: 0 };
+  const empty: FeatureHealthReport = { host, features: [], totalFeatures: 0, untestedCount: 0, criticalUntested: 0, criticalFailing: 0, visualUntestedCount: 0, visualDriftedCount: 0, intentDriftedCount: 0, shallowTestFeatureCount: 0 };
 
   const profile = await getAppProfile(orgId, host).catch(() => null);
   if (!profile || profile.features.length === 0) return empty;
@@ -48,8 +73,38 @@ export async function getFeatureHealth(orgId: string, host: string): Promise<Fea
   const cases = tc?.cases ?? [];
 
   // Per-test pass/fail history + latest status, keyed by test TITLE.
-  const sessions = await prisma.session.findMany({ where: { orgId }, select: { id: true, url: true } });
-  const sessionIds = sessions.filter(s => hostOf(s.url) === host).map(s => s.id);
+  // Also pull figmaResult so we can fold visual baselines into the rollup (#14).
+  const sessions = await prisma.session.findMany({
+    where: { orgId },
+    select: { id: true, url: true, figmaResult: true, updatedAt: true },
+    orderBy: { updatedAt: 'asc' },
+  });
+  const appSessions = sessions.filter(s => hostOf(s.url) === host);
+  const sessionIds = appSessions.map(s => s.id);
+
+  // Aggregate Figma comparisons across this app's sessions (later runs win).
+  // designDrifted is taken from the LATEST figmaResult only — older runs are
+  // historical; the current state is what matters for "is the baseline stale?".
+  type Cmp = { featureId?: string; matchScore?: number; designDrifted?: boolean };
+  const figByFeature = new Map<string, { count: number; maxScore: number | null; drifted: boolean }>();
+  const latestWithFigma = [...appSessions].reverse().find(s => {
+    const fr = (s.figmaResult ?? null) as { comparisons?: Cmp[] } | null;
+    return (fr?.comparisons?.length ?? 0) > 0;
+  });
+  for (const s of appSessions) {
+    const fr = (s.figmaResult ?? null) as { comparisons?: Cmp[] } | null;
+    const isLatest = s === latestWithFigma;
+    for (const c of fr?.comparisons ?? []) {
+      if (!c.featureId) continue;
+      const e = figByFeature.get(c.featureId) ?? { count: 0, maxScore: null, drifted: false };
+      e.count++;
+      if (typeof c.matchScore === 'number') {
+        e.maxScore = e.maxScore == null ? c.matchScore : Math.max(e.maxScore, c.matchScore);
+      }
+      if (isLatest && c.designDrifted) e.drifted = true;
+      figByFeature.set(c.featureId, e);
+    }
+  }
   const rows = sessionIds.length
     ? await prisma.testRun.findMany({
         where: { sessionId: { in: sessionIds } },
@@ -97,6 +152,9 @@ export async function getFeatureHealth(orgId: string, host: string): Promise<Fea
 
   const features: FeatureHealth[] = profile.features.map(f => {
     const titles = titlesByFeature.get(f.id) ?? [];
+    // #5 — intent drift: live hash vs. stored hash from last analyze-intent run.
+    const liveHash = featureIntentHash(f.expectedOutcomes, titles);
+    const intentDrifted = f.intentHash != null && f.intentHash !== liveHash;
     let passed = 0, rated = 0, flaky = 0;
     for (const t of titles) {
       const s = stat.get(t.toLowerCase());
@@ -124,6 +182,12 @@ export async function getFeatureHealth(orgId: string, host: string): Promise<Fea
       trend: trend.slice(-TREND_RUNS),
       tests: [...new Set(titles)].slice(0, 50),
       quarantined: f.quarantined,
+      visualBaselineCount: figByFeature.get(f.id)?.count ?? 0,
+      visualMatchScore: figByFeature.get(f.id)?.maxScore ?? null,
+      visualDrifted: figByFeature.get(f.id)?.drifted ?? false,
+      intentCoverage: f.intentCoverage,
+      shallowTestCount: f.shallowTestCount,
+      intentDrifted,
     };
   });
 
@@ -134,5 +198,9 @@ export async function getFeatureHealth(orgId: string, host: string): Promise<Fea
     untestedCount: features.filter(f => f.untested && !f.quarantined).length,
     criticalUntested: features.filter(f => f.untested && f.criticality === 'critical' && !f.quarantined).length,
     criticalFailing: features.filter(f => f.criticality === 'critical' && !f.quarantined && f.passRate != null && f.passRate < 100).length,
+    visualUntestedCount: features.filter(f => !f.quarantined && f.visualBaselineCount === 0).length,
+    visualDriftedCount: features.filter(f => !f.quarantined && f.visualDrifted).length,
+    intentDriftedCount: features.filter(f => !f.quarantined && f.intentDrifted).length,
+    shallowTestFeatureCount: features.filter(f => !f.quarantined && f.shallowTestCount > 0).length,
   };
 }

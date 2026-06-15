@@ -608,9 +608,13 @@ function TimeSavedCard({ host, sessions }: { host: string; sessions: Session[] }
 
 // ── App Profile view — the editable feature-context "brief" ───────────────────
 type PfCrit = 'critical' | 'normal' | 'low';
+interface PfOutcomeTrace { outcome: string; testTitle?: string; assertions: string[] }
 interface PfFeature {
   id: string; name: string; area: string | null;
-  journeys: string[]; expectedOutcomes: string[];
+  journeys: string[]; expectedOutcomes: string[]; negativeOutcomes: string[];
+  invariants: string[];
+  intentCoverage: number | null;
+  outcomeTrace: PfOutcomeTrace[];
   criticality: PfCrit; source: string; confidence: string; quarantined: boolean;
 }
 interface PfData {
@@ -621,7 +625,7 @@ interface PfData {
   source: string; updatedAt: number; features: PfFeature[];
 }
 
-interface PfFeatureHealth { id: string; testCount: number; passRate: number | null; flaky: number; untested: boolean; trend: number[]; tests: string[] }
+interface PfFeatureHealth { id: string; testCount: number; passRate: number | null; flaky: number; untested: boolean; trend: number[]; tests: string[]; visualBaselineCount: number; visualMatchScore: number | null; visualDrifted: boolean; intentCoverage: number | null; shallowTestCount: number; intentDrifted: boolean }
 
 /** Tiny pass-rate sparkline (oldest→newest), coloured by the latest value. */
 function Sparkline({ data }: { data: number[] }) {
@@ -636,7 +640,7 @@ function Sparkline({ data }: { data: number[] }) {
     </svg>
   );
 }
-interface PfHealth { features: PfFeatureHealth[]; totalFeatures: number; untestedCount: number; criticalUntested: number; criticalFailing: number }
+interface PfHealth { features: PfFeatureHealth[]; totalFeatures: number; untestedCount: number; criticalUntested: number; criticalFailing: number; visualUntestedCount: number; visualDriftedCount: number; intentDriftedCount: number; shallowTestFeatureCount: number }
 
 /** Per-feature health pill: pass rate %, flaky, or untested. */
 function HealthBadge({ h }: { h?: PfFeatureHealth }) {
@@ -661,7 +665,7 @@ const CRIT_META: Record<PfCrit, { label: string; cls: string }> = {
 
 function FeatureEditor({ initial, onSave, onCancel, saving }: {
   initial: Partial<PfFeature>;
-  onSave: (f: { id?: string; name: string; area: string | null; criticality: PfCrit; journeys: string[]; expectedOutcomes: string[] }) => void;
+  onSave: (f: { id?: string; name: string; area: string | null; criticality: PfCrit; journeys: string[]; expectedOutcomes: string[]; negativeOutcomes: string[]; invariants: string[] }) => void;
   onCancel: () => void;
   saving: boolean;
 }) {
@@ -670,10 +674,46 @@ function FeatureEditor({ initial, onSave, onCancel, saving }: {
   const [crit, setCrit] = useState<PfCrit>(initial.criticality ?? 'normal');
   const [journeys, setJourneys] = useState((initial.journeys ?? []).join('\n'));
   const [outcomes, setOutcomes] = useState((initial.expectedOutcomes ?? []).join('\n'));
+  const [negatives, setNegatives] = useState((initial.negativeOutcomes ?? []).join('\n'));
+  const [invariants, setInvariants] = useState((initial.invariants ?? []).join('\n'));
+  const [nlText, setNlText] = useState('');
+  const [authoring, setAuthoring] = useState(false);
+  const [authorErr, setAuthorErr] = useState<string | null>(null);
   const lines = (s: string) => s.split('\n').map(x => x.trim()).filter(Boolean);
   const inp = 'text-sm bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:border-violet-500';
+
+  async function authorFromText() {
+    if (!nlText.trim()) return;
+    setAuthoring(true); setAuthorErr(null);
+    const d = await fetch('/api/app-profile/author-intent', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: nlText }),
+    }).then(r => (r.ok ? r.json() : r.json().then(e => Promise.reject(e)))).catch(e => ({ error: e?.error ?? 'failed' }));
+    setAuthoring(false);
+    if (d?.error) { setAuthorErr(d.error); return; }
+    if (d?.name && !name) setName(d.name);
+    if (d?.journeys?.length) setJourneys((d.journeys as string[]).join('\n'));
+    if (d?.expectedOutcomes?.length) setOutcomes((d.expectedOutcomes as string[]).join('\n'));
+    if (d?.negativeOutcomes?.length) setNegatives((d.negativeOutcomes as string[]).join('\n'));
+    if (d?.invariants?.length) setInvariants((d.invariants as string[]).join('\n'));
+    setNlText('');
+  }
+
   return (
     <div className="rounded-xl border border-violet-500/30 bg-zinc-900/60 p-4 space-y-3">
+      {/* #8 NL intent authoring */}
+      <div>
+        <label className="text-[11px] text-zinc-400">Describe the feature in plain English (optional — fills the fields below)</label>
+        <div className="mt-1 flex gap-2">
+          <textarea value={nlText} onChange={e => setNlText(e.target.value)} rows={2}
+            placeholder="e.g. A shopper adds items to the cart and pays. Show a confirmation number. Don't allow checkout with an empty cart."
+            className={`flex-1 text-xs ${inp}`} />
+          <button onClick={() => void authorFromText()} disabled={authoring || !nlText.trim()}
+            className="self-start flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-500 transition disabled:opacity-50">
+            {authoring ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Author with AI
+          </button>
+        </div>
+        {authorErr && <p className="mt-1 text-[11px] text-red-400">{authorErr}</p>}
+      </div>
       <div className="flex flex-wrap gap-2">
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Feature name" className={`flex-1 min-w-[160px] ${inp}`} />
         <input value={area} onChange={e => setArea(e.target.value)} placeholder="Area" className={`w-36 ${inp}`} />
@@ -689,10 +729,18 @@ function FeatureEditor({ initial, onSave, onCancel, saving }: {
         <label className="text-[11px] text-zinc-400">Expected outcomes (one per line)</label>
         <textarea value={outcomes} onChange={e => setOutcomes(e.target.value)} rows={2} className={`mt-1 w-full text-xs ${inp}`} />
       </div>
+      <div>
+        <label className="text-[11px] text-zinc-400">Must NOT happen — negative outcomes (one per line)</label>
+        <textarea value={negatives} onChange={e => setNegatives(e.target.value)} rows={2} className={`mt-1 w-full text-xs ${inp}`} placeholder="e.g. checkout is blocked with an empty cart" />
+      </div>
+      <div>
+        <label className="text-[11px] text-zinc-400">Invariants — rules that hold across journeys (one per line)</label>
+        <textarea value={invariants} onChange={e => setInvariants(e.target.value)} rows={2} className={`mt-1 w-full text-xs ${inp}`} placeholder="e.g. cart count equals items added; total equals sum of item prices" />
+      </div>
       <div className="flex gap-2 justify-end">
         <button onClick={onCancel} className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-300 hover:bg-zinc-800">Cancel</button>
         <button disabled={!name.trim() || saving}
-          onClick={() => onSave({ id: initial.id, name: name.trim(), area: area.trim() || null, criticality: crit, journeys: lines(journeys), expectedOutcomes: lines(outcomes) })}
+          onClick={() => onSave({ id: initial.id, name: name.trim(), area: area.trim() || null, criticality: crit, journeys: lines(journeys), expectedOutcomes: lines(outcomes), negativeOutcomes: lines(negatives), invariants: lines(invariants) })}
           className="text-xs px-3 py-1.5 rounded-lg bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
       </div>
     </div>
@@ -744,18 +792,27 @@ function ProfileView({ host }: { host: string }) {
     return d;
   }
 
-  async function genFeatureTest(featureId: string, name: string) {
+  async function genFeatureTest(featureId: string, name: string, negative = false) {
     setGenId(featureId); setGenMsg(null);
     const d = await fetch('/api/app-profile/generate-feature', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host, featureId }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host, featureId, negative }),
     }).then(r => (r.ok ? r.json() : r.json().then(e => Promise.reject(e)))).catch(e => ({ error: e?.error }));
     setGenId(null);
-    setGenMsg(d?.ok ? `Generated ${d.testFile} for "${name}" — the feature now has coverage.` : `Could not generate: ${d?.error ?? 'error'}`);
-    // Refresh health so the feature flips from "untested" and the button hides.
+    setGenMsg(d?.ok
+      ? `Generated ${d.testFile} (${negative ? 'negative' : 'positive'}) for "${name}".`
+      : `Could not generate: ${d?.error ?? 'error'}`);
     if (d?.ok) {
       fetch(`/api/feature-health?host=${encodeURIComponent(host)}`)
         .then(r => (r.ok ? r.json() : null)).then(setHealth).catch(() => {});
     }
+  }
+
+  async function analyzeIntent() {
+    setGenMsg('Scoring intent coverage…');
+    const d = await fetch('/api/app-profile/analyze-intent', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host }),
+    }).then(r => (r.ok ? r.json() : null)).catch(() => null);
+    if (d) { setData(d); setGenMsg('Intent coverage updated.'); } else setGenMsg('Could not score intent coverage.');
   }
 
   async function toggleQuarantine(featureId: string, quarantined: boolean) {
@@ -824,6 +881,11 @@ function ProfileView({ host }: { host: string }) {
           Auto-rebuilds when your doc, Figma, or crawl changes · edits are preserved
         </p>
         <div className="flex items-center gap-2 shrink-0">
+          <button onClick={() => void analyzeIntent()}
+            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-800 transition"
+            title="Score how many of each feature's expected outcomes its tests actually assert">
+            Analyze intent
+          </button>
           <button onClick={() => void runCritical()}
             className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-800 transition"
             title="Run only the tests that cover CRITICAL features (fast feedback)">
@@ -924,6 +986,21 @@ function ProfileView({ host }: { host: string }) {
             {health.criticalFailing > 0 && <span className="text-red-400"> · {health.criticalFailing} critical feature{health.criticalFailing !== 1 ? 's' : ''} failing</span>}
           </p>
         )}
+        {health && health.totalFeatures > 0 && health.visualUntestedCount < health.totalFeatures && (
+          <p className="mb-2 text-[11px] text-zinc-400">
+            Visual baseline: <span className="text-zinc-200">{health.totalFeatures - health.visualUntestedCount}/{health.totalFeatures}</span> features mapped to a Figma frame
+            {health.visualUntestedCount > 0 && <span className="text-amber-400"> · {health.visualUntestedCount} no visual</span>}
+            {health.visualDriftedCount > 0 && <span className="text-sky-400"> · {health.visualDriftedCount} design drifted</span>}
+          </p>
+        )}
+        {health && (health.intentDriftedCount > 0 || health.shallowTestFeatureCount > 0) && (
+          <p className="mb-2 text-[11px] text-zinc-400">
+            Intent audit:
+            {health.intentDriftedCount > 0 && <span className="text-sky-400"> {health.intentDriftedCount} drifted (re-run Analyze intent)</span>}
+            {health.intentDriftedCount > 0 && health.shallowTestFeatureCount > 0 && ' · '}
+            {health.shallowTestFeatureCount > 0 && <span className="text-amber-400">{health.shallowTestFeatureCount} feature{health.shallowTestFeatureCount !== 1 ? 's' : ''} with shallow tests</span>}
+          </p>
+        )}
         {genMsg && <p className="mb-2 text-[11px] text-emerald-400">{genMsg}</p>}
         <div className="space-y-2">
           {editId === 'new' && (
@@ -932,24 +1009,128 @@ function ProfileView({ host }: { host: string }) {
           {data.features.map(f => editId === f.id ? (
             <FeatureEditor key={f.id} initial={f} saving={saving} onCancel={() => setEditId(null)} onSave={async nf => { await patch({ feature: nf }); setEditId(null); }} />
           ) : (
-            <div key={f.id} className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
-              <div className="flex items-start gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-zinc-100">{f.name}</span>
-                    {f.area && <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">{f.area}</span>}
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ${CRIT_META[f.criticality].cls}`}>{CRIT_META[f.criticality].label}</span>
-                    {f.source === 'user' && <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-300 border border-violet-500/30">edited</span>}
-                    {f.source === 'crawl' && <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30">proposed</span>}
-                    {f.quarantined && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">quarantined</span>}
-                    {!f.quarantined && <HealthBadge h={healthById[f.id]} />}
-                    {!f.quarantined && <Sparkline data={healthById[f.id]?.trend ?? []} />}
-                  </div>
+            <div key={f.id} className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 space-y-2">
+              {/* Top row: identity on the left, actions on the right — never wraps awkwardly. */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium text-zinc-100">{f.name}</span>
+                  {f.area && <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">{f.area}</span>}
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full border ${CRIT_META[f.criticality].cls}`}>{CRIT_META[f.criticality].label}</span>
+                  {f.source === 'user' && <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-300 border border-violet-500/30">edited</span>}
+                  {f.source === 'crawl' && <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30">proposed</span>}
+                  {f.quarantined && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">quarantined</span>}
+                </div>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  {/* Untested → offer generation; covered → offer a feature-scoped run (#6). */}
+                  {healthById[f.id]?.untested !== false ? (
+                    <button onClick={() => void genFeatureTest(f.id, f.name)} disabled={genId === f.id}
+                      className="flex items-center gap-1 text-[11px] text-violet-400 hover:text-violet-300 hover:bg-zinc-800/60 px-2 py-1 rounded transition disabled:opacity-50"
+                      title="Generate an e2e test from this feature's journeys + expected outcomes">
+                      {genId === f.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                      {genId === f.id ? 'Generating…' : 'Generate'}
+                    </button>
+                  ) : (
+                    <button onClick={() => void runFeature(f.id, f.name)}
+                      className="text-[11px] text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800/60 px-2 py-1 rounded transition"
+                      title="Run only this feature's tests">Run</button>
+                  )}
+                  {f.negativeOutcomes.length > 0 && (
+                    <button onClick={() => void genFeatureTest(f.id, f.name, true)} disabled={genId === f.id}
+                      className="text-[11px] text-amber-400 hover:text-amber-300 hover:bg-zinc-800/60 px-2 py-1 rounded transition disabled:opacity-50"
+                      title="Generate a negative test (assert the must-not cases are prevented)">
+                      Generate negative
+                    </button>
+                  )}
+                  <button onClick={() => void toggleQuarantine(f.id, !f.quarantined)}
+                    className="text-[11px] text-zinc-400 hover:text-amber-400 hover:bg-zinc-800/60 px-2 py-1 rounded transition"
+                    title={f.quarantined ? 'Restore — include in gate + counts' : 'Quarantine — exclude flaky/low-value feature from the gate + counts'}>
+                    {f.quarantined ? 'Restore' : 'Quarantine'}
+                  </button>
+                  <button onClick={() => setEditId(f.id)} className="text-[11px] text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 px-2 py-1 rounded transition">Edit</button>
+                  <button onClick={() => { if (window.confirm(`Delete feature "${f.name}"?`)) void patch({ deleteFeatureId: f.id }); }}
+                    className="text-zinc-400 hover:text-red-400 hover:bg-zinc-800/60 p-1 rounded transition" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
+                </div>
+              </div>
+
+              {/* Metrics row: health pills + sparkline + drift signals. Their own breathing room. */}
+              {(!f.quarantined || f.intentCoverage != null) && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {!f.quarantined && <HealthBadge h={healthById[f.id]} />}
+                  {!f.quarantined && <Sparkline data={healthById[f.id]?.trend ?? []} />}
+                  {!f.quarantined && (healthById[f.id]?.visualBaselineCount ?? 0) > 0 && healthById[f.id]!.visualMatchScore != null && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border tabular-nums ${
+                      healthById[f.id]!.visualMatchScore! >= 80 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+                      : healthById[f.id]!.visualMatchScore! >= 50 ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+                      : 'text-red-400 bg-red-500/10 border-red-500/30'}`}
+                      title="Best Figma pixel-match across the frames mapped to this feature">
+                      visual {healthById[f.id]!.visualMatchScore}%
+                    </span>
+                  )}
+                  {!f.quarantined && healthById[f.id]?.visualDrifted && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30"
+                      title="A Figma frame mapped to this feature changed since the last run — review the visual baseline">
+                      design drifted
+                    </span>
+                  )}
+                  {f.intentCoverage != null && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                      f.intentCoverage >= 80 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+                      : f.intentCoverage >= 40 ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+                      : 'text-red-400 bg-red-500/10 border-red-500/30'}`}
+                      title="Share of this feature's expected outcomes that its tests actually assert">
+                      intent {f.intentCoverage}%
+                    </span>
+                  )}
+                  {!f.quarantined && healthById[f.id]?.intentDrifted && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30"
+                      title="The feature's outcomes or its tests changed since the last Analyze intent — re-run to refresh the intent % score">
+                      intent drifted
+                    </span>
+                  )}
+                  {!f.quarantined && (healthById[f.id]?.shallowTestCount ?? 0) > 0 && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                      title={`${healthById[f.id]!.shallowTestCount} test(s) map to this feature but assert nothing — they verify the feature exists, not that it works`}>
+                      {healthById[f.id]!.shallowTestCount} shallow test{healthById[f.id]!.shallowTestCount !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Body */}
+              <div>
+                <div className="min-w-0">
                   {f.journeys.length > 0 && (
                     <ul className="mt-2 space-y-0.5">{f.journeys.map((j, i) => (<li key={i} className="text-xs text-zinc-300">→ {j}</li>))}</ul>
                   )}
-                  {f.expectedOutcomes.length > 0 && (
+                  {f.expectedOutcomes.length > 0 && f.outcomeTrace.length === 0 && (
                     <p className="mt-1.5 text-[11px] text-zinc-400">Expected: {f.expectedOutcomes.join('; ')}</p>
+                  )}
+                  {f.outcomeTrace.length > 0 && (
+                    <div className="mt-1.5 space-y-0.5">
+                      <p className="text-[10px] uppercase tracking-wide text-zinc-400">Expected outcomes &amp; what verifies them</p>
+                      <ul className="space-y-0.5">
+                        {f.outcomeTrace.map((t, i) => (
+                          <li key={i} className="text-[11px] text-zinc-300">
+                            {t.assertions.length > 0
+                              ? <span className="text-emerald-400">✓</span>
+                              : <span className="text-red-400">✗</span>}
+                            {' '}{t.outcome}
+                            {t.assertions.length > 0 && (
+                              <span className="block ml-4 text-[10px] text-zinc-400 font-mono">
+                                {t.testTitle ? `${t.testTitle} → ` : ''}{t.assertions[0]}
+                                {t.assertions.length > 1 && ` (+${t.assertions.length - 1})`}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {f.negativeOutcomes.length > 0 && (
+                    <p className="mt-1 text-[11px] text-zinc-400"><span className="text-amber-400">Must not:</span> {f.negativeOutcomes.join('; ')}</p>
+                  )}
+                  {f.invariants.length > 0 && (
+                    <p className="mt-1 text-[11px] text-zinc-400"><span className="text-sky-400">Invariants:</span> {f.invariants.join('; ')}</p>
                   )}
                   {(healthById[f.id]?.tests?.length ?? 0) > 0 && (
                     <p className="mt-1.5 text-[10px] text-zinc-400">
@@ -958,29 +1139,6 @@ function ProfileView({ host }: { host: string }) {
                       {healthById[f.id]!.tests.length > 3 ? ` +${healthById[f.id]!.tests.length - 3} more` : ''}
                     </p>
                   )}
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  {/* Untested → offer generation; covered → offer a feature-scoped run (#6). */}
-                  {healthById[f.id]?.untested !== false ? (
-                    <button onClick={() => void genFeatureTest(f.id, f.name)} disabled={genId === f.id}
-                      className="flex items-center gap-1 text-[11px] text-violet-400 hover:text-violet-300 px-2 py-1 disabled:opacity-50"
-                      title="Generate an e2e test from this feature's journeys + expected outcomes">
-                      {genId === f.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                      {genId === f.id ? 'Generating…' : 'Generate test'}
-                    </button>
-                  ) : (
-                    <button onClick={() => void runFeature(f.id, f.name)}
-                      className="text-[11px] text-zinc-400 hover:text-zinc-200 px-2 py-1"
-                      title="Run only this feature's tests">Run</button>
-                  )}
-                  <button onClick={() => void toggleQuarantine(f.id, !f.quarantined)}
-                    className="text-[11px] text-zinc-400 hover:text-amber-400 px-2 py-1"
-                    title={f.quarantined ? 'Restore — include in gate + counts' : 'Quarantine — exclude flaky/low-value feature from the gate + counts'}>
-                    {f.quarantined ? 'Restore' : 'Quarantine'}
-                  </button>
-                  <button onClick={() => setEditId(f.id)} className="text-[11px] text-zinc-400 hover:text-zinc-200 px-2 py-1">Edit</button>
-                  <button onClick={() => { if (window.confirm(`Delete feature "${f.name}"?`)) void patch({ deleteFeatureId: f.id }); }}
-                    className="text-zinc-400 hover:text-red-400 p-1" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
                 </div>
               </div>
             </div>

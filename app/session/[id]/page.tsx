@@ -2380,6 +2380,64 @@ export default function SessionPage() {
                               </span>
                             </div>
 
+                            {/* ── Explainable score (#10 + #15) · feature link (#9) · semantic check (#11) · drift (#13) ── */}
+                            {(c.explanation || (c.regions?.length ?? 0) > 0 || c.featureName || (c.missingDesignText?.length ?? 0) > 0 || c.designDrifted) && (
+                              <div className="px-4 py-2.5 border-b border-zinc-800 bg-zinc-950/40 space-y-1.5">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {c.featureName && (
+                                    <p className="text-[10px] text-zinc-400">
+                                      Verifies feature: <span className="text-violet-400 font-medium">{c.featureName}</span>
+                                    </p>
+                                  )}
+                                  {c.designDrifted && (
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30"
+                                      title="This Figma frame's bytes changed since the last run — the previous baseline is stale.">
+                                      design drifted
+                                    </span>
+                                  )}
+                                </div>
+                                {c.explanation && (
+                                  <p className="text-xs text-zinc-300 leading-relaxed">{c.explanation}</p>
+                                )}
+                                {(c.regions?.length ?? 0) > 0 && (
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="text-[10px] uppercase tracking-wide text-zinc-400">Worst regions:</span>
+                                    {c.regions!.slice(0, 4).filter(r => r.divergedPct >= 10).map(r => {
+                                      const sim = Math.round(r.ssim * 100);
+                                      const cls = sim >= 80 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+                                        : sim >= 50 ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+                                        : 'text-red-400 bg-red-500/10 border-red-500/30';
+                                      return (
+                                        <span key={r.name} className={`text-[10px] px-2 py-0.5 rounded-full border tabular-nums ${cls}`}
+                                          title={`${r.divergedPct}% of blocks in the ${r.name} region differ from the design`}>
+                                          {r.name} · {sim}%
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                {(c.missingDesignText?.length ?? 0) > 0 && (
+                                  <div className="space-y-0.5">
+                                    <p className="text-[10px] uppercase tracking-wide text-amber-400">
+                                      Design text missing on the live page ({c.missingDesignText!.length})
+                                    </p>
+                                    <ul className="space-y-0.5">
+                                      {c.missingDesignText!.slice(0, 5).map((m, mi) => (
+                                        <li key={mi} className="text-[11px] text-zinc-300">
+                                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 mr-1.5">{m.kind}</span>
+                                          design: <span className="text-zinc-200 font-medium">&quot;{m.expected}&quot;</span>
+                                          {m.closestLive && <span className="text-zinc-400"> · live: &quot;{m.closestLive}&quot; (renamed?)</span>}
+                                        </li>
+                                      ))}
+                                      {c.missingDesignText!.length > 5 && (
+                                        <li className="text-[10px] text-zinc-400">+{c.missingDesignText!.length - 5} more</li>
+                                      )}
+                                    </ul>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
                             {/* ── Three-column image diff: Figma | Live | Diff ── */}
                             {(() => {
                               const cols = [

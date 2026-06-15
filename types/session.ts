@@ -131,6 +131,44 @@ export interface FigmaComparison {
   discrepancies?: FigmaDiscrepancy[];
   /** 0-100 match score (100 = no discrepancies found) */
   matchScore?: number;
+  /** Per-region SSIM scores so the bare number becomes actionable
+   *  ("top-right diverges") — see lib/figma-client.ts:summarizeFigmaRegions. */
+  regions?: FigmaRegionScore[];
+  /** Human-readable, deterministic summary of what differs and where. */
+  explanation?: string;
+  /** Deterministic semantic check (#11): labels/headings/buttons the design
+   *  defines that don't appear on the live page (case-insensitive, exact + near).
+   *  Catches "design says 'Place Order' but app says 'Submit'" — which pixels miss. */
+  missingDesignText?: FigmaMissingText[];
+  /** Feature this frame maps to (visual baseline #9) — links visual regression
+   *  back to the feature spine so it can be weighted by criticality. */
+  featureId?: string;
+  featureName?: string;
+  /** sha256 of the downloaded Figma PNG bytes — used by #13 to detect when the
+   *  design itself changed between runs (frame edited, not the app). */
+  frameHash?: string;
+  /** True when this frame's hash changed since the last run — visual baselines
+   *  derived from the old design are stale and should be reviewed. */
+  designDrifted?: boolean;
+}
+
+/** A design text/label the live page doesn't render (semantic mismatch). */
+export interface FigmaMissingText {
+  kind: 'heading' | 'button' | 'input-label' | 'text';
+  expected: string;
+  /** The closest text actually rendered (when one was found nearby) — helps
+   *  identify renames like "Place Order" → "Submit". */
+  closestLive?: string;
+}
+
+/** SSIM score for one of nine named regions (3×3 grid). */
+export interface FigmaRegionScore {
+  /** "top-left" | "top-center" | "top-right" | "middle-left" | ... | "bottom-right" */
+  name: string;
+  /** Region's mean SSIM 0–1 (higher = closer match). */
+  ssim: number;
+  /** Percentage of the region's blocks that diverged (SSIM < 0.85). */
+  divergedPct: number;
 }
 
 export interface FigmaResult {

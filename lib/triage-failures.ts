@@ -328,7 +328,10 @@ ${docSection}
 
 ## Application URL
 ${appUrl}
-${appContext ? `\n${appContext}\nUse APP CONTEXT to judge INTENT: if a failing test contradicts a feature's expected outcome AND docs support it, that points to app_bug; if the test just mis-targets the app, that's test_bug.\n` : ''}
+${appContext ? `\n${appContext}\nUse APP CONTEXT to judge INTENT (#6):\n` +
+  `- A failure that directly contradicts a [critical] feature's expected outcome AND has doc support → app_bug, confidence HIGH.\n` +
+  `- A failure on a [low] feature or one without doc support → prefer test_bug or ambiguous unless evidence is strong.\n` +
+  `- When you cite app_bug, name the specific expected outcome being violated in the reasoning.\n` : ''}
 ## Clusters
 ${blocks}
 

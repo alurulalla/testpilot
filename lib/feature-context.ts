@@ -33,7 +33,8 @@ export function renderFeatureContext(profile: AppProfileRecord, opts?: { maxFeat
     for (const f of profile.features.slice(0, maxF)) {
       const j = f.journeys.slice(0, 2).join('; ');
       const o = f.expectedOutcomes.slice(0, 2).join('; ');
-      lines.push(`- [${f.criticality}] ${f.name}${f.area ? ` (${f.area})` : ''}${j ? `: ${j}` : ''}${o ? ` → expected: ${o}` : ''}`);
+      const inv = f.invariants.slice(0, 2).join('; ');
+      lines.push(`- [${f.criticality}] ${f.name}${f.area ? ` (${f.area})` : ''}${j ? `: ${j}` : ''}${o ? ` → expected: ${o}` : ''}${inv ? ` · invariants: ${inv}` : ''}`);
     }
   }
   return lines.length > 1 ? lines.join('\n') : '';

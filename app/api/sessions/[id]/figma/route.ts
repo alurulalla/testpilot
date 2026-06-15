@@ -65,6 +65,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         (line) => addLog(id, line, 'info'),
         chatModel,
         session.figmaFrameMap,
+        { orgId: session.orgId, host: new URL(session.url).hostname.replace(/^www\./, '') },
       );
 
       setFigmaResult(id, result);
