@@ -250,6 +250,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               addLog(id, '  Phase 1.4: no additional pages found via clicking.', 'info');
             }
           } catch (e) {
+            if (e instanceof StopError) throw e;
             addLog(id, `  Phase 1.4 error (non-fatal): ${e instanceof Error ? e.message : String(e)}`, 'info');
           }
           if (stopped('click discovery')) return;
@@ -432,6 +433,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           addLog(id, '  Phase 1.9: no features synthesized (crawl may be too thin).', 'info');
         }
       } catch (e) {
+        if (e instanceof StopError) throw e;
         addLog(id, `  Phase 1.9 error (non-fatal): ${e instanceof Error ? e.message : String(e)}`, 'info');
       }
       if (stopped('feature synthesis')) return;
@@ -442,8 +444,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // injected into generation / triage / self-heal below.
       try {
         const profileExisted = await appProfileExists(session.orgId, appHost);
-        // Figma screen names feed the profile synthesis (design intent). The
-        // profile auto-rebuilds when the doc, figma, or crawl size changes.
         const frameMap = (getCachedSession(id)?.figmaFrameMap ?? null) as Record<string, string> | null;
         const figmaContext = frameMap && Object.keys(frameMap).length
           ? `Figma screens: ${Object.keys(frameMap).join(', ')}`
@@ -454,25 +454,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           siteMap,
           docContent: getCachedSession(id)?.contextDoc ?? null,
           figmaContext,
+          discoveredFeatures: discoveredFeatures.length ? discoveredFeatures : undefined,
           model: chatModel,
           onProgress: (line) => addLog(id, line, 'info'),
         });
-        // Phase 4 write-back (self-improving loop):
-        // (a) DRIFT — on subsequent crawls, fold newly-discovered capabilities into
-        //     the existing profile as proposals for review (skip the build run to
-        //     avoid duplicating what the build just synthesized).
         if (profileExisted && discoveredFeatures.length) {
           const added = await mergeDiscoveredFeatures(session.orgId, appHost, discoveredFeatures);
           if (added > 0) addLog(id, `  ↳ ${added} new feature(s) proposed from this crawl (review in Profile).`, 'info');
         }
-        // (b) TAGGING — link stored tests to features (area → featureId). Covers
-        //     generated AND recorded tests once they have a use-case description.
         const tagged = await tagTestsToFeatures(session.orgId, appHost);
         if (tagged > 0) addLog(id, `  ↳ Tagged ${tagged} test(s) to their feature.`, 'info');
-
         appContext = await getFeatureContext(session.orgId, appHost);
       } catch (e) {
-        addLog(id, `  App profile build skipped (non-fatal): ${e instanceof Error ? e.message : String(e)}`, 'info');
+        if (e instanceof StopError) throw e; // re-throw so the pipeline stops cleanly
+        addLog(id, `  ⚠ App profile build failed: ${e instanceof Error ? e.message : String(e)}`, 'info');
       }
       if (stopped('app profile')) return;
 
