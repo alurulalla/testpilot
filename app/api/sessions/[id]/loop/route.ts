@@ -29,11 +29,13 @@ import { runNavClickExplorer, runBroadClickExplorer } from '@/lib/pilot/nav-clic
 import { discoverSelectors } from '@/lib/pilot/discover-selectors';
 import { synthesizeFeatures } from '@/lib/synthesize-features';
 import { ensureAppProfile, hostOf, appProfileExists, mergeDiscoveredFeatures, tagTestsToFeatures } from '@/lib/app-profile';
+import { withTokenCounter } from '@/lib/token-counter';
 import { getFeatureContext } from '@/lib/feature-context';
 import { snapshotTestFiles } from '@/lib/session-files';
 import { findPriorSuite, copySuiteInto, currentFeatureNames } from '@/lib/suite-reuse';
 import { recordTestRun, attachTriageToRun, attachFixToRun } from '@/lib/test-runs';
 import { writeFileSync, existsSync, readFileSync } from 'fs';
+import { prisma } from '@/lib/prisma';
 import path from 'path';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -154,7 +156,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       const llmConfig = await getOrgLlmConfig(session.orgId);
       const baseModel = await createModelFromConfig(llmConfig);
-      const chatModel = withRateLimit(baseModel);
+      const chatModel = withTokenCounter(withRateLimit(baseModel));
       await workspace.installDeps();
 
       // ── Imported project fast path ──────────────────────────────────────────
@@ -779,6 +781,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
 
       setStatus(id, 'idle');
+      // Persist token usage accumulated across all LLM calls in this session.
+      const usage = chatModel.getUsage();
+      if (usage.input > 0 || usage.output > 0) {
+        const totalK = ((usage.input + usage.output) / 1000).toFixed(1);
+        addLog(id, `🪙 LLM tokens used: ${usage.input.toLocaleString()} in · ${usage.output.toLocaleString()} out · ${usage.cacheRead.toLocaleString()} cache-read (${totalK}k total)`, 'info');
+        await prisma.session.update({ where: { id }, data: { tokenUsage: usage as object } }).catch(() => {});
+      }
       addLog(id, '✅ Session complete.', 'success');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

@@ -15,7 +15,7 @@
  *    to 16 384 (same as before) when not specified.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import type { ChatMessage, ChatModel, MessageContent } from './types';
+import type { ChatMessage, ChatModel, InvokeOptions, MessageContent } from './types';
 
 export interface CreateAnthropicModelOptions {
   apiKey: string;
@@ -67,7 +67,7 @@ export async function createAnthropicModel(
 
     async invoke(
       messages: ChatMessage[],
-      invokeOptions?: { maxTokens?: number; temperature?: number },
+      invokeOptions?: InvokeOptions,
     ): Promise<string> {
       const maxTokens = invokeOptions?.maxTokens ?? 16_384;
       const temperature = invokeOptions?.temperature;
@@ -115,6 +115,12 @@ export async function createAnthropicModel(
       if (block.type !== 'text') {
         throw new Error(`Unexpected Anthropic response block type: ${block.type}`);
       }
+      invokeOptions?.onUsage?.({
+        input:     response.usage.input_tokens,
+        output:    response.usage.output_tokens,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        cacheRead: (response.usage as any).cache_read_input_tokens ?? 0,
+      });
       return block.text;
     },
   };

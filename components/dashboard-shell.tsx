@@ -438,18 +438,36 @@ function SessionDetail({ session: s, membersMap, domainHistory, domainCreatedAts
         </div>
       )}
 
-      {/* ── Iterations ── */}
-      {s.iteration > 0 && (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 px-5 py-4 flex items-center gap-3">
-          <Layers3 className="h-4 w-4 text-zinc-400 shrink-0" />
-          <div>
-            <p className="text-xs font-medium text-zinc-300">
-              {s.iteration} self-heal iteration{s.iteration !== 1 ? 's' : ''}
-            </p>
-            <p className="text-[11px] text-zinc-400 mt-0.5">
-              TestPilot automatically fixed failing tests across {s.iteration} round{s.iteration !== 1 ? 's' : ''}.
-            </p>
-          </div>
+      {/* ── Iterations + token usage ── */}
+      {(s.iteration > 0 || s.tokenUsage) && (
+        <div className="flex flex-wrap gap-3">
+          {s.iteration > 0 && (
+            <div className="flex-1 min-w-0 rounded-xl border border-zinc-800 bg-zinc-900/60 px-5 py-4 flex items-center gap-3">
+              <Layers3 className="h-4 w-4 text-zinc-400 shrink-0" />
+              <div>
+                <p className="text-xs font-medium text-zinc-300">
+                  {s.iteration} self-heal iteration{s.iteration !== 1 ? 's' : ''}
+                </p>
+                <p className="text-[11px] text-zinc-400 mt-0.5">
+                  TestPilot automatically fixed failing tests across {s.iteration} round{s.iteration !== 1 ? 's' : ''}.
+                </p>
+              </div>
+            </div>
+          )}
+          {s.tokenUsage && (
+            <div className="rounded-xl border border-violet-500/20 bg-violet-500/[0.05] px-5 py-4 flex items-center gap-3">
+              <Zap className="h-4 w-4 text-violet-400 shrink-0" />
+              <div>
+                <p className="text-xs font-medium text-zinc-300">
+                  {fmtTokens(s.tokenUsage.input + s.tokenUsage.output)} tokens
+                </p>
+                <p className="text-[11px] text-zinc-400 mt-0.5">
+                  {fmtTokens(s.tokenUsage.input)} in · {fmtTokens(s.tokenUsage.output)} out
+                  {s.tokenUsage.cacheRead > 0 ? ` · ${fmtTokens(s.tokenUsage.cacheRead)} cached` : ''}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -566,13 +584,16 @@ function TimeSavedCard({ host, sessions }: { host: string; sessions: Session[] }
     return { executions, failures, runCount: (runs ?? []).length };
   }, [runs]);
 
+  // Wait for run history before showing the card — partial data (authoring only)
+  // would flash a low number and then jump when runs load.
+  if (suiteSize === 0 && runs === null) return null;
+  if (suiteSize === 0 && exec.executions === 0) return null;
+
   const authorMin = suiteSize * MIN_AUTHOR;
   const execMin   = exec.executions * MIN_EXEC;
   const triageMin = exec.failures * MIN_TRIAGE;
   const hours = (authorMin + execMin + triageMin) / 60;
   const days  = hours / 8;
-
-  if (suiteSize === 0 && exec.executions === 0) return null; // nothing to estimate yet
   const fmtH = hours >= 10 ? Math.round(hours).toString() : hours.toFixed(1);
 
   return (
@@ -581,27 +602,79 @@ function TimeSavedCard({ host, sessions }: { host: string; sessions: Session[] }
         <Clock className="h-4 w-4 text-emerald-400" />
         <p className="text-xs font-semibold text-zinc-300 uppercase tracking-widest">Human time saved</p>
       </div>
-      <p className="text-3xl font-bold text-emerald-400 tabular-nums">
-        ≈ {fmtH} <span className="text-lg font-semibold text-emerald-400">hours</span>
-      </p>
-      {hours >= 8 && (
-        <p className="text-xs text-zinc-400 mt-0.5">about {days.toFixed(1)} work-day{days >= 2 ? 's' : ''} of manual QA</p>
-      )}
-
-      <div className="mt-4 space-y-1 text-[11px] text-zinc-300">
-        <SavedRow label={`Authoring ${suiteSize} test${suiteSize !== 1 ? 's' : ''}`} mins={authorMin} />
-        {runs === null ? (
-          <p className="text-zinc-400">Loading run history…</p>
-        ) : (
-          <>
+      {runs === null ? (
+        <div className="flex items-center gap-2 py-2">
+          <Loader2 className="h-4 w-4 text-emerald-400 animate-spin" />
+          <span className="text-sm text-zinc-400">Calculating…</span>
+        </div>
+      ) : (
+        <>
+          <p className="text-3xl font-bold text-emerald-400 tabular-nums">
+            ≈ {fmtH} <span className="text-lg font-semibold text-emerald-400">hours</span>
+          </p>
+          {hours >= 8 && (
+            <p className="text-xs text-zinc-400 mt-0.5">about {days.toFixed(1)} work-day{days >= 2 ? 's' : ''} of manual QA</p>
+          )}
+          <div className="mt-4 space-y-1 text-[11px] text-zinc-300">
+            <SavedRow label={`Authoring ${suiteSize} test${suiteSize !== 1 ? 's' : ''}`} mins={authorMin} />
             <SavedRow label={`Running ${exec.executions} checks across ${exec.runCount} run${exec.runCount !== 1 ? 's' : ''}`} mins={execMin} />
             <SavedRow label={`Triaging ${exec.failures} failure${exec.failures !== 1 ? 's' : ''}`} mins={triageMin} />
-          </>
+          </div>
+          <p className="mt-3 text-[11px] text-zinc-400">
+            Estimate · {MIN_AUTHOR} min to author · {MIN_EXEC} min per manual run · {MIN_TRIAGE} min per triage
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── LLM Token usage card ──────────────────────────────────────────────────────
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function TokenUsageCard({ sessions }: { sessions: Session[] }) {
+  const agg = useMemo(() => {
+    let input = 0, output = 0, cacheRead = 0;
+    for (const s of sessions) {
+      if (s.tokenUsage) {
+        input     += s.tokenUsage.input;
+        output    += s.tokenUsage.output;
+        cacheRead += s.tokenUsage.cacheRead;
+      }
+    }
+    return { input, output, cacheRead, total: input + output };
+  }, [sessions]);
+
+  if (agg.total === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-violet-500/20 bg-violet-500/[0.05] p-5">
+      <div className="flex items-center gap-2 mb-2">
+        <Zap className="h-4 w-4 text-violet-400" />
+        <p className="text-xs font-semibold text-zinc-300 uppercase tracking-widest">LLM tokens used</p>
+      </div>
+      <p className="text-3xl font-bold text-violet-400 tabular-nums">{fmtTokens(agg.total)}</p>
+      <p className="text-xs text-zinc-400 mt-0.5">across {sessions.filter(s => s.tokenUsage).length} session{sessions.filter(s => s.tokenUsage).length !== 1 ? 's' : ''}</p>
+      <div className="mt-3 space-y-1 text-[11px] text-zinc-300">
+        <div className="flex items-center justify-between gap-3">
+          <span>Input (prompt)</span>
+          <span className="tabular-nums text-zinc-200 font-medium">{fmtTokens(agg.input)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span>Output (completion)</span>
+          <span className="tabular-nums text-zinc-200 font-medium">{fmtTokens(agg.output)}</span>
+        </div>
+        {agg.cacheRead > 0 && (
+          <div className="flex items-center justify-between gap-3">
+            <span>Cache hits (saved)</span>
+            <span className="tabular-nums text-emerald-400 font-medium">{fmtTokens(agg.cacheRead)}</span>
+          </div>
         )}
       </div>
-      <p className="mt-3 text-[11px] text-zinc-400">
-        Estimate · {MIN_AUTHOR} min to author · {MIN_EXEC} min per manual run · {MIN_TRIAGE} min per triage
-      </p>
     </div>
   );
 }
@@ -854,21 +927,34 @@ function ProfileView({ host }: { host: string }) {
   }
 
   async function rebuild() {
-    setRebuilding(true);
-    const d = await fetch('/api/app-profile', {
+    setRebuilding(true); setGenMsg(null);
+    const res = await fetch('/api/app-profile', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host }),
-    }).then(r => (r.ok ? r.json() : null)).catch(() => null);
-    if (d) setData(d);
-    fetch(`/api/feature-health?host=${encodeURIComponent(host)}`)
-      .then(r => (r.ok ? r.json() : null)).then(setHealth).catch(() => {});
+    }).catch(() => null);
+    const d = res ? (res.ok ? await res.json().catch(() => null) : await res.json().catch(() => null)) : null;
+    if (res?.ok && d) {
+      setData(d);
+      fetch(`/api/feature-health?host=${encodeURIComponent(host)}`)
+        .then(r => (r.ok ? r.json() : null)).then(setHealth).catch(() => {});
+    } else {
+      setGenMsg(d?.error ?? 'Profile build failed — check that an LLM API key is configured in Settings.');
+    }
     setRebuilding(false);
   }
 
   if (loading) return <div className="flex items-center justify-center py-16"><Loader2 className="h-5 w-5 text-zinc-400 animate-spin" /></div>;
   if (!data) return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-8 text-center">
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-8 text-center space-y-3">
       <p className="text-sm text-zinc-300 mb-1">No profile yet</p>
-      <p className="text-xs text-zinc-400">The app brief — purpose, who uses it, and its features — is built automatically the next time this app is crawled.</p>
+      <p className="text-xs text-zinc-400">The app brief is built automatically during a crawl, or you can build it now from the last crawl result.</p>
+      {genMsg && <p className="text-xs text-red-400">{genMsg}</p>}
+      <button
+        onClick={() => { setGenMsg(null); void rebuild(); }}
+        disabled={rebuilding}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition"
+      >
+        {rebuilding ? <><Loader2 className="h-3 w-3 animate-spin" /> Building…</> : 'Build profile'}
+      </button>
     </div>
   );
 
@@ -1238,8 +1324,11 @@ function AppConsolidated({
         <AreasView host={host} />
       ) : (
       <>
-      {/* Headline impact metric — manual-QA hours this app's automation saved */}
-      <TimeSavedCard host={host} sessions={sessions} />
+      {/* Headline impact metrics */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <TimeSavedCard host={host} sessions={sessions} />
+        <TokenUsageCard sessions={sessions} />
+      </div>
 
       {/* Aggregate stat cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

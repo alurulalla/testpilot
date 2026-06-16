@@ -21,6 +21,13 @@ export interface ChatMessage {
   content: MessageContent;
 }
 
+/** Token counts returned by one LLM invocation. */
+export interface TokenUsage {
+  input: number;
+  output: number;
+  cacheRead: number;  // prompt-cache hits (Anthropic only; 0 for others)
+}
+
 /** Options forwarded to the underlying model on a single invoke call. */
 export interface InvokeOptions {
   /**
@@ -37,6 +44,8 @@ export interface InvokeOptions {
    * low value so the same app yields a consistent suite run to run.
    */
   temperature?: number;
+  /** Called after each successful invocation with the actual token counts. */
+  onUsage?: (usage: TokenUsage) => void;
 }
 
 /** Minimal chat-completion surface — provider-agnostic. */

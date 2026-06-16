@@ -94,6 +94,13 @@ export async function createOpenAICompatModel(
       });
       const content = response.choices[0]?.message?.content;
       if (!content) throw new Error(`${modelName} returned an empty response`);
+      if (response.usage) {
+        invokeOptions?.onUsage?.({
+          input:     response.usage.prompt_tokens,
+          output:    response.usage.completion_tokens,
+          cacheRead: 0,
+        });
+      }
       return content;
     },
   };

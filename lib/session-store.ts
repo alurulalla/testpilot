@@ -80,6 +80,7 @@ function dbToSession(row: DbRow, logs: LogEntry[] = []): Session {
     importedProject: (row.importedProject  ?? null) as ImportedProject   | null,
     coverageAnalysis:(row.coverageAnalysis ?? null) as CoverageAnalysis  | null,
     userFlows:       ((row.userFlows       as UserFlow[] | null) ?? []),
+    tokenUsage:      (row.tokenUsage       ?? null) as { input: number; output: number; cacheRead: number } | null,
     logs,
     createdAt: row.createdAt.getTime(),
     updatedAt: row.updatedAt.getTime(),
@@ -91,7 +92,7 @@ function dbToSession(row: DbRow, logs: LogEntry[] = []): Session {
 const JSON_FIELDS = [
   'siteMap', 'figmaResult', 'testFiles', 'testResult', 'fixResult',
   'triageResult', 'scenarioResult', 'importedProject', 'coverageAnalysis',
-  'userFlows', 'figmaFrameMap',
+  'userFlows', 'figmaFrameMap', 'tokenUsage',
 ] as const;
 
 const SCALAR_FIELDS = [
@@ -291,7 +292,7 @@ export async function listSessions(orgId: string): Promise<Session[]> {
       status: true, figmaChecking: true, figmaFileUrl: true,
       iteration: true, error: true, maxPages: true, headedMode: true,
       figmaOnly: true, pagesCount: true,
-      testFiles: true, testResult: true,
+      testFiles: true, testResult: true, tokenUsage: true,
       createdAt: true, updatedAt: true,
     },
   });
@@ -325,6 +326,7 @@ export async function listSessions(orgId: string): Promise<Session[]> {
       importedProject: null,
       coverageAnalysis: null,
       userFlows:       [],
+      tokenUsage:      (r.tokenUsage ?? null) as { input: number; output: number; cacheRead: number } | null,
       logs:            [],
       createdAt: r.createdAt.getTime(),
       updatedAt: r.updatedAt.getTime(),

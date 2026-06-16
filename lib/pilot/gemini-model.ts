@@ -54,6 +54,15 @@ export async function createGeminiModel(
 
       const text = response.text;
       if (!text) throw new Error('Gemini returned an empty response');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const meta = (response as any).usageMetadata as Record<string, number> | undefined;
+      if (meta) {
+        invokeOptions?.onUsage?.({
+          input:     meta['promptTokenCount'] ?? 0,
+          output:    meta['candidatesTokenCount'] ?? 0,
+          cacheRead: 0,
+        });
+      }
       return text;
     },
   };

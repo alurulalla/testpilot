@@ -325,6 +325,8 @@ export interface Session {
   importedProject: ImportedProject | null;
   /** Coverage gap analysis produced after crawling the site against imported tests */
   coverageAnalysis: CoverageAnalysis | null;
+  /** Cumulative LLM token usage for this session */
+  tokenUsage: { input: number; output: number; cacheRead: number } | null;
   createdAt: number;
   updatedAt: number;
 }
