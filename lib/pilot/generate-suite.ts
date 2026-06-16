@@ -742,6 +742,8 @@ export interface GenerateMultiFileOptions {
   maxConcurrent?: number;
   /** Compact app-profile context block (Phase 2), injected into the system prompt. */
   appContext?: string;
+  /** Called before each file — return true to abort generation early. */
+  shouldStop?: () => boolean;
 }
 
 /** Read login info from the workspace .env file (written by the loop route after pre-login). */
@@ -847,6 +849,7 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
   } catch { /* non-fatal — generate without the checklist */ }
 
   for (const page of pages) {
+    if (options.shouldStop?.()) { console.log('  Generation stopped by user.'); break; }
     const fileName = urlToFileName(page.url, baseUrl);
     const filePath = path.join(testsDir, `${fileName}.spec.ts`);
     console.log(`  Generating tests for ${page.url} → ${fileName}.spec.ts`);
@@ -949,6 +952,7 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
       const generatedSlugs = new Set<string>();
 
       for (const feature of docFeatures) {
+        if (options.shouldStop?.()) { console.log('  Generation stopped by user (doc features).'); break; }
         // Ensure unique file names when two headings produce the same slug
         let slug = featureNameToSlug(feature.name);
         if (generatedSlugs.has(slug)) slug = `${slug}-${generatedSlugs.size}`;
@@ -1048,6 +1052,8 @@ export interface RunGenerateSuiteOptions {
   workspace: Workspace;
   /** Compact app-profile context block (Phase 2), forwarded to generation. */
   appContext?: string;
+  /** Called before each file generation — return true to abort the loop early. */
+  shouldStop?: () => boolean;
 }
 
 export async function runGenerateSuite(options: RunGenerateSuiteOptions): Promise<void> {
@@ -1106,6 +1112,7 @@ export async function runGenerateSuite(options: RunGenerateSuiteOptions): Promis
     baseUrl: effectiveStart,
     model,
     appContext: options.appContext,
+    shouldStop: options.shouldStop,
   });
   console.log('  Test suite generation complete.');
 }

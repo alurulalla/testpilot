@@ -322,6 +322,7 @@ export interface NavClickExplorerOptions {
    *  Accepts any object with a `pages` array that has `url` strings. */
   existingSiteMap: { pages: { url: string }[] };
   onProgress?: (msg: string) => void;
+  shouldStop?: () => boolean;
 }
 
 export interface NavClickExplorerResult {
@@ -371,6 +372,7 @@ export async function runNavClickExplorer(
     const needsClickNav: string[] = [];
 
     for (const feature of missingFeatures) {
+      if (options.shouldStop?.()) break;
       const directUrl = extractDirectUrl(feature, startUrl);
       if (!directUrl) {
         needsClickNav.push(feature);
@@ -410,6 +412,7 @@ export async function runNavClickExplorer(
         const matches = matchFeaturesToNavItems(navItems, needsClickNav);
 
         for (const feature of needsClickNav) {
+          if (options.shouldStop?.()) break;
           const match = matches.get(feature);
           if (!match) {
             log(`  [click-nav] No nav match found for: "${feature}"`);
@@ -463,6 +466,7 @@ export interface BroadClickExplorerOptions {
   /** Max elements to click (defaults to the module MAX_CLICKS cap). */
   maxClicks?: number;
   onProgress?: (msg: string) => void;
+  shouldStop?: () => boolean;
 }
 
 /**
@@ -523,6 +527,7 @@ export async function runBroadClickExplorer(
 
     let clicks = 0;
     for (const item of candidates) {
+      if (options.shouldStop?.()) break;
       if (clicks >= maxClicks) {
         log(`  [broad-nav] reached click cap (${maxClicks}) — stopping`);
         break;

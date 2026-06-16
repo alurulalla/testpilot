@@ -36,6 +36,7 @@ export interface AuthenticatedSiteExplorerOptions {
   maxPages?: number;
   outputDir: string;
   onProgress?: (line: string) => void;
+  shouldStop?: () => boolean;
 }
 
 export async function runAuthenticatedSiteExplorer(
@@ -89,7 +90,7 @@ export async function runAuthenticatedSiteExplorer(
     });
     ctx.setDefaultNavigationTimeout(NAV_TIMEOUT);
 
-    while (queue.length > 0 && visited.size < maxPages) {
+    while (queue.length > 0 && visited.size < maxPages && !options.shouldStop?.()) {
       const next = queue.shift()!;
       const { url: pageUrl, depth } = next;
 

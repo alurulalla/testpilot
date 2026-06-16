@@ -47,6 +47,7 @@ export interface RunSiteExplorerOptions {
   writeSiteMap?: boolean;
   outputDir?: string;
   onProgress?: (line: string) => void;
+  shouldStop?: () => boolean;
 }
 
 export async function runSiteExplorer(options: RunSiteExplorerOptions): Promise<SiteMap> {
@@ -100,7 +101,7 @@ export async function runSiteExplorer(options: RunSiteExplorerOptions): Promise<
     });
     ctx.setDefaultNavigationTimeout(NAV_TIMEOUT);
 
-    while (queue.length > 0 && visited.size < maxPages) {
+    while (queue.length > 0 && visited.size < maxPages && !options.shouldStop?.()) {
       const next = queue.shift()!;
       const { url: pageUrl, depth } = next;
 

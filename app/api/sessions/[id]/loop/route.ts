@@ -29,7 +29,7 @@ import { runNavClickExplorer, runBroadClickExplorer } from '@/lib/pilot/nav-clic
 import { discoverSelectors } from '@/lib/pilot/discover-selectors';
 import { synthesizeFeatures } from '@/lib/synthesize-features';
 import { ensureAppProfile, hostOf, appProfileExists, mergeDiscoveredFeatures, tagTestsToFeatures } from '@/lib/app-profile';
-import { withTokenCounter } from '@/lib/token-counter';
+import { withTokenCounter, withStopCheck, StopError } from '@/lib/token-counter';
 import { getFeatureContext } from '@/lib/feature-context';
 import { snapshotTestFiles } from '@/lib/session-files';
 import { findPriorSuite, copySuiteInto, currentFeatureNames } from '@/lib/suite-reuse';
@@ -156,7 +156,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       const llmConfig = await getOrgLlmConfig(session.orgId);
       const baseModel = await createModelFromConfig(llmConfig);
-      const chatModel = withTokenCounter(withRateLimit(baseModel));
+      const chatModel = withTokenCounter(withStopCheck(withRateLimit(baseModel), () => isStopping(id)));
       await workspace.installDeps();
 
       // ── Imported project fast path ──────────────────────────────────────────
@@ -204,6 +204,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           maxPages: crawlMaxPages,
           outputDir: workspace.dir,
           onProgress: (line: string) => addLog(id, line, 'info'),
+          shouldStop: () => isStopping(id),
         }) as unknown as SiteMap;
       } else {
         siteMap = await runSiteExplorer({
@@ -213,6 +214,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           writeSiteMap: true,
           outputDir: workspace.dir,
           onProgress: (line: string) => addLog(id, line, 'info'),
+          shouldStop: () => isStopping(id),
         });
       }
       setSiteMap(id, siteMap as unknown as SiteMap);
@@ -232,6 +234,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               authFile: authFile ?? undefined,
               existingSiteMap: siteMap,
               onProgress: (line) => addLog(id, line, 'info'),
+              shouldStop: () => isStopping(id),
             });
             if (broad.discoveredPages.length > 0) {
               const merged: SiteMap = {
@@ -340,6 +343,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                   missingFeatures: navigableFeatures,
                   existingSiteMap: siteMap,
                   onProgress:      (line) => addLog(id, line, 'info'),
+                  shouldStop:      () => isStopping(id),
                 });
 
                 if (clickResult.discoveredPages.length > 0) {
@@ -565,6 +569,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             chatModel,
             workspace,
             appContext,
+            shouldStop: () => isStopping(id),
           });
         } finally {
           console.log = origLog;
@@ -790,9 +795,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
       addLog(id, '✅ Session complete.', 'success');
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(id, msg);
-      addLog(id, `Loop failed: ${msg}`, 'error');
+      if (err instanceof StopError) {
+        setStatus(id, 'idle');
+        addLog(id, '⏹ Session stopped.', 'info');
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(id, msg);
+        addLog(id, `Loop failed: ${msg}`, 'error');
+      }
     } finally {
       clearStopping(id);
       if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
