@@ -114,12 +114,42 @@ function isContentImage(node: FigmaNode): boolean {
 /** Maximum wait we'll ever honour from a Retry-After header (2 minutes). */
 const MAX_RETRY_WAIT_MS = 2 * 60 * 1_000;
 
+// When Figma issues a long Retry-After, remember it so we don't keep
+// hammering the API and just surface the same error fast. Keyed by token
+// prefix so multiple orgs / tokens are tracked independently.
+const _rateLimitLock = new Map<string, { unlockAt: number; hours: number }>();
+
+/** A retryable Figma fetch error that also reports when the token unlocks. */
+class FigmaRateLimitError extends Error {
+  unlockAt: number;
+  hours: number;
+  constructor(hours: number, unlockAt: number) {
+    super(
+      `Figma has rate-limited this token for ~${hours}h due to too many requests. ` +
+      `Please wait before retrying, or generate a new Personal Access Token at ` +
+      `figma.com → Settings → Personal access tokens.`,
+    );
+    this.name = 'FigmaRateLimitError';
+    this.hours = hours;
+    this.unlockAt = unlockAt;
+  }
+}
+
 async function figmaFetch(
   url: string,
   token: string,
   maxRetries = 3,
   onRetry?: (attempt: number, waitMs: number) => void,
 ): Promise<Response> {
+  // Short-circuit if we already know this token is locked out.
+  const lockKey = token.slice(0, 8);
+  const lock = _rateLimitLock.get(lockKey);
+  if (lock && lock.unlockAt > Date.now()) {
+    throw new FigmaRateLimitError(lock.hours, lock.unlockAt);
+  } else if (lock) {
+    _rateLimitLock.delete(lockKey); // lock expired naturally
+  }
+
   let lastRes: Response | undefined;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const res = await fetch(url, { headers: { 'X-Figma-Token': token } });
@@ -129,15 +159,14 @@ async function figmaFetch(
     if (attempt < maxRetries) {
       const retryAfterSec = Number(res.headers.get('Retry-After') ?? 0);
 
-      // If Figma says wait longer than our maximum, abort immediately —
-      // the token has been temporarily blocked (e.g. too many failed requests).
+      // If Figma says wait longer than our maximum, abort immediately and
+      // remember the lockout so subsequent calls fail-fast instead of
+      // burning further requests against an already-blocked token.
       if (retryAfterSec > MAX_RETRY_WAIT_MS / 1_000) {
         const hours = Math.round(retryAfterSec / 3600);
-        throw new Error(
-          `Figma has rate-limited this token for ~${hours}h due to too many requests. ` +
-          `Please wait before retrying, or generate a new Personal Access Token at ` +
-          `figma.com → Settings → Personal access tokens.`,
-        );
+        const unlockAt = Date.now() + retryAfterSec * 1_000;
+        _rateLimitLock.set(lockKey, { unlockAt, hours });
+        throw new FigmaRateLimitError(hours, unlockAt);
       }
 
       const delayMs = retryAfterSec > 0
@@ -195,18 +224,33 @@ const _nodeCache  = new Map<string, { node: FigmaNode | null; ts: number }>();
 // Tokens we've already validated (value = timestamp) so we don't spam /me.
 const _tokenValidatedAt = new Map<string, number>();
 const FRAME_CACHE_TTL_MS = 30 * 60 * 1_000; // 30 minutes
+/** When "Reload frames" is clicked, refetch only if the cache is older than this.
+ *  Protects against rapid re-click burning Figma quota — a user can spam the
+ *  button without each click being a real API call. */
+const FORCE_REFRESH_DEBOUNCE_MS = 60 * 1_000; // 60 seconds
 
 /** Fetch all top-level FRAME nodes from every canvas page in the file. */
 async function fetchTopLevelFrames(
   token: string,
   fileKey: string,
   onLog?: (msg: string) => void,
+  force = false,
 ): Promise<FigmaNode[]> {
-  // Return cached result if still fresh — avoids burning rate-limit quota on repeat runs
+  // Cache logic, two tiers:
+  //   • normal calls (force=false) reuse the long cache (30 min) — what we always did.
+  //   • force=true ("Reload frames") refetches IF the cache is older than the
+  //     short debounce window. Within the debounce, even a "force" reuses the
+  //     just-fetched data so multiple Reload clicks in quick succession don't
+  //     each cost an API call — that was the path that tripped Figma's limit.
   const cacheKey = `${fileKey}:${token.slice(0, 8)}`;
   const cached = _frameCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < FRAME_CACHE_TTL_MS) {
+  const age = cached ? Date.now() - cached.ts : Infinity;
+  if (!force && cached && age < FRAME_CACHE_TTL_MS) {
     onLog?.(`  (using cached frame list — ${cached.frames.length} frame(s))`);
+    return cached.frames;
+  }
+  if (force && cached && age < FORCE_REFRESH_DEBOUNCE_MS) {
+    onLog?.(`  (Figma frames refreshed ${Math.round(age / 1_000)}s ago — reusing)`);
     return cached.frames;
   }
 
@@ -1106,11 +1150,12 @@ function suggestFramePath(frameName: string): string {
 export async function listFigmaFrames(
   token: string,
   figmaFileUrl: string,
+  options?: { force?: boolean },
 ): Promise<{ name: string; width?: number; height?: number; suggestedPath: string }[]> {
   // No separate token validation here — fetchTopLevelFrames surfaces a clear
   // error on a bad/rate-limited token, so we avoid an extra /me API call.
   const fileKey = parseFigmaFileKey(figmaFileUrl);
-  const frames = await fetchTopLevelFrames(token, fileKey);
+  const frames = await fetchTopLevelFrames(token, fileKey, undefined, options?.force);
   return frames.map(f => ({
     name: f.name,
     width:  f.absoluteBoundingBox?.width  ? Math.round(f.absoluteBoundingBox.width)  : undefined,

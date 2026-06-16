@@ -393,10 +393,14 @@ function PrepareContent() {
     setLoadingFrames(true);
     setFramesError('');
     try {
+      // When frames are already loaded, this call is a manual "Reload" — force
+      // a fresh fetch so newly-added Figma frames show up (the server caches
+      // the frame list for 30 minutes otherwise).
+      const refresh = figmaFrames.length > 0;
       const res = await fetch('/api/figma/frames', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ figmaFileUrl: figmaFileUrl.trim() }),
+        body: JSON.stringify({ figmaFileUrl: figmaFileUrl.trim(), refresh }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load frames');

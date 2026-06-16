@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     return authErrorResponse(err) ?? NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 
-  const { figmaFileUrl } = await req.json().catch(() => ({})) as { figmaFileUrl?: string };
+  const { figmaFileUrl, refresh } = await req.json().catch(() => ({})) as { figmaFileUrl?: string; refresh?: boolean };
   if (!figmaFileUrl?.trim()) {
     return NextResponse.json({ error: 'figmaFileUrl is required' }, { status: 400 });
   }
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const frames = await listFigmaFrames(token, figmaFileUrl.trim());
+    const frames = await listFigmaFrames(token, figmaFileUrl.trim(), { force: !!refresh });
     return NextResponse.json({ frames });
   } catch (err) {
     return NextResponse.json(
