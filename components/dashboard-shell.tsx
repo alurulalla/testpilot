@@ -881,12 +881,37 @@ function ProfileView({ host }: { host: string }) {
   }
 
   async function analyzeIntent() {
-    setGenMsg('Scoring intent coverage…');
-    const d = await fetch('/api/app-profile/analyze-intent', {
+    setGenMsg('Starting intent analysis…');
+    const r = await fetch('/api/app-profile/analyze-intent', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host }),
-    }).then(r => (r.ok ? r.json() : null)).catch(() => null);
-    if (d) { setData(d); setGenMsg('Intent coverage updated.'); } else setGenMsg('Could not score intent coverage.');
+    }).then(res => (res.ok ? res.json() : null)).catch(() => null);
+
+    if (!r) { setGenMsg('Could not start intent analysis.'); return; }
+    if (r.status === 'done' && r.profile) { setData(r.profile); setGenMsg('Intent coverage updated.'); return; }
+
+    setGenMsg('Analyzing intent coverage… you can navigate away, this runs in the background.');
+    pollAnalyzeIntent();
   }
+
+  function pollAnalyzeIntent() {
+    const check = async () => {
+      const r = await fetch(`/api/app-profile/analyze-intent?host=${encodeURIComponent(host)}`)
+        .then(res => (res.ok ? res.json() : null)).catch(() => null);
+      if (!r || r.status === 'error') { setGenMsg('Intent analysis failed.'); return; }
+      if (r.status === 'done' && r.profile) { setData(r.profile); setGenMsg('Intent coverage updated.'); return; }
+      setTimeout(() => void check(), 3_000);
+    };
+    setTimeout(() => void check(), 2_000);
+  }
+
+  // On mount, check if an analysis job is already running (user navigated back mid-run).
+  useEffect(() => {
+    fetch(`/api/app-profile/analyze-intent?host=${encodeURIComponent(host)}`)
+      .then(res => (res.ok ? res.json() : null))
+      .then(r => { if (r?.status === 'analyzing') { setGenMsg('Intent analysis in progress…'); pollAnalyzeIntent(); } })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [host]);
 
   async function toggleQuarantine(featureId: string, quarantined: boolean) {
     const d = await patch({ quarantine: { featureId, quarantined } });
@@ -1048,15 +1073,42 @@ function ProfileView({ host }: { host: string }) {
 
       {/* Environment */}
       <section className={sectionCls}>
-        <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-3">Environment</p>
-        <div className="flex flex-wrap gap-2 text-xs">
-          {data.envSignals.authModel && <span className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300">Auth: {data.envSignals.authModel}</span>}
-          {data.envSignals.spa !== undefined && <span className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300">{data.envSignals.spa ? 'SPA' : 'Multi-page'}</span>}
-          {data.envSignals.consentVendor && <span className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300">Consent: {data.envSignals.consentVendor}</span>}
-          {(data.envSignals.locales ?? []).map(l => (<span key={l} className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300">{l}</span>))}
-          {!data.envSignals.authModel && data.envSignals.spa === undefined && !data.envSignals.consentVendor && !(data.envSignals.locales?.length) &&
-            <span className="text-zinc-400 italic">No signals captured.</span>}
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">Environment</p>
         </div>
+        <p className="text-[11px] text-zinc-500 mb-3">
+          Technical signals detected from the crawl — used to make generated tests more accurate (e.g. correct login strategy, SPA-aware navigation, consent banner handling).
+        </p>
+        {(!data.envSignals.authModel && data.envSignals.spa === undefined && !data.envSignals.consentVendor && !(data.envSignals.locales?.length)) ? (
+          <p className="text-xs text-zinc-500 italic">No signals captured — run a session to detect auth, SPA, and consent patterns.</p>
+        ) : (
+          <div className="space-y-2 text-xs">
+            {data.envSignals.authModel && (
+              <div className="flex items-start gap-2">
+                <span className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300 shrink-0">Auth: {data.envSignals.authModel}</span>
+                <span className="text-zinc-500 pt-0.5">How users log in — determines whether tests use a pre-login step before navigating to protected pages.</span>
+              </div>
+            )}
+            {data.envSignals.spa !== undefined && (
+              <div className="flex items-start gap-2">
+                <span className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300 shrink-0">{data.envSignals.spa ? 'Single-page app (SPA)' : 'Multi-page app'}</span>
+                <span className="text-zinc-500 pt-0.5">{data.envSignals.spa ? 'Navigation is client-side — tests use button clicks and wait for re-renders, not full page loads.' : 'Each link triggers a full page load — standard Playwright navigation patterns apply.'}</span>
+              </div>
+            )}
+            {data.envSignals.consentVendor && (
+              <div className="flex items-start gap-2">
+                <span className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300 shrink-0">Consent: {data.envSignals.consentVendor}</span>
+                <span className="text-zinc-500 pt-0.5">Cookie consent banner detected — tests automatically dismiss it before interacting with the page so it never blocks clicks.</span>
+              </div>
+            )}
+            {(data.envSignals.locales ?? []).length > 0 && (
+              <div className="flex items-start gap-2">
+                <span className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300 shrink-0">Locales: {(data.envSignals.locales ?? []).join(', ')}</span>
+                <span className="text-zinc-500 pt-0.5">Languages detected — tests use regex matchers instead of exact strings so they pass across all locales.</span>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {/* Features */}

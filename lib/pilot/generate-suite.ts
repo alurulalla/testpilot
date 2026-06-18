@@ -83,6 +83,28 @@ function sanitizeImports(content: string): string {
   return fixed;
 }
 
+/**
+ * Fix standalone Playwright locator methods missing the `page.` prefix.
+ *
+ * The LLM occasionally writes `getByRole(...)` or `expect(getByRole(...))` without
+ * a `page.` receiver, which causes a ReferenceError at runtime. This deterministic
+ * pass patches that class of mistake without any LLM call.
+ *
+ * Only rewrites calls that are NOT already chained (not preceded by `.` or a word char),
+ * so `page.getByRole(` and `someLocator.getByRole(` are left untouched.
+ */
+function sanitizePageCalls(content: string): string {
+  const PLAYWRIGHT_METHODS = [
+    'getByRole', 'getByText', 'getByLabel', 'getByPlaceholder',
+    'getByAltText', 'getByTitle', 'getByTestId', 'locator',
+  ];
+  const pattern = new RegExp(
+    `(?<![.\\w])(${PLAYWRIGHT_METHODS.join('|')})\\(`,
+    'g',
+  );
+  return content.replace(pattern, 'page.$1(');
+}
+
 /** Convert a documentation feature name to a safe file-name slug. */
 function featureNameToSlug(name: string): string {
   return name
@@ -377,6 +399,15 @@ function buildSystemPrompt(contextMd: string | null, appContext?: string): strin
     'ANTI-HALLUCINATION: NEVER assert text, headings, statistics, or page sections that are ' +
     'not explicitly present in the INTERACTIVE ELEMENTS table or accessibility tree. ' +
     'Ignore any training-data knowledge about this site — only use the crawl data. ' +
+    'DYNAMIC CONTENT RULE: NEVER hardcode external-system UUIDs, GUIDs, or auto-generated IDs ' +
+    'in href locators. For links to third-party services (job boards, payment systems, ticket platforms), ' +
+    'use a wildcard pattern: page.locator(\'a[href*="jobs.example.com/company"]\').first() ' +
+    'NOT page.locator(\'a[href="https://jobs.example.com/company/e5437e00-4afb-..."]\') — ' +
+    'specific IDs change constantly as content is updated; the domain pattern stays stable. ' +
+    'PAGE TITLE RULE: Only write toHaveTitle() using the EXACT text from the "Title:" field in ' +
+    'the crawl data. If the title is empty, looks like a URL slug (e.g. "industry-gtm", "page-name"), ' +
+    'or is the same as the URL path, use a broad brand-name regex like /Browserbase/i instead. ' +
+    'NEVER derive the page title from the URL — the path segment is not the page title. ' +
     'Return ONLY the complete TypeScript file — no markdown fences, no explanation.';
 
   if (contextMd) {
@@ -495,6 +526,12 @@ function buildPageTestPrompt(
     `elements visible without opening a menu.\n` +
     `- EMOJI RULE: if a row shows  ← use /regex/  → write  getByRole(role, { name: /Name/i })\n` +
     `- NEVER invent IDs, class names, or attributes not shown in the data above\n` +
+    `- DYNAMIC CONTENT RULE: NEVER hardcode UUIDs, GUIDs, or auto-generated IDs in href locators.\n` +
+    `  For links to third-party services, use a wildcard: page.locator('a[href*="domain.com/path"]').first()\n` +
+    `  NOT page.locator('a[href="https://domain.com/path/uuid-here"]')\n` +
+    `- PAGE TITLE RULE: toHaveTitle() must use the EXACT text from "Title: ${page.title}" above.\n` +
+    `  If the title looks like a URL slug (e.g. "industry-gtm") or is empty, use /Browserbase/i instead.\n` +
+    `  NEVER derive the title from the URL path — the path segment is not the page title.\n` +
     `- For inputs: if the input has a non-empty aria_label, use getByLabel('…'). ` +
     `If aria_label is empty, use a locator based on the id, data-test, or name attribute shown in the crawl data. ` +
     `NEVER call getByLabel() when aria_label is empty — it will fail at runtime.\n` +
@@ -865,7 +902,7 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
       const looksLikeTest = cleaned.includes('test(') || cleaned.includes('test.describe(');
       const hasAssertion  = cleaned.includes('expect(');
       if (looksLikeTest && hasAssertion) {
-        writeFileSync(filePath, sanitizeImports(cleaned), 'utf8');
+        writeFileSync(filePath, sanitizePageCalls(sanitizeImports(cleaned)), 'utf8');
         writtenFiles.push(filePath);
         console.log(`  Wrote ${filePath}`);
       } else if (looksLikeTest && !hasAssertion) {
@@ -923,6 +960,11 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
         'ignore any training-data knowledge about this site. ' +
         'Do NOT invent selectors not in the crawl data. ' +
         'If a required element is missing from the crawl, skip that assertion with a comment. ' +
+        'DYNAMIC CONTENT RULE: NEVER hardcode UUIDs, GUIDs, or auto-generated IDs in href locators. ' +
+        'For links to third-party services (job boards, payment systems, etc.), use a wildcard pattern: ' +
+        'page.locator(\'a[href*="jobs.example.com/company"]\').first() — not an exact UUID href. ' +
+        'PAGE TITLE RULE: toHaveTitle() must use the actual page title from crawl data. ' +
+        'NEVER derive the title from the URL path or slug. If the title looks like a slug, use a broad regex instead. ' +
         'CREDENTIAL RULE: Any login helper must use process.env.TESTPILOT_PASSWORD ?? \'actual_password\' and ' +
         'process.env.TESTPILOT_USER_NAME ?? \'actual_username\' where the actual values come from the ' +
         'credentials section in the product documentation. NEVER use ?? \'\' — empty fallback breaks offline runs. ' +
@@ -947,7 +989,12 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
             'When present, you MUST use the exact selectors listed there — they were ' +
             'pre-resolved from the live DOM and are guaranteed to work.\n\n'
           : '') +
-        contextMd;
+        contextMd +
+        (options.appContext
+          ? `\n\n${options.appContext}\n` +
+            'Use the APP CONTEXT above to prioritise tests for the most CRITICAL features and to ' +
+            'assert their expected outcomes — but only with selectors present in the crawl data.'
+          : '');
 
       const generatedSlugs = new Set<string>();
 
@@ -969,7 +1016,7 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
           ], { temperature: 0.2 });
           const featureCleaned = extractTypeScript(featureResult);
           if ((featureCleaned.includes('test(') || featureCleaned.includes('test.describe(')) && featureCleaned.includes('expect(')) {
-            writeFileSync(featureSpecPath, sanitizeImports(featureCleaned), 'utf8');
+            writeFileSync(featureSpecPath, sanitizePageCalls(sanitizeImports(featureCleaned)), 'utf8');
             writtenFiles.unshift(featureSpecPath);
             console.log(`  Wrote ${slug}.spec.ts`);
           } else {
@@ -1010,7 +1057,11 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
           'Do NOT use test.describe blocks — flat test() calls only. ' +
           'Use getByRole, getByLabel, getByText locators. Skip steps that require a terminal/CLI. ' +
           'Return ONLY TypeScript code — no markdown fences, no explanation.\n\n' +
-          contextMd;
+          contextMd +
+          (options.appContext
+            ? `\n\n${options.appContext}\n` +
+              'Use the APP CONTEXT above to sequence and prioritise flow steps toward the most CRITICAL user journeys.'
+            : '');
 
         const flowUserPrompt = buildUserFlowsPrompt(baseUrl, browserFlows);
         const flowResult  = await model.invoke([
@@ -1019,7 +1070,7 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
         ], { temperature: 0.2 });
         const flowCleaned = extractTypeScript(flowResult);
         if ((flowCleaned.includes('test(') || flowCleaned.includes('test.describe(')) && flowCleaned.includes('expect(')) {
-          writeFileSync(flowSpecPath, sanitizeImports(flowCleaned), 'utf8');
+          writeFileSync(flowSpecPath, sanitizePageCalls(sanitizeImports(flowCleaned)), 'utf8');
           // Put user-flows near the front so it runs before per-feature specs
           writtenFiles.unshift(flowSpecPath);
           console.log(`  Wrote user-flows.spec.ts (${browserFlows.length} flow(s), ${browserFlows.reduce((n, f) => n + f.steps.length, 0)} steps)`);

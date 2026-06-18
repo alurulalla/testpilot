@@ -619,6 +619,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         if (stopped('test run')) return;
 
         const { passed, failed, total, errors } = result.stats;
+
+        // Detect OS-level resource exhaustion (RLIMIT_NPROC hit after browser crashes).
+        // This fires even when total > 0 (tests ran but all crashed mid-run).
+        if (result.output.includes('pthread_create') && result.output.includes('Resource temporarily unavailable')) {
+          addLog(id, '⚠ Test environment ran out of system resources (browser process threads exhausted). This happens when a slow or bot-protected site causes the first browser to crash and the OS thread limit is hit. The generated tests are correct — download them and run locally for reliable results.', 'error');
+          break;
+        }
+
         if (errors > 0 && total === 0) {
           const isInfraError =
             result.output.includes('command not found') ||
