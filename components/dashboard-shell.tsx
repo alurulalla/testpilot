@@ -867,17 +867,48 @@ function ProfileView({ host }: { host: string }) {
 
   async function genFeatureTest(featureId: string, name: string, negative = false) {
     setGenId(featureId); setGenMsg(null);
-    const d = await fetch('/api/app-profile/generate-feature', {
+    const res = await fetch('/api/app-profile/generate-feature', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host, featureId, negative }),
-    }).then(r => (r.ok ? r.json() : r.json().then(e => Promise.reject(e)))).catch(e => ({ error: e?.error }));
-    setGenId(null);
-    setGenMsg(d?.ok
-      ? `Generated ${d.testFile} (${negative ? 'negative' : 'positive'}) for "${name}".`
-      : `Could not generate: ${d?.error ?? 'error'}`);
-    if (d?.ok) {
-      fetch(`/api/feature-health?host=${encodeURIComponent(host)}`)
-        .then(r => (r.ok ? r.json() : null)).then(setHealth).catch(() => {});
+    }).catch(() => null);
+
+    if (!res) { setGenId(null); setGenMsg('Could not start generation.'); return; }
+
+    if (res.status === 409) {
+      const d = await res.json().catch(() => null);
+      setGenId(null); setGenMsg(d?.error ?? 'Cannot generate right now.'); return;
     }
+
+    if (res.status === 202) {
+      pollGenFeature(featureId, name, negative);
+      return;
+    }
+
+    const d = await res.json().catch(() => null);
+    setGenId(null);
+    setGenMsg(d?.error ?? 'Generation failed.');
+  }
+
+  function pollGenFeature(featureId: string, name: string, negative: boolean) {
+    const check = async () => {
+      const r = await fetch(`/api/app-profile/generate-feature?host=${encodeURIComponent(host)}&featureId=${encodeURIComponent(featureId)}`)
+        .then(res => (res.ok ? res.json() : null)).catch(() => null);
+      if (!r || r.status === 'error') {
+        setGenId(null); setGenMsg(`Could not generate: ${r?.error ?? 'error'}`); return;
+      }
+      if (r.status === 'done') {
+        setGenId(null);
+        setGenMsg(r.ok
+          ? `Generated ${r.testFile} (${negative ? 'negative' : 'positive'}) for "${name}".`
+          : `Could not generate: ${r.error ?? 'error'}`);
+        if (r.ok) {
+          fetch(`/api/feature-health?host=${encodeURIComponent(host)}`)
+            .then(res => (res.ok ? res.json() : null)).then(setHealth).catch(() => {});
+        }
+        return;
+      }
+      setTimeout(() => void check(), 3_000);
+    };
+    setTimeout(() => void check(), 2_000);
   }
 
   async function analyzeIntent() {

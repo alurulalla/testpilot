@@ -1,5 +1,9 @@
 /**
- * POST /api/app-profile/generate-feature  { host, featureId }
+ * POST /api/app-profile/generate-feature  { host, featureId, negative? }
+ * GET  /api/app-profile/generate-feature?host=...&featureId=...
+ *
+ * POST fires test generation as a background job and returns 202 immediately —
+ * the client does NOT need to stay connected. Poll GET until status !== 'generating'.
  *
  * Coverage-driven generation (#1): generate an e2e spec for ONE feature, seeded
  * from its journeys (steps) + expected outcomes (assertions) — so the test
@@ -21,6 +25,34 @@ import { createModelFromConfig } from '@/lib/pilot/model-factory';
 import { withRateLimit } from '@/lib/rate-limited-model';
 import { generateScenarioTest } from '@/lib/pilot/generate-scenario';
 
+type JobStatus = 'generating' | 'done' | 'error';
+type JobResult = { ok: boolean; sessionId?: string; testFile?: string; testNames?: string[]; error?: string };
+
+const jobs = new Map<string, { status: JobStatus; result?: JobResult }>();
+
+function jobKey(orgId: string, host: string, featureId: string) {
+  return `${orgId}:${host}:${featureId}`;
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const { org } = await requireAuth();
+    const { searchParams } = new URL(req.url);
+    const host = searchParams.get('host');
+    const featureId = searchParams.get('featureId');
+    if (!host || !featureId) return NextResponse.json({ error: 'host and featureId are required' }, { status: 400 });
+
+    const key = jobKey(org.id, host, featureId);
+    const job = jobs.get(key);
+    if (!job) return NextResponse.json({ status: 'idle' });
+
+    if (job.status !== 'generating') jobs.delete(key);
+    return NextResponse.json({ status: job.status, ...job.result });
+  } catch (err) {
+    return authErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { org } = await requireAuth();
@@ -29,9 +61,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'host and featureId are required' }, { status: 400 });
     }
     const host = body.host;
+    const featureId = body.featureId;
+    const key = jobKey(org.id, host, featureId);
+
+    // De-duplicate: already generating this feature.
+    if (jobs.get(key)?.status === 'generating') {
+      return NextResponse.json({ status: 'generating' }, { status: 202 });
+    }
 
     const profile = await getAppProfile(org.id, host);
-    const feature = profile?.features.find(f => f.id === body.featureId);
+    const feature = profile?.features.find(f => f.id === featureId);
     if (!feature) return NextResponse.json({ error: 'Feature not found' }, { status: 404 });
 
     // Find the app's latest session that has a crawl to ground locators in.
@@ -42,6 +81,7 @@ export async function POST(req: NextRequest) {
     const src = sessions.find(s => hostOf(s.url) === host && s.siteMap);
     if (!src) return NextResponse.json({ error: 'No crawl available for this app yet — run a session first.' }, { status: 409 });
 
+    // Build all inputs eagerly so the background task has no dangling async init.
     const workspace = new Workspace({ url: src.url, rootDir: getSessionDir(src.id, org.id) });
     await ensureWorkspaceReady(src.id, workspace);
 
@@ -67,7 +107,6 @@ export async function POST(req: NextRequest) {
 
     let description: string;
     if (body.negative) {
-      // #3 negative-intent: assert the things that MUST be prevented/rejected.
       if (feature.negativeOutcomes.length === 0) {
         return NextResponse.json({ error: 'This feature has no negative outcomes defined.' }, { status: 409 });
       }
@@ -75,22 +114,28 @@ export async function POST(req: NextRequest) {
     } else {
       const journeys = feature.journeys.length ? feature.journeys.join(' ; ') : feature.name;
       const outcomes = feature.expectedOutcomes.length ? ` Verify these outcomes: ${feature.expectedOutcomes.join('; ')}.` : '';
-      // #4 — also assert invariants that hold across the journey ("cart count = items added").
       const invariants = feature.invariants.length ? ` Also assert these invariants hold across the flow: ${feature.invariants.join('; ')}.` : '';
       description = `${feature.name} — ${journeys}.${outcomes}${invariants}${personaHint}${visualHint}`;
     }
 
-    const gen = await generateScenarioTest({ description, workspace, model, siteMapPages, appContext });
+    jobs.set(key, { status: 'generating' });
 
-    updateSession(src.id, { testFiles: workspace.testFiles() });
-    await snapshotTestFiles(src.id, workspace);
+    // Fire and forget — intentionally not awaited.
+    generateScenarioTest({ description, workspace, model, siteMapPages, appContext })
+      .then(async (gen) => {
+        updateSession(src.id, { testFiles: workspace.testFiles() });
+        await snapshotTestFiles(src.id, workspace);
+        jobs.set(key, {
+          status: 'done',
+          result: { ok: true, sessionId: src.id, testFile: gen.testFile.split('/').pop(), testNames: gen.matchedTests },
+        });
+      })
+      .catch((err) => {
+        console.error('[generate-feature] background job failed:', err);
+        jobs.set(key, { status: 'error', result: { ok: false, error: err instanceof Error ? err.message : String(err) } });
+      });
 
-    return NextResponse.json({
-      ok: true,
-      sessionId: src.id,
-      testFile: gen.testFile.split('/').pop(),
-      testNames: gen.matchedTests,
-    });
+    return NextResponse.json({ status: 'generating' }, { status: 202 });
   } catch (err) {
     return authErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }

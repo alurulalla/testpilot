@@ -156,7 +156,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       const llmConfig = await getOrgLlmConfig(session.orgId);
       const baseModel = await createModelFromConfig(llmConfig);
-      const chatModel = withTokenCounter(withStopCheck(withRateLimit(baseModel), () => isStopping(id)));
+      const chatModel = withTokenCounter(withStopCheck(withRateLimit(baseModel, 3000, () => isStopping(id)), () => isStopping(id)));
       await workspace.installDeps();
 
       // ── Imported project fast path ──────────────────────────────────────────
