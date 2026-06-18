@@ -904,11 +904,15 @@ function ProfileView({ host }: { host: string }) {
     setTimeout(() => void check(), 2_000);
   }
 
-  // On mount, check if an analysis job is already running (user navigated back mid-run).
+  // On mount, check if a background job is already running (user navigated back mid-run).
   useEffect(() => {
     fetch(`/api/app-profile/analyze-intent?host=${encodeURIComponent(host)}`)
       .then(res => (res.ok ? res.json() : null))
       .then(r => { if (r?.status === 'analyzing') { setGenMsg('Intent analysis in progress…'); pollAnalyzeIntent(); } })
+      .catch(() => {});
+    fetch(`/api/app-profile?host=${encodeURIComponent(host)}`)
+      .then(res => (res.ok ? res.json() : null))
+      .then(r => { if (r?.rebuilding) { setRebuilding(true); setGenMsg('Rebuilding profile…'); pollRebuild(); } })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host]);
@@ -956,15 +960,41 @@ function ProfileView({ host }: { host: string }) {
     const res = await fetch('/api/app-profile', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host }),
     }).catch(() => null);
-    const d = res ? (res.ok ? await res.json().catch(() => null) : await res.json().catch(() => null)) : null;
-    if (res?.ok && d) {
-      setData(d);
-      fetch(`/api/feature-health?host=${encodeURIComponent(host)}`)
-        .then(r => (r.ok ? r.json() : null)).then(setHealth).catch(() => {});
-    } else {
-      setGenMsg(d?.error ?? 'Profile build failed — check that an LLM API key is configured in Settings.');
+
+    if (!res) { setRebuilding(false); setGenMsg('Profile build failed — check that an LLM API key is configured in Settings.'); return; }
+
+    if (res.status === 409) {
+      const d = await res.json().catch(() => null);
+      setRebuilding(false); setGenMsg(d?.error ?? 'No crawl available yet — run a session first.'); return;
     }
+
+    if (res.status === 202) {
+      setGenMsg('Rebuilding profile… you can navigate away, this runs in the background.');
+      pollRebuild();
+      return;
+    }
+
+    const d = await res.json().catch(() => null);
     setRebuilding(false);
+    setGenMsg(d?.error ?? 'Profile build failed — check that an LLM API key is configured in Settings.');
+  }
+
+  function pollRebuild() {
+    const check = async () => {
+      const r = await fetch(`/api/app-profile?host=${encodeURIComponent(host)}`)
+        .then(res => (res.ok ? res.json() : null)).catch(() => null);
+      if (!r) { setRebuilding(false); setGenMsg('Profile rebuild failed.'); return; }
+      if (!r.rebuilding) {
+        setData(r);
+        setRebuilding(false);
+        setGenMsg('Profile rebuilt successfully.');
+        fetch(`/api/feature-health?host=${encodeURIComponent(host)}`)
+          .then(res => (res.ok ? res.json() : null)).then(setHealth).catch(() => {});
+        return;
+      }
+      setTimeout(() => void check(), 3_000);
+    };
+    setTimeout(() => void check(), 2_000);
   }
 
   if (loading) return <div className="flex items-center justify-center py-16"><Loader2 className="h-5 w-5 text-zinc-400 animate-spin" /></div>;

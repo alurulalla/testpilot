@@ -16,7 +16,10 @@ function isTransientError(msg: string) {
     msg.includes('ENOTFOUND') ||
     msg.includes('network') ||
     msg.includes('timeout') ||
-    msg.includes('overloaded_error')
+    msg.includes('overloaded_error') ||
+    msg.includes('Premature close') ||       // undici: server closed stream before completion
+    msg.includes('Invalid response body') || // fetch wrapper around premature-close
+    msg.includes('ERR_STREAM_PREMATURE_CLOSE')
   );
 }
 
