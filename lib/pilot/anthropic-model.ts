@@ -15,7 +15,14 @@
  *    to 16 384 (same as before) when not specified.
  */
 import Anthropic from '@anthropic-ai/sdk';
+import https from 'https';
 import type { ChatMessage, ChatModel, InvokeOptions, MessageContent } from './types';
+
+// Railway (and similar PaaS) proxies drop idle keep-alive TCP connections much
+// sooner than the 5-minute agentkeepalive default, causing "Premature close"
+// errors on long LLM requests. Disable keep-alive so every request gets a fresh
+// connection and is never affected by a stale socket being recycled.
+const NO_KEEPALIVE_AGENT = new https.Agent({ keepAlive: false });
 
 export interface CreateAnthropicModelOptions {
   apiKey: string;
@@ -59,7 +66,7 @@ export async function createAnthropicModel(
   options: CreateAnthropicModelOptions,
 ): Promise<ChatModel> {
   const modelName = options.model ?? 'claude-sonnet-4-20250514';
-  const client = new Anthropic({ apiKey: options.apiKey });
+  const client = new Anthropic({ apiKey: options.apiKey, httpAgent: NO_KEEPALIVE_AGENT });
 
   return {
     modelName,
