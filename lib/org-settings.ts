@@ -17,6 +17,8 @@ export interface OrgSettings {
   autoSelfHeal: boolean;
   /** 'agent' = iterative observe→act→verify healing; 'single-shot' = one rewrite (default). */
   healMode: HealMode;
+  deepBehavior: boolean;
+  locatorDryRun: boolean;
 }
 
 /** Raw stored shape — all fields optional (absent = use env/default). */
@@ -25,6 +27,8 @@ export interface OrgSettingsPatch {
   deepCrawlMaxPages?: number;
   autoSelfHeal?: boolean;
   healMode?: HealMode;
+  deepBehavior?: boolean;
+  locatorDryRun?: boolean;
 }
 
 function envInt(name: string, fallback: number): number {
@@ -47,6 +51,8 @@ export async function getOrgSettings(orgId: string): Promise<OrgSettings> {
     deepCrawlMaxPages: stored.deepCrawlMaxPages ?? envInt('DEEP_CRAWL_MAX_PAGES', 50),
     autoSelfHeal:      stored.autoSelfHeal      ?? (process.env.AUTO_SELF_HEAL === 'true'),
     healMode:          stored.healMode          ?? (process.env.HEAL_MODE === 'agent' ? 'agent' : 'single-shot'),
+    deepBehavior:      stored.deepBehavior      ?? (process.env.DEEP_BEHAVIOR === 'true'),
+    locatorDryRun:     stored.locatorDryRun     ?? (process.env.LOCATOR_DRYRUN === 'true'),
   };
 }
 

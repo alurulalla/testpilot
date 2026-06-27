@@ -6,6 +6,14 @@ import { TestResult } from '@/types/session';
 import { parsePlaywrightReport } from '@/lib/playwright-report';
 import { registerProcess, unregisterProcess } from '@/lib/session-store';
 
+function terminateProcess(proc: ReturnType<typeof spawn>): void {
+  if (proc.killed || proc.exitCode !== null) return;
+  try {
+    if (process.platform !== 'win32' && proc.pid) process.kill(-proc.pid, 'SIGTERM');
+    else proc.kill('SIGTERM');
+  } catch { /* process already exited */ }
+}
+
 /** Escape a literal string for use inside a Playwright --grep regex. */
 export function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -66,6 +74,7 @@ export async function runTestsAsync(
   headed = false,
   grep?: string,
   grepRegex?: string,
+  signal?: AbortSignal,
 ): Promise<TestResult> {
   const reportsDir = path.join(workspace.dir, 'reports');
   const testResultsDir = path.join(workspace.dir, 'test-results');
@@ -85,7 +94,7 @@ export async function runTestsAsync(
     // we never rely on `npx` finding the `playwright` binary.
     const playwrightCliCandidates = [
       path.join(workspace.dir, 'node_modules', 'playwright', 'cli.js'),
-      path.join(process.cwd(), 'node_modules', 'playwright', 'cli.js'),
+      path.join(/*turbopackIgnore: true*/ process.cwd(), 'node_modules', 'playwright', 'cli.js'),
     ];
     const playwrightCli = playwrightCliCandidates.find(existsSync)
       ?? playwrightCliCandidates[0];
@@ -103,6 +112,7 @@ export async function runTestsAsync(
       {
         cwd: workspace.dir,
         stdio: 'pipe',
+        detached: process.platform !== 'win32',
         // NO_COLOR/FORCE_COLOR=0: stop Playwright emitting ANSI control codes
         // (cursor moves, line erases) that would be persisted as garbage in logs.
         env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
@@ -110,6 +120,10 @@ export async function runTestsAsync(
     );
 
     if (sessionId) registerProcess(sessionId, proc);
+
+    const onAbort = () => terminateProcess(proc);
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener('abort', onAbort, { once: true });
 
     let output = '';
 
@@ -130,6 +144,7 @@ export async function runTestsAsync(
     });
 
     proc.on('close', (code) => {
+      signal?.removeEventListener('abort', onAbort);
       if (sessionId) unregisterProcess(sessionId);
       const duration = (Date.now() - start) / 1000;
       const { stats, cases } = parsePlaywrightReport(reportPath);
@@ -138,6 +153,7 @@ export async function runTestsAsync(
     });
 
     proc.on('error', (err) => {
+      signal?.removeEventListener('abort', onAbort);
       if (sessionId) unregisterProcess(sessionId);
       const duration = (Date.now() - start) / 1000;
       resolve({

@@ -42,6 +42,7 @@ function createPrismaClient() {
     // max: cap at 5 so we don't exhaust Neon's connection limit.
     max: 5,
   });
+  globalThis.__tp_pgpool = pool;
   const adapter = new PrismaPg(pool);
 
   return new PrismaClient({
@@ -62,8 +63,8 @@ function createPrismaClient() {
 // module can be safely imported at build time.
 
 declare global {
-  // eslint-disable-next-line no-var
   var __tp_prisma: PrismaClient | undefined;
+  var __tp_pgpool: Pool | undefined;
 }
 
 function getClient(): PrismaClient {
@@ -78,3 +79,13 @@ export const prisma = new Proxy({} as PrismaClient, {
     return (getClient() as unknown as Record<string | symbol, unknown>)[prop];
   },
 });
+
+/** Close resources owned by standalone workers and scripts. */
+export async function disconnectPrisma(): Promise<void> {
+  const client = globalThis.__tp_prisma;
+  const pool = globalThis.__tp_pgpool;
+  globalThis.__tp_prisma = undefined;
+  globalThis.__tp_pgpool = undefined;
+  if (client) await client.$disconnect().catch(() => undefined);
+  if (pool) await pool.end().catch(() => undefined);
+}

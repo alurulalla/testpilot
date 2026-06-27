@@ -1259,6 +1259,7 @@ export async function runFigmaComparison(
   /** #9 — when given, each frame is mapped to its best-matching feature so the
    *  visual diff ties back into the feature spine (criticality, traceability). */
   featureLookup?: { orgId: string; host: string },
+  shouldStop?: () => boolean,
 ): Promise<FigmaResult> {
   const log = (msg: string) => onProgress?.(msg);
 
@@ -1304,6 +1305,7 @@ export async function runFigmaComparison(
   // Also hash each PNG so #13 (design-drift) can compare against the prior run.
   const downloaded: { frame: FigmaNode; figmaFile: string; frameHash: string }[] = [];
   for (const frame of frames) {
+    if (shouldStop?.()) break;
     const url = imageUrls[frame.id];
     if (!url) { log(`⚠ No export URL for "${frame.name}" — skipping`); continue; }
     const safeName  = frame.name.replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-');
@@ -1352,6 +1354,7 @@ export async function runFigmaComparison(
 
   try {
     for (const { frame, figmaFile, frameHash } of downloaded) {
+      if (shouldStop?.()) break;
       const designDrifted = priorHashes.has(frame.name) && priorHashes.get(frame.name) !== frameHash;
       if (designDrifted) log(`  ⓘ Design drift: "${frame.name}" frame changed since the last run`);
       // Prefer the user-confirmed frame→page mapping; fall back to heuristics.

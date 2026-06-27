@@ -13,6 +13,7 @@ import path from 'path';
 import type { ChatModel, ChatMessage } from './types';
 import type { Workspace } from './workspace';
 import { renderFeatureChecklist, type DiscoveredFeature } from '@/lib/synthesize-features';
+import { sanitizeComboboxLocators } from '@/lib/test-sanitizers';
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -103,6 +104,10 @@ function sanitizePageCalls(content: string): string {
     'g',
   );
   return content.replace(pattern, 'page.$1(');
+}
+
+function sanitizeGeneratedTest(content: string): string {
+  return sanitizeComboboxLocators(sanitizePageCalls(sanitizeImports(content)));
 }
 
 /** Convert a documentation feature name to a safe file-name slug. */
@@ -535,6 +540,9 @@ function buildPageTestPrompt(
     `- For inputs: if the input has a non-empty aria_label, use getByLabel('…'). ` +
     `If aria_label is empty, use a locator based on the id, data-test, or name attribute shown in the crawl data. ` +
     `NEVER call getByLabel() when aria_label is empty — it will fail at runtime.\n` +
+    `- SELECT/COMBOBOX RULE: option text is NOT the select element's accessible name. ` +
+    `Never concatenate option labels into getByRole('combobox', { name: '...' }). ` +
+    `Prefer the select's id/data-test selector shown in the crawl; otherwise use page.locator('select').first().\n` +
     `- PASSWORD INPUT RULE: <input type="password"> is NOT matched by getByRole('textbox'). ` +
     `Always use locator('input[type="password"]') or an id/data-test selector for password fields.\n` +
     `- CREDENTIAL RULE: If you write a login helper that fills a password field, use ` +
@@ -902,7 +910,7 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
       const looksLikeTest = cleaned.includes('test(') || cleaned.includes('test.describe(');
       const hasAssertion  = cleaned.includes('expect(');
       if (looksLikeTest && hasAssertion) {
-        writeFileSync(filePath, sanitizePageCalls(sanitizeImports(cleaned)), 'utf8');
+        writeFileSync(filePath, sanitizeGeneratedTest(cleaned), 'utf8');
         writtenFiles.push(filePath);
         console.log(`  Wrote ${filePath}`);
       } else if (looksLikeTest && !hasAssertion) {
@@ -1016,7 +1024,7 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
           ], { temperature: 0.2 });
           const featureCleaned = extractTypeScript(featureResult);
           if ((featureCleaned.includes('test(') || featureCleaned.includes('test.describe(')) && featureCleaned.includes('expect(')) {
-            writeFileSync(featureSpecPath, sanitizePageCalls(sanitizeImports(featureCleaned)), 'utf8');
+            writeFileSync(featureSpecPath, sanitizeGeneratedTest(featureCleaned), 'utf8');
             writtenFiles.unshift(featureSpecPath);
             console.log(`  Wrote ${slug}.spec.ts`);
           } else {
@@ -1070,7 +1078,7 @@ export async function generateMultiFile(options: GenerateMultiFileOptions): Prom
         ], { temperature: 0.2 });
         const flowCleaned = extractTypeScript(flowResult);
         if ((flowCleaned.includes('test(') || flowCleaned.includes('test.describe(')) && flowCleaned.includes('expect(')) {
-          writeFileSync(flowSpecPath, sanitizePageCalls(sanitizeImports(flowCleaned)), 'utf8');
+          writeFileSync(flowSpecPath, sanitizeGeneratedTest(flowCleaned), 'utf8');
           // Put user-flows near the front so it runs before per-feature specs
           writtenFiles.unshift(flowSpecPath);
           console.log(`  Wrote user-flows.spec.ts (${browserFlows.length} flow(s), ${browserFlows.reduce((n, f) => n + f.steps.length, 0)} steps)`);

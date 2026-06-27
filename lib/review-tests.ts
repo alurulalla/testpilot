@@ -29,6 +29,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import path from 'path';
 import type { ChatModel } from './pilot/types';
 import type { Workspace } from './pilot/workspace';
+import { sanitizeComboboxLocators } from './test-sanitizers';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -265,8 +266,16 @@ export async function reviewGeneratedTests(
 
   for (const specPath of specFiles) {
     const fileName = path.basename(specPath);
-    const content  = readFileSync(specPath, 'utf8');
+    let content  = readFileSync(specPath, 'utf8');
     result.reviewed++;
+
+    const sanitized = sanitizeComboboxLocators(content);
+    if (sanitized !== content) {
+      content = sanitized;
+      writeFileSync(specPath, content, 'utf8');
+      result.fixed++;
+      log(`  ✏ ${fileName} — replaced invalid option-text combobox locator`);
+    }
 
     // Static check — find locators that are absent from the interactives index.
     // Auth-related names (sign in, password, etc.) are excluded because those
